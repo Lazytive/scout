@@ -1,7 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: core APIs (events), its own title-bar theme, and the app's `klip` command.",
+  "description": "The main window: core APIs (events), its own title-bar theme, a folder picker, and the app's `klip` command.",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-set-theme"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-theme",
+    "dialog:allow-open"
+  ]
 }

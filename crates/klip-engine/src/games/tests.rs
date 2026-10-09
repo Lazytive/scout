@@ -320,6 +320,41 @@ fn without_a_window_list_processes_count() {
     assert_eq!(games[1].window, None);
 }
 
+#[test]
+fn candidates_list_programs_with_windows() {
+    let s = snap(
+        &[
+            (
+                10,
+                "C:/Games/steamapps/common/Big/big.exe",
+                &[(1, 1920, 1080)],
+            ),
+            (11, "C:/Tools/editor.exe", &[(2, 1200, 800), (3, 900, 700)]),
+            (12, "C:/Tools/tiny.exe", &[(4, 200, 100)]),
+            (
+                13,
+                "C:/Program Files/Mozilla Firefox/firefox.exe",
+                &[(5, 1600, 900)],
+            ),
+            (14, "C:/Tools/hidden.exe", &[(6, 1600, 900)]),
+        ],
+        None,
+    );
+    let settings = GameSettings {
+        never: vec!["hidden.exe".into()],
+        ..GameSettings::default()
+    };
+    let c = candidates(&s, &settings);
+    let got: Vec<(&str, &str, bool)> = c
+        .iter()
+        .map(|c| (c.exe.as_str(), c.name.as_str(), c.detected))
+        .collect();
+    assert_eq!(
+        got,
+        vec![("big.exe", "Big", true), ("editor.exe", "editor", false)]
+    );
+}
+
 /// Cost of one detection poll on this machine (it runs every 2 s).
 #[test]
 fn a_poll_is_cheap() {

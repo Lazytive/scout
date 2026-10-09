@@ -74,6 +74,37 @@ fn create_main<R: Runtime>(
     Ok(())
 }
 
+/// Start with the OS when the user switches `app.autostart` (only on a change, so a
+/// choice made in the OS's own startup-apps list is not overridden at every start).
+fn sync_autostart<R: Runtime>(app: &AppHandle<R>, settings: &Value, last: &mut Option<bool>) {
+    use tauri_plugin_autostart::ManagerExt;
+    let Some(want) = settings
+        .get("app")
+        .and_then(|a| a.get("autostart"))
+        .and_then(Value::as_bool)
+    else {
+        return;
+    };
+    let launcher = app.autolaunch();
+    let first = last.is_none();
+    let changed = last.replace(want) != Some(want);
+    // The first event only records the value unless it differs from the OS.
+    if first && launcher.is_enabled().ok() == Some(want) {
+        return;
+    }
+    if !changed && !first {
+        return;
+    }
+    let res = if want {
+        launcher.enable()
+    } else {
+        launcher.disable()
+    };
+    if let Err(e) = res {
+        tracing::warn!(error = %e, "start with the OS");
+    }
+}
+
 /// Bring the main window up (tray click, second launch).
 fn show_main<R: Runtime>(app: &AppHandle<R>) {
     let window = match app.get_webview_window(MAIN) {
@@ -103,6 +134,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
         }))
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![ipc::klip])
         .setup(move |app| {
             let (tx, rx) = std::sync::mpsc::sync_channel(klip_engine::events::QUEUE);
@@ -124,8 +160,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             std::thread::Builder::new()
                 .name("klip-events".into())
                 .spawn(move || {
+                    let mut autostart: Option<bool> = None;
                     for e in rx {
                         tray::update(&tray, &tray_state, &e);
+                        if let klip_engine::Event::SettingsChanged { settings } = &e {
+                            sync_autostart(&handle, settings, &mut autostart);
+                        }
                         let _ = handle.emit("klip://event", e.to_json());
                     }
                 })?;

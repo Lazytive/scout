@@ -1,9 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  import FirstRun from './FirstRun.svelte';
   import Home from './Home.svelte';
   import { formatDuration } from './lib/format';
   import ThemeMenu from './lib/ThemeMenu.svelte';
+  import Settings from './Settings.svelte';
   import { app, connect } from './lib/store.svelte';
 
   type Page = 'home' | 'library' | 'settings';
@@ -12,7 +14,7 @@
   const workspaces: { id: Page; label: string; soon?: boolean }[] = [
     { id: 'home', label: 'Home' },
     { id: 'library', label: 'Library', soon: true },
-    { id: 'settings', label: 'Settings', soon: true },
+    { id: 'settings', label: 'Settings' },
   ];
 
   const st = $derived(app.status);
@@ -69,8 +71,14 @@
   <main>
     {#if page === 'home'}
       <Home />
+    {:else if page === 'settings'}
+      <Settings />
     {/if}
   </main>
+
+  {#if app.settings && !app.settings.app.first_run_done}
+    <FirstRun s={app.settings} />
+  {/if}
 
   <footer class="statusbar">
     <span>{app.error ?? hint}</span>

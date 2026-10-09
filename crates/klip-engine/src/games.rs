@@ -420,6 +420,64 @@ pub fn detect(snap: &Snapshot, settings: &GameSettings) -> Vec<DetectedGame> {
     found.into_iter().map(|(g, _)| g).collect()
 }
 
+/// A running program the user could add to their game list.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Candidate {
+    pub exe: String,
+    pub name: String,
+    /// Already counted as a game (store folder or the user's list).
+    pub detected: bool,
+}
+
+/// Programs with a visible window of at least 320x240 (not Klip, not store clients,
+/// browsers or helpers), one per executable, detected games first. For the settings
+/// page's "add a game" list; window titles are never included.
+pub fn candidates(snap: &Snapshot, settings: &GameSettings) -> Vec<Candidate> {
+    let me = std::process::id();
+    let detected: Vec<String> = detect(snap, settings).into_iter().map(|g| g.key).collect();
+    let never: Vec<String> = settings.never.iter().map(|n| game_key(n)).collect();
+    let mut out: Vec<Candidate> = Vec::new();
+    for w in snap.windows.iter().flatten() {
+        if w.pid == me || w.pid == 0 || !big_enough(w, MIN_USER_WIDTH, MIN_USER_HEIGHT) {
+            continue;
+        }
+        let exe = snap
+            .paths
+            .get(&w.pid)
+            .map(|p| file_name(p).to_string())
+            .or_else(|| {
+                snap.processes
+                    .iter()
+                    .find(|p| p.pid == w.pid)
+                    .map(|p| p.exe.clone())
+            })
+            .unwrap_or_default();
+        let key = game_key(&exe);
+        if exe.is_empty() || is_helper(&exe) || never.contains(&key) {
+            continue;
+        }
+        if out.iter().any(|c| game_key(&c.exe) == key) {
+            continue;
+        }
+        let name = snap
+            .paths
+            .get(&w.pid)
+            .and_then(|p| library_game(p))
+            .map_or_else(|| name_from_exe(&exe), |(_, n)| n);
+        out.push(Candidate {
+            detected: detected.contains(&key),
+            exe,
+            name,
+        });
+    }
+    out.sort_by(|a, b| {
+        b.detected
+            .cmp(&a.detected)
+            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    out
+}
+
 /// Whether a process is still running.
 pub fn alive(snap: &Snapshot, pid: u32) -> bool {
     snap.processes.iter().any(|p| p.pid == pid)

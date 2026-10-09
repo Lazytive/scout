@@ -5,6 +5,15 @@ reason)`.
 
 ## Unreleased
 
+- M6.8 — Settings workspace (General, Recording, Audio, Hotkeys, Games, Storage, Overlay)
+  and first-run setup in the app; form controls in the Photocraft style; strict saves
+  with per-field errors. Engine: `encoders.list`, `audio.devices`, `audio.meter` +
+  `mic_level`, `recording.estimate`, `hotkeys.pause|resume`, `games.candidates`
+  (`games::candidates`). App: folder picker (`tauri-plugin-dialog`), start with Windows
+  (`tauri-plugin-autostart`, applied on change only), the built front end embedded by
+  default (`custom-protocol`; `--no-default-features` for hot reload). `tools/
+  window-shot.ps1` captures one window (PrintWindow) for UI checks. (Claude Opus 5.5: M6)
+
 - M6.7 — Default theme is now "follow system" (maintainer's choice); `app.css` paints
   Light first when the OS is in light mode (kept equal to Light by the theme tests).
   (Claude Opus 5.5)

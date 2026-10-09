@@ -230,3 +230,91 @@ fn storage_cap_removes_the_oldest_unstarred_clips() {
     assert_eq!(e.code, "bad_args");
     engine.shutdown();
 }
+
+#[test]
+fn setup_commands() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = quiet_settings(dir.path());
+    let (engine, rx) = start(path);
+    next(&rx, "ready");
+
+    // RAM estimate: from the current settings or a draft; scales with the buffer.
+    let now = engine.handle("recording.estimate", &Value::Null).unwrap();
+    assert_eq!(now["video_kbps"], 20_000, "{now}");
+    assert_eq!(now["buffer_secs"], 120);
+    let half = engine
+        .handle(
+            "recording.estimate",
+            &json!({"recording": {"buffer_secs": 60}}),
+        )
+        .unwrap();
+    let (a, b) = (
+        now["bytes"].as_u64().unwrap(),
+        half["bytes"].as_u64().unwrap(),
+    );
+    assert!(b < a && b * 2 > a, "{a} {b}");
+    let low = engine
+        .handle(
+            "recording.estimate",
+            &json!({"recording": {"quality": {"preset": "low"}}, "audio": {"desktop": "off", "voice": false}}),
+        )
+        .unwrap();
+    assert_eq!(
+        (low["video_kbps"].as_u64(), low["audio_tracks"].as_u64()),
+        (Some(8_000), Some(0))
+    );
+
+    // Hotkeys pause and come back.
+    engine
+        .handle(
+            "settings.set",
+            &json!({"hotkeys": [{"action": "bookmark.add", "keys": "Ctrl+Alt+Shift+F21"}]}),
+        )
+        .unwrap();
+    next(&rx, "hotkeys");
+    let p = engine.handle("hotkeys.pause", &Value::Null).unwrap();
+    assert_eq!(p["paused"], true);
+    let st = engine.handle("engine.status", &Value::Null).unwrap();
+    assert_eq!(st["hotkeys_paused"], true);
+    engine.handle("hotkeys.resume", &Value::Null).unwrap();
+    let h = next(&rx, "hotkeys");
+    assert_eq!(h["bound"][0]["keys"], "Ctrl+Alt+Shift+F21");
+    let st = engine.handle("engine.status", &Value::Null).unwrap();
+    assert_eq!(st["hotkeys_paused"], false);
+
+    // Programs to add as games; audio devices; meter arguments.
+    let c = engine.handle("games.candidates", &Value::Null).unwrap();
+    assert!(c["programs"].is_array());
+    let d = engine.handle("audio.devices", &Value::Null).unwrap();
+    assert!(d["inputs"].is_array() && d["outputs"].is_array());
+    assert_eq!(
+        engine
+            .handle("audio.meter", &json!({"on": "yes"}))
+            .unwrap_err()
+            .code,
+        "bad_args"
+    );
+    assert_eq!(
+        engine.handle("audio.meter", &json!({"on": false})).unwrap()["on"],
+        false
+    );
+    engine.shutdown();
+}
+
+/// Live microphone meter on the default input (hardware: needs an audio input).
+#[test]
+#[ignore = "hardware: opens the default microphone"]
+fn mic_meter_reports_levels() {
+    let dir = tempfile::tempdir().unwrap();
+    let (engine, rx) = start(quiet_settings(dir.path()));
+    next(&rx, "ready");
+    engine.handle("audio.meter", &json!({"on": true})).unwrap();
+    let mut n = 0;
+    while n < 5 {
+        let e = next(&rx, "mic_level");
+        assert!(e["peak_db"].as_f64().unwrap() <= 0.0);
+        n += 1;
+    }
+    engine.handle("audio.meter", &json!({"on": false})).unwrap();
+    engine.shutdown();
+}

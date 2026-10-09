@@ -3,6 +3,7 @@
 // then a game starts and the replay buffer runs; commands answer like the real engine.
 
 import { CommandError } from './api';
+import type { Settings } from './settings';
 import type { Game, KlipEvent, Status } from './types';
 
 const game: Game = {
@@ -58,7 +59,53 @@ export function mockBackend() {
     });
   }, 1500);
 
-  const settings = { appearance: { theme: 'system' as string }, overlay: { mode: 'minimal' } };
+  // The engine's defaults (klip-settings), so every settings page can be worked on.
+  let settings: Settings = {
+    version: 1,
+    app: { first_run_done: !new URLSearchParams(location.search).has('firstrun'), autostart: false, start_minimized: true, close_to_tray: true, control_channel: true },
+    clips: { folder: null, per_game_folders: true, recordings_folder: null },
+    recording: {
+      buffer_secs: 120,
+      quality: { preset: 'balanced', custom: { max_width: 1920, max_height: 1080, fps: 60, bitrate_kbps: 20000, codec: 'h264' } },
+      show_cursor: true,
+      encoder: null,
+    },
+    audio: {
+      desktop: 'game',
+      voice: true,
+      voice_apps: ['Discord.exe', 'DiscordPTB.exe', 'TeamSpeak.exe'],
+      mic: false,
+      mic_device: null,
+      exclude_apps: [],
+      default_excludes: true,
+      separate_tracks: true,
+      bitrate_kbps: 160,
+    },
+    hotkeys: [
+      { action: 'clip.save', keys: 'Alt+F10', secs: 30 },
+      { action: 'clip.save', keys: 'Alt+Shift+F10', secs: 120 },
+      { action: 'session.toggle', keys: 'Alt+F9', secs: 0 },
+      { action: 'bookmark.add', keys: 'Alt+F8', secs: 0 },
+      { action: 'overlay.menu', keys: '', secs: 0 },
+    ],
+    overlay: { mode: 'minimal', sound: true, notification: false, corner: 'top-right', seconds: 3, recording_dot: true },
+    storage: { cap_gb: 50, over_cap: 'trash', low_disk_gb: 10 },
+    appearance: { theme: 'system' },
+    games: { buffer: 'games', user_games: [{ exe: 'MyIndieGame.exe', name: 'My Indie Game' }], never: [], profiles: {} },
+  };
+
+  /** RFC 7396 merge patch. */
+  const merge = (target: unknown, patch: unknown): unknown => {
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return patch;
+    const out: Record<string, unknown> =
+      target && typeof target === 'object' && !Array.isArray(target) ? { ...(target as Record<string, unknown>) } : {};
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null) delete out[k];
+      else out[k] = merge(out[k], v);
+    }
+    return out;
+  };
+  let meterTimer: ReturnType<typeof setInterval> | null = null;
 
   const need = () => {
     if (!status.recording) throw new CommandError('not_ready', 'no game is running');
@@ -79,11 +126,69 @@ export function mockBackend() {
         case 'settings.get':
           return { settings: structuredClone(settings) };
         case 'settings.set': {
-          const theme = (args as { appearance?: { theme?: string } } | null)?.appearance?.theme;
-          if (theme) settings.appearance.theme = theme;
+          const next = merge(settings, args) as Settings;
+          if (next.recording.buffer_secs < 5 || next.recording.buffer_secs > 1800) {
+            throw new CommandError('bad_args', `recording.buffer_secs: ${next.recording.buffer_secs} is outside 5–1800`);
+          }
+          const keys = next.hotkeys.map((h) => h.keys).filter(Boolean);
+          const dup = keys.findIndex((k, i) => keys.indexOf(k) !== i);
+          if (dup >= 0) {
+            const i = next.hotkeys.findIndex((h, j) => h.keys === keys[dup] && j > next.hotkeys.findIndex((x) => x.keys === keys[dup]));
+            throw new CommandError('bad_args', `hotkeys[${i}].keys: ${keys[dup]} is already used by another action`);
+          }
+          settings = next;
           emit({ event: 'settings_changed', settings: structuredClone(settings) });
           return { settings: structuredClone(settings) };
         }
+        case 'recording.estimate': {
+          const d = (args ?? settings) as Settings;
+          const kbps = { low: 8000, balanced: 20000, high: 40000, custom: d.recording.quality.custom.bitrate_kbps }[d.recording.quality.preset];
+          const audio = d.audio.bitrate_kbps * (d.audio.mic ? 3 : 2);
+          return { bytes: ((kbps + audio) * 1000 / 8) * 1.5 * (d.recording.buffer_secs + 1), video_kbps: kbps, audio_kbps: audio, fps: 60 };
+        }
+        case 'encoders.list':
+          await new Promise((r) => setTimeout(r, 900));
+          return {
+            gpus: [{ name: 'NVIDIA GeForce RTX 4080 SUPER', vendor: 'NVIDIA' }],
+            codec: 'h264',
+            encoders: [
+              { element: 'nvd3d11h264enc', description: 'NVENC H.264 (Direct3D11)', gpu: 'NVIDIA' },
+              { element: 'nvcudah264enc', description: 'NVENC H.264 (CUDA)', gpu: 'NVIDIA' },
+              { element: 'mfh264enc', description: 'Media Foundation H.264', gpu: 'NVIDIA' },
+            ],
+            chosen: 'nvd3d11h264enc',
+          };
+        case 'audio.devices':
+          return {
+            inputs: [
+              { id: 'mic-1', name: 'Microphone (USB Audio)' },
+              { id: 'mic-2', name: 'Headset Microphone' },
+            ],
+            outputs: [],
+          };
+        case 'audio.meter': {
+          if (meterTimer) clearInterval(meterTimer);
+          meterTimer = null;
+          if ((args as { on?: boolean }).on) {
+            meterTimer = setInterval(() => {
+              const v = Math.random();
+              emit({ event: 'mic_level', peak_db: -30 + v * 26, rms_db: -42 + v * 22 });
+            }, 66);
+          }
+          return { on: !!meterTimer };
+        }
+        case 'hotkeys.pause':
+          return { paused: true };
+        case 'hotkeys.resume':
+          return { paused: false };
+        case 'games.candidates':
+          return {
+            programs: [
+              { exe: 'eldenring.exe', name: 'ELDEN RING', detected: true },
+              { exe: 'Blender.exe', name: 'Blender', detected: false },
+              { exe: 'RetroArch.exe', name: 'RetroArch', detected: false },
+            ],
+          };
         case 'storage.status':
           return {
             folder: 'C:\\Users\\you\\Videos\\Klip',

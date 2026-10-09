@@ -75,6 +75,11 @@ pub enum Event {
     },
     /// The quick-menu hotkey was pressed.
     QuickMenu,
+    /// Microphone meter (`audio.meter`), about 15 per second.
+    MicLevel {
+        peak_db: f32,
+        rms_db: f32,
+    },
     /// Hotkeys after (re)binding; each with its error if it isn't active.
     Hotkeys {
         bound: Vec<Value>,

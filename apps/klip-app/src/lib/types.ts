@@ -86,6 +86,7 @@ export type KlipEvent =
   | { event: 'bookmark'; result: { recording_ms: number | null } }
   | { event: 'action_failed'; action: string; code: string; message: string }
   | { event: 'quick_menu' }
+  | { event: 'mic_level'; peak_db: number; rms_db: number }
   | { event: 'hotkeys'; bound: HotkeyState[] }
   | { event: 'settings_changed'; settings: unknown }
   | { event: 'storage_cleaned'; report: { removed: number; bytes: number } }

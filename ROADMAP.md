@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (M6 in progress: M6.1–M6.7).
+Last updated: 2026-10-09 (M6 in progress: M6.1–M6.8).
 
 | | Milestone | State |
 |---|---|---|
@@ -10,7 +10,7 @@ Last updated: 2026-10-09 (M6 in progress: M6.1–M6.7).
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
-| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap, Tauri app shell, themes done (M6.1–M6.7); settings UI + first run, overlay, bench next |
+| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap, Tauri app shell, themes, Settings + first-run setup done (M6.1–M6.8); overlay, bench next |
 | M7 | Library | |
 | M8 | Editor, Normal mode + export presets | |
 | M9 | Editor, Advanced mode | |
@@ -159,10 +159,10 @@ game audio, buffer 30 s, clip hotkey F24 (10 s):
 
 ## Approximate / not done yet
 
-- **App shell (M6)**: the app has the Home workspace and the tray; Library and Settings
-  pages, the first-run setup, themes and the overlay are not there yet (settings can be
-  changed with `settings.set` through the control channel). The window doesn't remember
-  its size and position. Settings changes to quality/audio/folders apply when the next game starts
+- **App shell (M6)**: Home, Settings and the first-run setup work; the Library page and the
+  overlay are not there yet. The window doesn't remember its size and position. "Allow
+  local control" applies at the next start. Per-game profiles cover buffer, quality,
+  game sound and microphone (not custom numbers or voice apps). Settings changes to quality/audio/folders apply when the next game starts
   (the running buffer isn't restarted). Voice apps that start after the game aren't
   added to the running recording. Game detection is checked on synthetic snapshots and
   the test game; real store installs are on the human checklist. Linux engine paths
@@ -299,6 +299,10 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    left click opens the window, closing it keeps Klip in the tray, Quit in the tray menu
    ends it. Does the look match Photocraft / FilmCraft closely enough? The sun button
    switches Dark / Graphite / Light / OLED / follow system.
+4. Settings: "Start Klip with Windows" adds Klip to Task Manager's startup apps and
+   unticking removes it; "Choose…" opens the folder picker; the microphone Test meter
+   moves when you speak; a hotkey field takes a new combination (your old hotkeys don't
+   fire while it listens).
 
 1. Storage cap: in a test clip folder, set `storage.cap_gb` low (e.g. 1) with a few
    GB of clips, star one old clip, save a new clip: the oldest unstarred clips appear

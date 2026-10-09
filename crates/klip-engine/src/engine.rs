@@ -24,6 +24,7 @@ use klip_settings::{
 };
 use serde_json::{Value, json};
 
+mod setup;
 mod storage;
 
 use crate::events::{Bus, Event};
@@ -126,6 +127,10 @@ pub(crate) struct Inner {
     /// A storage clean-up job is running.
     cleaning: AtomicBool,
     low_disk_warned: Mutex<Option<Instant>>,
+    /// Microphone meter and when it started.
+    meter: Mutex<Option<(klip_platform::AudioCapture, Instant)>>,
+    /// Hotkeys are unbound (`hotkeys.pause`) since then.
+    hotkeys_paused: Mutex<Option<Instant>>,
     wake: (Mutex<bool>, Condvar),
     stop: AtomicBool,
     exit: AtomicBool,
@@ -172,6 +177,8 @@ impl Engine {
             library_lock: Mutex::new(()),
             cleaning: AtomicBool::new(false),
             low_disk_warned: Mutex::new(None),
+            meter: Mutex::new(None),
+            hotkeys_paused: Mutex::new(None),
             wake: (Mutex::new(false), Condvar::new()),
             stop: AtomicBool::new(false),
             exit: AtomicBool::new(false),
@@ -301,6 +308,8 @@ impl Inner {
         }
         self.cleanup_in_background(Vec::new());
         while !self.stop.load(Ordering::Relaxed) {
+            self.meter_watchdog();
+            self.hotkeys_watchdog();
             if catch_unwind(AssertUnwindSafe(|| self.tick())).is_err() {
                 tracing::error!("game watcher panicked; carrying on");
             }
@@ -664,6 +673,7 @@ impl Inner {
             "recorder": current.as_ref().map(|(r, _)| r.status()),
             "last_error": last_error,
             "hotkeys": lock(&self.bound).clone(),
+            "hotkeys_paused": lock(&self.hotkeys_paused).is_some(),
             "settings_status": status_name(self.load_status),
             "settings_issues": self.load_issues.iter().map(ToString::to_string).collect::<Vec<_>>(),
         })
@@ -731,6 +741,13 @@ impl Handler for Inner {
                 }
                 Ok(r)
             }
+            commands::ENCODERS_LIST => self.encoders_list(args),
+            commands::AUDIO_DEVICES => self.audio_devices(),
+            commands::AUDIO_METER => self.audio_meter(args),
+            commands::RECORDING_ESTIMATE => self.recording_estimate(args),
+            commands::HOTKEYS_PAUSE => Ok(self.hotkeys_pause()),
+            commands::HOTKEYS_RESUME => Ok(self.hotkeys_resume()),
+            commands::GAMES_CANDIDATES => self.games_candidates(),
             commands::STORAGE_STATUS => self.storage_status(),
             commands::STORAGE_CLEANUP => self.cleanup(&[]),
             commands::CLIP_STAR => self.star(args),

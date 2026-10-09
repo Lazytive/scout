@@ -1,8 +1,9 @@
 // App state: the engine's status (refreshed on events and every few seconds while the
 // window is open) and a short activity log.
 
-import { call, onEvent, setWindowTheme } from './api';
+import { CommandError, call, onEvent, setWindowTheme } from './api';
 import { describeEvent, type Tone } from './format';
+import { patchFor, splitError, type Settings } from './settings';
 import { applyTheme, resolve, type ThemeSetting } from './themes';
 import type { KlipEvent, Status, StorageStatus } from './types';
 
@@ -19,7 +20,11 @@ export const app = $state({
   status: null as Status | null,
   storage: null as StorageStatus | null,
   /** The engine's settings (`settings.get`), kept fresh from `settings_changed`. */
-  settings: null as Record<string, unknown> | null,
+  settings: null as Settings | null,
+  /** Rejected changes by setting path (`recording.buffer_secs`), until the next save. */
+  fieldErrors: {} as Record<string, string>,
+  /** Microphone meter (`audio.meter`), dBFS. */
+  mic: { peak: -100, rms: -100 },
   themeSetting: 'system' as ThemeSetting,
   activity: [] as Activity[],
   /** The last command error, shown until the next command. */
@@ -56,10 +61,57 @@ function showTheme() {
 
 function useSettings(s: unknown) {
   if (!s || typeof s !== 'object') return;
-  app.settings = s as Record<string, unknown>;
-  const appearance = app.settings.appearance as { theme?: ThemeSetting } | undefined;
-  app.themeSetting = appearance?.theme ?? 'system';
+  app.settings = s as Settings;
+  app.themeSetting = (app.settings.appearance?.theme as ThemeSetting | undefined) ?? 'system';
   showTheme();
+}
+
+/** Save one setting (a strict merge patch). A rejection is shown next to the field. */
+export async function save(path: string[], value: unknown): Promise<boolean> {
+  const key = path.join('.');
+  try {
+    const r = await call<{ settings: unknown }>('settings.set', patchFor(path, value));
+    useSettings(r.settings);
+    const errors = { ...app.fieldErrors };
+    for (const k of Object.keys(errors)) {
+      if (k === key || k.startsWith(`${key}.`) || k.startsWith(`${key}[`)) delete errors[k];
+    }
+    app.fieldErrors = errors;
+    return true;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    const { path: at, text } = e instanceof CommandError && e.code === 'bad_args' ? splitError(message) : { path: '', text: message };
+    app.fieldErrors = { ...app.fieldErrors, [at || key]: text };
+    return false;
+  }
+}
+
+/** The error shown for a setting path (or anything below it). */
+export function fieldError(path: string): string | null {
+  for (const [k, v] of Object.entries(app.fieldErrors)) {
+    if (k === path || k.startsWith(`${path}.`) || k.startsWith(`${path}[`)) return v;
+  }
+  return null;
+}
+
+/** Microphone meter on or off. */
+export async function meter(on: boolean, device: string | null = null): Promise<void> {
+  try {
+    await call('audio.meter', on ? { on: true, device } : { on: false });
+  } catch (e) {
+    app.error = e instanceof Error ? e.message : String(e);
+  }
+  if (!on) app.mic = { peak: -100, rms: -100 };
+}
+
+/** While a hotkey field listens, the engine's hotkeys are off (or the combination
+    would run instead of reaching the window). */
+export async function pauseHotkeys(): Promise<void> {
+  await call('hotkeys.pause').catch(() => undefined);
+}
+
+export async function resumeHotkeys(): Promise<void> {
+  await call('hotkeys.resume').catch(() => undefined);
 }
 
 export async function refreshSettings(): Promise<void> {
@@ -103,6 +155,10 @@ export async function run(cmd: string, args?: unknown): Promise<void> {
 /** Start listening; returns a stop function. */
 export async function connect(): Promise<() => void> {
   const unlisten = await onEvent((e) => {
+    if (e.event === 'mic_level') {
+      app.mic = { peak: e.peak_db, rms: e.rms_db };
+      return;
+    }
     log(e);
     if (e.event === 'settings_changed') useSettings(e.settings);
     void refresh();

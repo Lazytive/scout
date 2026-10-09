@@ -54,6 +54,19 @@ pub mod commands {
     pub const STORAGE_CLEANUP: &str = "storage.cleanup";
     /// Star or unstar a clip. Args: `{"path": "…", "starred": true}`.
     pub const CLIP_STAR: &str = "clip.star";
+    /// GPUs and working encoders, best first. Args: `{"codec": "h264"}` (optional).
+    pub const ENCODERS_LIST: &str = "encoders.list";
+    /// Audio inputs and outputs with their ids.
+    pub const AUDIO_DEVICES: &str = "audio.devices";
+    /// Microphone meter on/off (`mic_level` events). Args: `{"on": true, "device": null}`.
+    pub const AUDIO_METER: &str = "audio.meter";
+    /// Replay-buffer RAM estimate for (draft) settings. Args: settings JSON or null.
+    pub const RECORDING_ESTIMATE: &str = "recording.estimate";
+    /// Unbind hotkeys while a new one is typed (back after a minute at most).
+    pub const HOTKEYS_PAUSE: &str = "hotkeys.pause";
+    pub const HOTKEYS_RESUME: &str = "hotkeys.resume";
+    /// Running programs with a window, to add as games.
+    pub const GAMES_CANDIDATES: &str = "games.candidates";
 }
 
 /// Longest accepted line (bytes, including the newline).

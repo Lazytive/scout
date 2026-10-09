@@ -46,9 +46,17 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   checked at recorder start and after clean-ups: below `low_disk_gb` → a `warning`
   event (at most every 30 min). Commands `storage.status`, `storage.cleanup`,
   `clip.star`.
+- Setup commands (`engine/setup.rs`, for the settings page and first run):
+  `encoders.list` (GPUs + working encoders best first, from the probe cache, probing if
+  needed), `audio.devices`, `audio.meter` (opens an input and emits `mic_level` peak/RMS
+  dBFS ~15/s; stops by itself after 2 min), `recording.estimate` (buffer RAM for draft
+  settings: preset at the primary monitor's refresh, audio tracks as the recorder lays
+  them out), `hotkeys.pause` / `hotkeys.resume` (unbind while a hotkey field listens;
+  back by themselves after 1 min), `games.candidates` (programs with a window to add
+  as games; `games::candidates`, no window titles).
 - `events`: `Event` (`ready`, `game_started/stopped`, `recorder_started/stopped/failed`,
   `clip_saved` with the game's window, `recording_started/stopped`, `bookmark`,
-  `action_failed` for hotkeys, `quick_menu`, `hotkeys` with each binding's error,
+  `action_failed` for hotkeys, `quick_menu`, `mic_level`, `hotkeys` with each binding's error,
   `settings_changed`, `storage_cleaned`, `recovered`, `warning`), fanned out to bounded queues (256 per
   subscriber; a stalled subscriber loses events, memory doesn't grow).
 - `config`: settings → `RecorderConfig`, shared with `klip-cli record`: clip and
@@ -65,6 +73,8 @@ without a game, strict settings changes (nothing changes on disk or in memory wh
 rejected), `settings_changed`, hotkeys rebound from settings, a broken settings file
 repaired and rewritten, the storage cap (1.3 GiB of test clips against 1 GiB: the oldest
 unstarred goes at start, the starred older one stays; usage, low-disk warning,
-`clip.star` checks). End to end with the test game: `apps/klip-cli/tests/m6_daemon.rs`.
+`clip.star` checks), the setup commands (estimate scales with the buffer and preset,
+hotkeys pause and resume, candidates, devices, meter arguments; `mic_meter_reports_levels`
+is a hardware test on the default microphone). End to end with the test game: `apps/klip-cli/tests/m6_daemon.rs`.
 
 Layer: media engine (no UI).

@@ -64,6 +64,14 @@ export async function setWindowTheme(scheme: 'light' | 'dark'): Promise<void> {
   }
 }
 
+/** Ask for a folder (the system's picker in the app, a prompt in a browser). */
+export async function pickFolder(current: string | null): Promise<string | null> {
+  if (!inTauri) return window.prompt('Folder', current ?? '') || null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const picked = await open({ directory: true, multiple: false, defaultPath: current ?? undefined });
+  return typeof picked === 'string' ? picked : null;
+}
+
 /** Subscribe to engine events; returns the unsubscribe function. */
 export async function onEvent(cb: (e: KlipEvent) => void): Promise<() => void> {
   return (await getBackend()).listen(cb);
