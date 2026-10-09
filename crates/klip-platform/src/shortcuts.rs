@@ -1,10 +1,10 @@
-//! System-wide shortcuts through the xdg-desktop-portal GlobalShortcuts interface (Wayland
-//! has no other way for an app to see keys while another app has focus). The desktop asks
-//! the user to confirm or pick the keys the first time; afterwards it remembers them for
-//! the app id ([`register_app_id`]).
+//! System-wide shortcuts. Linux: the xdg-desktop-portal GlobalShortcuts interface
+//! (Wayland has no other way for an app to see keys while another app has focus); the
+//! desktop asks the user to confirm or pick the keys the first time and afterwards
+//! remembers them for the app id ([`register_app_id`]). Windows: `RegisterHotKey` on a
+//! thread of our own (`hotkeys_win`, ADR 0014); the suggested trigger is used as is.
 //!
-//! Elsewhere [`GlobalShortcuts::bind`] returns [`PlatformError::Unsupported`] (Windows gets
-//! its hotkeys from the desktop app's shortcut plugin, M6).
+//! Elsewhere [`GlobalShortcuts::bind`] returns [`PlatformError::Unsupported`].
 
 use crate::PlatformError;
 
@@ -29,6 +29,8 @@ pub struct ShortcutSpec {
 pub struct BoundShortcut {
     pub id: String,
     pub trigger: String,
+    /// Why it isn't active (Windows: keys taken by another app, no keys, unknown key).
+    pub error: Option<String>,
 }
 
 /// Tell the portals which app this is (host apps only; sandboxed ones already have an
@@ -72,6 +74,8 @@ pub struct GlobalShortcuts {
     bound: Vec<BoundShortcut>,
     #[cfg(target_os = "linux")]
     _session: linux::Session,
+    #[cfg(windows)]
+    _session: crate::hotkeys_win::Session,
 }
 
 impl std::fmt::Debug for GlobalShortcuts {
@@ -83,9 +87,10 @@ impl std::fmt::Debug for GlobalShortcuts {
 }
 
 impl GlobalShortcuts {
-    /// Ask the desktop for `shortcuts` (it may show a dialog and block until the user
-    /// answers). `on_activated` gets the id of each shortcut pressed, on a portal thread;
-    /// it must be quick.
+    /// Ask the desktop for `shortcuts` (Linux: it may show a dialog and block until the
+    /// user answers). `on_activated` gets the id of each shortcut pressed, on a portal or
+    /// hotkey thread; it must be quick. On Windows a shortcut that can't be registered is
+    /// returned with its `error` set; the others still work.
     pub fn bind(
         shortcuts: &[ShortcutSpec],
         on_activated: Box<dyn Fn(&str) + Send>,
@@ -98,7 +103,15 @@ impl GlobalShortcuts {
                 _session: session,
             })
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(windows)]
+        {
+            let (session, bound) = crate::hotkeys_win::bind(shortcuts, on_activated)?;
+            Ok(GlobalShortcuts {
+                bound,
+                _session: session,
+            })
+        }
+        #[cfg(not(any(target_os = "linux", windows)))]
         {
             let _ = (shortcuts, on_activated);
             Err(PlatformError::Unsupported)
@@ -221,6 +234,7 @@ mod linux {
             .map(|s| BoundShortcut {
                 id: s.id().to_string(),
                 trigger: s.trigger_description().to_string(),
+                error: None,
             })
             .collect();
         // The portal sends activations only to the session's owner (this connection).

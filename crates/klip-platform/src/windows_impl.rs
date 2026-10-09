@@ -35,6 +35,9 @@ use windows::Win32::System::Com::{
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
+use windows::Win32::System::Threading::{
+    OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+};
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
@@ -43,7 +46,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClientRect, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
     IsIconic, IsWindow, IsWindowVisible, MONITORINFOF_PRIMARY,
 };
-use windows::core::{BOOL, Interface};
+use windows::core::{BOOL, Interface, PWSTR};
 
 use crate::{
     AudioSession, GpuAdapter, GpuVendor, MonitorInfo, PlatformError, ProcessInfo, WindowInfo,
@@ -404,6 +407,25 @@ pub(crate) fn list_processes() -> Result<Vec<ProcessInfo>, PlatformError> {
     // SAFETY: `snap` came from CreateToolhelp32Snapshot and is closed exactly once.
     let _ = unsafe { CloseHandle(snap) };
     Ok(out)
+}
+
+pub(crate) fn process_path(pid: u32) -> Result<std::path::PathBuf, PlatformError> {
+    // SAFETY: plain call; the handle is closed below. PROCESS_QUERY_LIMITED_INFORMATION is
+    // the smallest right (no memory access) and is granted even for protected processes.
+    let h = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.map_err(os)?;
+    let mut buf = vec![0u16; 32_768];
+    let mut len = u32::try_from(buf.len()).unwrap_or(0);
+    // SAFETY: `buf` is writable for `len` u16s; `len` is updated to the length written.
+    let res = unsafe {
+        QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &raw mut len)
+    };
+    // SAFETY: `h` came from OpenProcess and is closed exactly once.
+    let _ = unsafe { CloseHandle(h) };
+    res.map_err(os)?;
+    let n = usize::try_from(len).unwrap_or(0).min(buf.len());
+    Ok(std::path::PathBuf::from(String::from_utf16_lossy(
+        buf.get(..n).unwrap_or(&[]),
+    )))
 }
 
 /// Uninitialises COM on drop if this thread's `CoInitializeEx` succeeded.

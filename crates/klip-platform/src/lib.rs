@@ -8,6 +8,12 @@
 
 #[cfg(windows)]
 mod gst_d3d11;
+#[cfg(all(test, windows))]
+mod hotkey_tests;
+#[cfg(windows)]
+mod hotkeys_win;
+#[cfg(any(windows, test))]
+mod keymap;
 #[cfg(target_os = "linux")]
 mod linux_impl;
 #[cfg(target_os = "linux")]
@@ -351,6 +357,53 @@ pub fn list_gpus() -> Result<Vec<GpuAdapter>, PlatformError> {
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
+        Err(PlatformError::Unsupported)
+    }
+}
+
+/// All visible top-level windows (Windows; elsewhere unsupported: Wayland has no window
+/// list).
+pub fn list_windows() -> Result<Vec<WindowInfo>, PlatformError> {
+    #[cfg(windows)]
+    {
+        windows_impl::list_windows()
+    }
+    #[cfg(not(windows))]
+    {
+        Err(PlatformError::Unsupported)
+    }
+}
+
+/// Full path of a process's executable. Windows: `QueryFullProcessImageNameW` with
+/// `PROCESS_QUERY_LIMITED_INFORMATION` (the least access there is; no memory access).
+/// Linux: `/proc/<pid>/exe`, or for Wine/Proton loaders the program in the command line.
+pub fn process_path(pid: u32) -> Result<std::path::PathBuf, PlatformError> {
+    #[cfg(windows)]
+    {
+        windows_impl::process_path(pid)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux_impl::process_path(pid)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let _ = pid;
+        Err(PlatformError::Unsupported)
+    }
+}
+
+/// Press and release a shortcut-spec trigger (e.g. `ALT+F10`) as if typed, system-wide.
+/// For tests and automation (Windows; elsewhere unsupported). The modifiers reach the
+/// focused app, so tests use bare keys no keyboard has (F13–F24).
+pub fn press_keys(trigger: &str) -> Result<(), PlatformError> {
+    #[cfg(windows)]
+    {
+        hotkeys_win::press(trigger)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = trigger;
         Err(PlatformError::Unsupported)
     }
 }

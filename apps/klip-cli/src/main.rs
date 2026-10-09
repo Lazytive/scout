@@ -190,8 +190,9 @@ struct RecordArgs {
     /// (default: the Klip folder in the XDG state dir).
     #[arg(long, value_name = "FILE")]
     portal_token: Option<PathBuf>,
-    /// Save a clip with a system-wide shortcut (Linux: the desktop's GlobalShortcuts
-    /// portal, which asks you to confirm the keys the first time). Optional suggested keys.
+    /// Save a clip with a system-wide shortcut (Windows: RegisterHotKey, the keys as
+    /// given; Linux: the desktop's GlobalShortcuts portal, which asks you to confirm the
+    /// keys the first time). Keys in the shortcuts-spec format, e.g. `ALT+F10`.
     #[arg(long, num_args = 0..=1, default_missing_value = "ALT+F10", value_name = "KEYS")]
     hotkey: Option<String>,
     /// Length of clips saved with --hotkey.
@@ -204,10 +205,10 @@ struct RecordArgs {
     /// Folder for full-session recordings (default: the clip folder).
     #[arg(long, value_name = "DIR")]
     session_dir: Option<PathBuf>,
-    /// Shortcut that starts/stops a full-session recording (Linux portal, like --hotkey).
+    /// Shortcut that starts/stops a full-session recording (like --hotkey).
     #[arg(long, num_args = 0..=1, default_missing_value = "ALT+F9", value_name = "KEYS")]
     record_hotkey: Option<String>,
-    /// Shortcut that adds a bookmark (Linux portal, like --hotkey).
+    /// Shortcut that adds a bookmark (like --hotkey).
     #[arg(long, num_args = 0..=1, default_missing_value = "ALT+F8", value_name = "KEYS")]
     bookmark_hotkey: Option<String>,
 }
@@ -559,7 +560,9 @@ fn bind_hotkeys(
     let shortcuts = klip_platform::GlobalShortcuts::bind(&specs, Box::new(on_press))
         .context("global shortcut")?;
     for s in shortcuts.bound() {
-        if s.trigger.is_empty() {
+        if let Some(e) = &s.error {
+            eprintln!("Shortcut {} ({}) is not active: {e}", s.id, s.trigger);
+        } else if s.trigger.is_empty() {
             eprintln!(
                 "Shortcut {} has no keys yet; set them in the desktop's settings.",
                 s.id

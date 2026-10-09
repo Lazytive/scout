@@ -13,9 +13,9 @@ klip-cli record [--buffer 120s] [--fps 60] [--bitrate 20000] [--max-size 1920x10
                 [--audio-bitrate 160] [--no-separate-tracks]
                 [--portal monitor|window|any] [--portal-token FILE]   # Linux
                 [--game EXE]           # Linux: the game's program, for the Game track
-                [--hotkey [KEYS]] [--hotkey-length 30s]   # Linux: GlobalShortcuts portal
+                [--hotkey [KEYS]] [--hotkey-length 30s]   # Windows: RegisterHotKey; Linux: portal
                 [--session] [--session-dir DIR]          # full-session recording
-                [--record-hotkey [KEYS]] [--bookmark-hotkey [KEYS]]   # Linux portal
+                [--record-hotkey [KEYS]] [--bookmark-hotkey [KEYS]]
 klip-cli clip [--last 30s]        # save from the running recorder; prints JSON
 klip-cli session start|stop|toggle   # full-session recording in the running recorder
 klip-cli bookmark                 # mark this moment (recording + clips that cover it)

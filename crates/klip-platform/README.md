@@ -16,6 +16,15 @@ Windows (Win32/DXGI via the `windows` crate):
 - `exclusive_fullscreen_active`: the shell's "D3D full screen" notification state.
 - `enable_dpi_awareness`: per-monitor-v2, so sizes are physical pixels.
 - `list_processes`: pid, parent pid, executable name (Toolhelp snapshot).
+  `process_path(pid)`: full executable path (`QueryFullProcessImageNameW` with
+  `PROCESS_QUERY_LIMITED_INFORMATION`: no memory access, allowed even for protected
+  processes). `list_windows`: all visible top-level windows (game detection).
+- `GlobalShortcuts` (`hotkeys_win.rs`, ADR 0014): `RegisterHotKey` on a `klip-hotkeys`
+  thread with its own message loop (`MOD_NOREPEAT`); triggers in the shortcuts-spec
+  format are mapped to virtual keys by `keymap.rs` (US-layout punctuation). A combination
+  another app holds comes back as `BoundShortcut::error` ("already used by another app")
+  while the others work; dropping unregisters. `press_keys(trigger)` types a trigger
+  with `SendInput` (tests; modifiers reach the focused app, so tests press bare F24).
 - `audio_sessions`: processes with an audio session on any active output device (WASAPI
   session manager; system sounds and expired sessions left out), and whether each is
   playing. Used to pick apps for audio capture; exe names are shown to the user only.
@@ -41,6 +50,9 @@ Gotcha: the `windows` crate implements `Drop` for `PROPVARIANT` (it calls
 so it is wrapped in `ManuallyDrop`; otherwise the heap is corrupted (found by
 `audio_capture_is_continuous_and_qpc_stamped`). Diagnostic: `tests/loopback_offset.rs`
 (`diag_`, needs `KLIP_DIAG_PID`) compares process and system loopback timing.
+Hotkeys (`hotkey_tests.rs`): every `klip-settings` key maps to a virtual key; a duplicate
+combination, an unknown key and a missing trigger are reported per shortcut and dropping
+unregisters; hardware (`e2e`): a pressed F24 reaches the callback, twice.
 
 Linux (`linux_impl.rs`, `screencast.rs`; ADR 0012):
 - `list_gpus`: DRM cards from sysfs (PCI vendor/device ids, driver, PCI slot packed into
@@ -73,6 +85,8 @@ Linux (`linux_impl.rs`, `screencast.rs`; ADR 0012):
   entry (`NoDisplay=true`, `Exec` = this executable) to `$XDG_DATA_HOME/applications`,
   because the portal only accepts ids with a desktop entry whose program exists.
   `APP_ID = dev.klip.Klip` is a working id that changes with the final name.
+- `process_path`: `/proc/<pid>/exe`, or the command line's program for Wine/Proton
+  loaders (untested until the next Linux session).
 - Monitors and windows return `Unsupported` (Wayland has no window list).
 
 Only documented OS APIs are used (WGC is the OS capture API). Nothing here touches

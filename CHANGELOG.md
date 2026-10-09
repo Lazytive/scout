@@ -5,6 +5,14 @@ reason)`.
 
 ## Unreleased
 
+- M6.2 — `klip-platform`: Windows global hotkeys (`RegisterHotKey` on its own message
+  thread behind `GlobalShortcuts`; per-shortcut `error` for taken/unknown keys),
+  shortcuts-spec trigger → virtual-key map, `press_keys` (SendInput, for tests),
+  `process_path` (Windows: PROCESS_QUERY_LIMITED_INFORMATION; Linux: /proc, Wine
+  command line), public `list_windows`. `klip-cli --hotkey/--record-hotkey/
+  --bookmark-hotkey` now work on Windows. (Claude Opus 5.5: M6 hotkeys and game
+  detection)
+
 - M6.1 — ADR 0014 (app architecture: `klip-settings`, `klip-library`, `klip-engine`,
   thin Tauri shell; settings file rules; presets; hotkeys via RegisterHotKey on Windows).
   New pure crate `klip-settings`: settings schema v1, hostile-file loading with

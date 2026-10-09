@@ -200,6 +200,21 @@ fn parent_pid(stat: &str) -> Option<u32> {
 
 /// Running processes: pid, parent pid and executable file name (the `exe` link's file
 /// name when readable, else the kernel's 15-character `comm`).
+/// Executable of `pid`; for Wine/Proton loaders the Windows program from the command line
+/// (Wine rewrites it to the program's path).
+pub fn process_path(pid: u32) -> Result<std::path::PathBuf, PlatformError> {
+    let base = std::path::PathBuf::from(format!("/proc/{pid}"));
+    let exe = fs::read_link(base.join("exe")).map_err(|e| PlatformError::Os(e.to_string()))?;
+    let name = exe.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if (name.starts_with("wine") || name.contains("preloader"))
+        && let Some(cmd) = read_small(&base.join("cmdline"), MAX_SMALL_FILE)
+        && let Some(first) = cmd.split('\0').next().filter(|s| !s.is_empty())
+    {
+        return Ok(std::path::PathBuf::from(first));
+    }
+    Ok(exe)
+}
+
 pub fn list_processes() -> Result<Vec<ProcessInfo>, PlatformError> {
     let dir = fs::read_dir("/proc").map_err(|e| PlatformError::Os(e.to_string()))?;
     let mut out = Vec::new();
