@@ -5,6 +5,12 @@
 
 use bytes::Bytes;
 
+mod drift;
+mod grid;
+
+pub use drift::{Aligned, DriftAligner};
+pub use grid::FrameGrid;
+
 /// Nanoseconds.
 pub type Nanos = i64;
 

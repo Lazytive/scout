@@ -46,7 +46,39 @@ pub struct Mp4Track<'a> {
     pub info: &'a TrackInfo,
     /// Packets in decode order.
     pub packets: &'a [Packet],
+    /// Track name (`hdlr` name; ffprobe shows it as `handler_name`).
+    pub name: Option<&'a str>,
+    /// Played by default. Players play the enabled track of each kind; editors import
+    /// all tracks. When a file has several audio tracks they form one alternate group,
+    /// so players pick one (the enabled one) instead of mixing them.
+    pub enabled: bool,
 }
+
+impl<'a> Mp4Track<'a> {
+    /// An enabled, unnamed track.
+    pub fn new(info: &'a TrackInfo, packets: &'a [Packet]) -> Mp4Track<'a> {
+        Mp4Track {
+            info,
+            packets,
+            name: None,
+            enabled: true,
+        }
+    }
+
+    pub fn named(self, name: &'a str) -> Mp4Track<'a> {
+        Mp4Track {
+            name: Some(name),
+            ..self
+        }
+    }
+
+    pub fn enabled(self, enabled: bool) -> Mp4Track<'a> {
+        Mp4Track { enabled, ..self }
+    }
+}
+
+/// Longest track name written (bytes); longer names are cut at a character boundary.
+pub const MAX_TRACK_NAME_BYTES: usize = 255;
 
 /// File-level options.
 #[derive(Clone, Copy, Debug, Default)]
@@ -77,6 +109,10 @@ const LANGUAGE_UND: u16 = 0x55C4;
 struct TrackPlan<'a> {
     info: &'a TrackInfo,
     packets: &'a [Packet],
+    name: Option<&'a str>,
+    enabled: bool,
+    /// `tkhd` alternate group (0 = none).
+    alternate_group: i16,
     track_id: u32,
     timescale: u32,
     durations: Vec<u32>,
@@ -169,6 +205,9 @@ fn plan_track<'a>(index: usize, t: &Mp4Track<'a>) -> Result<TrackPlan<'a>, Mp4Er
     Ok(TrackPlan {
         info: t.info,
         packets: t.packets,
+        name: t.name,
+        enabled: t.enabled,
+        alternate_group: 0,
         track_id: u32::try_from(index.saturating_add(1))
             .map_err(|_| Mp4Error::TooLarge("track count"))?,
         timescale,
@@ -211,6 +250,21 @@ pub fn write_mp4<W: Write>(
         .enumerate()
         .map(|(i, t)| plan_track(i, t))
         .collect::<Result<Vec<_>, _>>()?;
+
+    // Several audio tracks are alternatives to each other (mix, game, mic): players pick
+    // the enabled one rather than playing all of them at once.
+    let audio_tracks = plans
+        .iter()
+        .filter(|p| matches!(p.info.params, TrackParams::Audio(_)))
+        .count();
+    if audio_tracks > 1 {
+        for p in plans
+            .iter_mut()
+            .filter(|p| matches!(p.info.params, TrackParams::Audio(_)))
+        {
+            p.alternate_group = 1;
+        }
+    }
 
     // Align tracks on the earliest presentation time.
     let origin = tracks
@@ -452,14 +506,16 @@ fn write_trak(b: &mut BoxBuf, p: &TrackPlan<'_>, now: u64, co64: bool) -> Result
     let tk_duration = u64::try_from(ns_to_ts(p.total_ns(), MOVIE_TIMESCALE)).unwrap_or(0);
     // tkhd
     let v1 = needs_v1(&[now, tk_duration]);
-    let at = b.start_full(b"tkhd", u8::from(v1), 0x3); // enabled | in movie
+    // in movie, plus enabled.
+    let flags = if p.enabled { 0x3 } else { 0x2 };
+    let at = b.start_full(b"tkhd", u8::from(v1), flags);
     write_time_fields(b, v1, now);
     b.u32(p.track_id);
     b.u32(0);
     write_duration(b, v1, tk_duration);
     b.zeros(8);
     b.i16(0); // layer
-    b.i16(0); // alternate group
+    b.i16(p.alternate_group);
     let (volume, width, height) = match &p.info.params {
         TrackParams::Video(v) => (0u16, v.width, v.height),
         TrackParams::Audio(_) => (0x0100, 0, 0),
@@ -488,15 +544,16 @@ fn write_trak(b: &mut BoxBuf, p: &TrackPlan<'_>, now: u64, co64: bool) -> Result
     b.u16(0);
     b.finish(at)?;
     // hdlr
-    let (handler, name): (&[u8; 4], &[u8]) = match p.info.params {
-        TrackParams::Video(_) => (b"vide", b"VideoHandler\0"),
-        TrackParams::Audio(_) => (b"soun", b"SoundHandler\0"),
+    let (handler, default_name) = match p.info.params {
+        TrackParams::Video(_) => (b"vide", "VideoHandler"),
+        TrackParams::Audio(_) => (b"soun", "SoundHandler"),
     };
     let at = b.start_full(b"hdlr", 0, 0);
     b.u32(0);
     b.bytes(handler);
     b.zeros(12);
-    b.bytes(name);
+    b.bytes(track_name(p.name.unwrap_or(default_name)).as_bytes());
+    b.u8(0);
     b.finish(at)?;
 
     let minf = b.start(b"minf");
@@ -530,6 +587,18 @@ fn fixed_16_16(v: u32) -> Result<u32, Mp4Error> {
         return Err(Mp4Error::TooLarge("dimension"));
     }
     Ok(v << 16)
+}
+
+/// `name` without NULs, cut to [`MAX_TRACK_NAME_BYTES`] at a character boundary.
+fn track_name(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.chars().filter(|c| *c != '\0') {
+        if out.len().saturating_add(c.len_utf8()) > MAX_TRACK_NAME_BYTES {
+            break;
+        }
+        out.push(c);
+    }
+    out
 }
 
 fn write_edts(b: &mut BoxBuf, p: &TrackPlan<'_>) -> Result<(), Mp4Error> {

@@ -126,16 +126,7 @@ fn faststart_layout_and_sample_tables() {
     let v = video_packets(150, 1_000_000_000);
     // Audio starts 100 ms after video.
     let a = audio_packets(100, 1_100_000_000);
-    let tracks = [
-        Mp4Track {
-            info: &vi,
-            packets: &v,
-        },
-        Mp4Track {
-            info: &ai,
-            packets: &a,
-        },
-    ];
+    let tracks = [Mp4Track::new(&vi, &v), Mp4Track::new(&ai, &a)];
     let (d, summary) = write(&tracks, Mp4Options::default());
     assert_eq!(summary.samples, 250);
 
@@ -235,16 +226,7 @@ fn samples_are_interleaved_by_decode_time() {
     let v = video_packets(30, 0);
     let a = audio_packets(24, 0);
     let (d, _) = write(
-        &[
-            Mp4Track {
-                info: &vi,
-                packets: &v,
-            },
-            Mp4Track {
-                info: &ai,
-                packets: &a,
-            },
-        ],
+        &[Mp4Track::new(&vi, &v), Mp4Track::new(&ai, &a)],
         Mp4Options::default(),
     );
     let mdat = children(&d, 0, d.len())[2];
@@ -279,13 +261,7 @@ fn composition_offsets_and_edit_list() {
     for (p, k) in v.iter_mut().zip(pts) {
         p.pts = k * FRAME;
     }
-    let (d, _) = write(
-        &[Mp4Track {
-            info: &vi,
-            packets: &v,
-        }],
-        Mp4Options::default(),
-    );
+    let (d, _) = write(&[Mp4Track::new(&vi, &v)], Mp4Options::default());
     let (s, _) = find(&d, "moov/trak/mdia/minf/stbl/ctts");
     assert_eq!(d[s], 1, "ctts version 1");
     let (s, _) = find(&d, "moov/trak/edts/elst");
@@ -302,10 +278,7 @@ fn forced_co64_uses_64_bit_offsets() {
     let vi = video_info();
     let v = video_packets(10, 0);
     let (d, _) = write(
-        &[Mp4Track {
-            info: &vi,
-            packets: &v,
-        }],
+        &[Mp4Track::new(&vi, &v)],
         Mp4Options {
             force_co64: true,
             ..Default::default()
@@ -325,27 +298,13 @@ fn rejects_bad_input_without_panicking() {
         Err(Mp4Error::NoTracks)
     ));
     assert!(matches!(
-        write_mp4(
-            &mut out,
-            &[Mp4Track {
-                info: &vi,
-                packets: &[]
-            }],
-            &Mp4Options::default()
-        ),
+        write_mp4(&mut out, &[Mp4Track::new(&vi, &[])], &Mp4Options::default()),
         Err(Mp4Error::EmptyTrack(0))
     ));
     let mut v = video_packets(3, 0);
     v[2].dts = -5;
     assert!(matches!(
-        write_mp4(
-            &mut out,
-            &[Mp4Track {
-                info: &vi,
-                packets: &v
-            }],
-            &Mp4Options::default()
-        ),
+        write_mp4(&mut out, &[Mp4Track::new(&vi, &v)], &Mp4Options::default()),
         Err(Mp4Error::NonMonotonic(0))
     ));
     let mut huge = video_info();
@@ -358,10 +317,7 @@ fn rejects_bad_input_without_panicking() {
     assert!(matches!(
         write_mp4(
             &mut out,
-            &[Mp4Track {
-                info: &huge,
-                packets: &v
-            }],
+            &[Mp4Track::new(&huge, &v)],
             &Mp4Options::default()
         ),
         Err(Mp4Error::TooLarge(_))
@@ -372,17 +328,7 @@ fn rejects_bad_input_without_panicking() {
     v[0].pts = i64::MIN;
     v[1].dts = i64::MAX;
     v[1].pts = i64::MAX;
-    assert!(
-        write_mp4(
-            &mut out,
-            &[Mp4Track {
-                info: &vi,
-                packets: &v
-            }],
-            &Mp4Options::default()
-        )
-        .is_err()
-    );
+    assert!(write_mp4(&mut out, &[Mp4Track::new(&vi, &v)], &Mp4Options::default()).is_err());
     // Opus without an OpusHead.
     let opus = TrackInfo {
         codec: Codec::Opus,
@@ -397,10 +343,7 @@ fn rejects_bad_input_without_panicking() {
     assert!(matches!(
         write_mp4(
             &mut out,
-            &[Mp4Track {
-                info: &opus,
-                packets: &a
-            }],
+            &[Mp4Track::new(&opus, &a)],
             &Mp4Options::default()
         ),
         Err(Mp4Error::Unsupported(_))
@@ -428,16 +371,7 @@ fn opus_head_becomes_dops() {
     let v = video_packets(5, 0);
     let a = audio_packets(5, 0);
     let (d, _) = write(
-        &[
-            Mp4Track {
-                info: &vi,
-                packets: &v,
-            },
-            Mp4Track {
-                info: &opus,
-                packets: &a,
-            },
-        ],
+        &[Mp4Track::new(&vi, &v), Mp4Track::new(&opus, &a)],
         Mp4Options::default(),
     );
     let pos = d.windows(4).position(|w| w == b"dOps").unwrap();
@@ -451,10 +385,7 @@ fn atomic_save_refuses_overwrite_and_leaves_no_temp() {
     let path = dir.path().join("clip.mp4");
     let vi = video_info();
     let v = video_packets(10, 0);
-    let tracks = [Mp4Track {
-        info: &vi,
-        packets: &v,
-    }];
+    let tracks = [Mp4Track::new(&vi, &v)];
     let s = save_mp4_atomic(&path, &tracks, &Mp4Options::default()).unwrap();
     assert_eq!(std::fs::metadata(&path).unwrap().len(), s.bytes);
     assert!(matches!(
@@ -463,17 +394,7 @@ fn atomic_save_refuses_overwrite_and_leaves_no_temp() {
     ));
     // A failing write removes its temp file.
     let bad = dir.path().join("bad.mp4");
-    assert!(
-        save_mp4_atomic(
-            &bad,
-            &[Mp4Track {
-                info: &vi,
-                packets: &[]
-            }],
-            &Mp4Options::default()
-        )
-        .is_err()
-    );
+    assert!(save_mp4_atomic(&bad, &[Mp4Track::new(&vi, &[])], &Mp4Options::default()).is_err());
     let names: Vec<_> = std::fs::read_dir(dir.path())
         .unwrap()
         .map(|e| e.unwrap().file_name().into_string().unwrap())
@@ -488,4 +409,75 @@ fn rounding_helpers() {
     assert_eq!(ns_to_ts(i64::MAX, u32::MAX), i64::MAX);
     assert_eq!(ts_to_ns(1500, 90_000), 16_666_666);
     assert_eq!(ts_to_ns(5, 0), 0);
+}
+
+#[test]
+fn audio_tracks_are_named_grouped_and_only_the_mix_enabled() {
+    let vi = video_info();
+    let ai = audio_info();
+    let v = video_packets(30, 0);
+    let a = audio_packets(24, 0);
+    let long = "é".repeat(200);
+    let (d, _) = write(
+        &[
+            Mp4Track::new(&vi, &v),
+            Mp4Track::new(&ai, &a).named("Mix"),
+            Mp4Track::new(&ai, &a).named("Game\0").enabled(false),
+            Mp4Track::new(&ai, &a).named(&long).enabled(false),
+        ],
+        Mp4Options::default(),
+    );
+    let moov = children(&d, 0, d.len())[1];
+    let traks: Vec<_> = children(&d, moov.1, moov.2)
+        .into_iter()
+        .filter(|c| &c.0 == b"trak")
+        .collect();
+    assert_eq!(traks.len(), 4);
+    let mut seen = Vec::new();
+    for t in &traks {
+        let kids = children(&d, t.1, t.2);
+        let tkhd = kids.iter().find(|c| &c.0 == b"tkhd").unwrap();
+        let flags = be32(&d, tkhd.1) & 0x00FF_FFFF;
+        // v0 tkhd: version/flags, ctime, mtime, id, reserved, duration, 8 reserved, layer.
+        let group = i16::from_be_bytes(d[tkhd.1 + 34..tkhd.1 + 36].try_into().unwrap());
+        let mdia = kids.iter().find(|c| &c.0 == b"mdia").unwrap();
+        let hdlr = children(&d, mdia.1, mdia.2)
+            .into_iter()
+            .find(|c| &c.0 == b"hdlr")
+            .unwrap();
+        // version/flags, pre_defined, handler, 3 reserved words, then the name.
+        let name = &d[hdlr.1 + 24..hdlr.2];
+        assert_eq!(name.last(), Some(&0), "NUL-terminated");
+        let name = std::str::from_utf8(&name[..name.len() - 1])
+            .unwrap()
+            .to_string();
+        seen.push((flags, group, name));
+    }
+    assert_eq!(seen[0], (3, 0, "VideoHandler".to_string()));
+    assert_eq!(seen[1], (3, 1, "Mix".to_string()));
+    assert_eq!(seen[2], (2, 1, "Game".to_string()));
+    assert_eq!(seen[3].0, 2);
+    assert_eq!(
+        seen[3].2.len(),
+        254,
+        "cut at a char boundary under 255 bytes"
+    );
+
+    // A single audio track is not in an alternate group.
+    let (d, _) = write(
+        &[Mp4Track::new(&vi, &v), Mp4Track::new(&ai, &a)],
+        Mp4Options::default(),
+    );
+    let moov = children(&d, 0, d.len())[1];
+    let trak = children(&d, moov.1, moov.2)
+        .into_iter()
+        .filter(|c| &c.0 == b"trak")
+        .nth(1)
+        .unwrap();
+    let tkhd = children(&d, trak.1, trak.2)[0];
+    assert_eq!(&tkhd.0, b"tkhd");
+    assert_eq!(
+        i16::from_be_bytes(d[tkhd.1 + 34..tkhd.1 + 36].try_into().unwrap()),
+        0
+    );
 }

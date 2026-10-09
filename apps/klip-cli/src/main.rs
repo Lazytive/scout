@@ -11,7 +11,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use klip_capture::apps::{self, SystemPlan};
+use klip_capture::audio::{AudioConfig, AudioInput, AudioSource};
 use klip_capture::{EncodeConfig, VideoConfig, VideoTarget};
 use klip_control::{Client, ClientError, Server, commands};
 use klip_media::{Codec, NANOS_PER_MILLI, Nanos};
@@ -31,7 +33,7 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Cmd {
     /// Run the replay buffer until stopped (Ctrl+C or `klip-cli stop`).
-    Record(RecordArgs),
+    Record(Box<RecordArgs>),
     /// Save the last part of the replay buffer of the running recorder.
     Clip {
         /// Clip length, e.g. 30s, 2m.
@@ -54,6 +56,24 @@ enum Cmd {
     Monitors,
     /// List visible windows whose title contains TEXT.
     Windows { text: String },
+    /// List audio devices (inputs, and outputs for system audio) with their ids.
+    AudioDevices,
+    /// List apps that have audio, and which are left out of system audio by default.
+    AudioApps,
+}
+
+/// What the game-audio track records.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum AudioMode {
+    /// Only the captured window's process (and its children). Falls back to `system` when
+    /// recording a monitor or on Windows older than 10 version 2004.
+    Game,
+    /// Everything the output devices play, except music players (see `audio-apps`).
+    System,
+    /// Only the apps given with --app.
+    Apps,
+    /// No game/system audio.
+    None,
 }
 
 #[derive(clap::Args, Debug)]
@@ -91,6 +111,30 @@ struct RecordArgs {
     out: Option<PathBuf>,
     #[arg(long)]
     no_cursor: bool,
+    /// Game/system audio (default: game when recording a window, else system).
+    #[arg(long, value_enum)]
+    audio: Option<AudioMode>,
+    /// Also record a microphone: the default input, or a device id from
+    /// `klip-cli audio-devices`.
+    #[arg(long, num_args = 0..=1, default_missing_value = "default", value_name = "DEVICE")]
+    mic: Option<String>,
+    /// AAC bitrate per audio track in kbit/s (96, 128, 160, 192, 256 or 320).
+    #[arg(long, default_value_t = 160)]
+    audio_bitrate: u32,
+    /// With game audio and a mic: write only the mix, not the separate tracks.
+    #[arg(long)]
+    no_separate_tracks: bool,
+    /// Also record this app (executable name, e.g. Discord.exe) on its own track; repeat
+    /// for more. With `--audio apps`, record only these.
+    #[arg(long, value_name = "EXE")]
+    app: Vec<String>,
+    /// Leave this app out of system audio, in addition to the music players left out by
+    /// default; repeat for more.
+    #[arg(long, value_name = "EXE")]
+    exclude_app: Vec<String>,
+    /// Don't leave music players out of system audio.
+    #[arg(long)]
+    no_default_excludes: bool,
 }
 
 fn parse_dur(s: &str) -> Result<Nanos, String> {
@@ -184,6 +228,127 @@ fn pick_target(args: &RecordArgs) -> Result<VideoTarget> {
     Ok(VideoTarget::PrimaryMonitor)
 }
 
+fn excluded_apps(args: &RecordArgs) -> Vec<String> {
+    let mut v: Vec<String> = if args.no_default_excludes {
+        Vec::new()
+    } else {
+        apps::DEFAULT_EXCLUDED_APPS
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    };
+    v.extend(args.exclude_app.iter().cloned());
+    v
+}
+
+/// System audio without the excluded apps (see `klip_capture::apps::plan_system`).
+fn system_source(excluded: &[String]) -> AudioSource {
+    let whole = AudioSource::System { device: None };
+    if excluded.is_empty() || !klip_capture::audio::process_loopback_supported() {
+        return whole;
+    }
+    let procs = match klip_platform::list_processes() {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(error = %e, "process list unavailable; recording all system audio");
+            return whole;
+        }
+    };
+    let sessions = klip_platform::audio_sessions().unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "audio sessions unavailable");
+        Vec::new()
+    });
+    match apps::plan_system(&procs, &sessions, excluded) {
+        SystemPlan::Whole => whole,
+        SystemPlan::Except { pid, exe } => {
+            eprintln!("Leaving {exe} out of system audio.");
+            AudioSource::SystemExcept { pid }
+        }
+        SystemPlan::Apps { pids, excluded } => {
+            eprintln!(
+                "{} are playing; recording the other {} apps with audio one by one (apps that start later are not included).",
+                excluded.join(", "),
+                pids.len()
+            );
+            AudioSource::Apps { pids }
+        }
+    }
+}
+
+/// The audio inputs for a recording, or `None` for silence.
+fn pick_audio(args: &RecordArgs, target: VideoTarget) -> Result<Option<AudioConfig>> {
+    let mode = args.audio.unwrap_or(match target {
+        VideoTarget::Window(_) => AudioMode::Game,
+        VideoTarget::Monitor(_) | VideoTarget::PrimaryMonitor => AudioMode::System,
+    });
+    if mode == AudioMode::Apps && args.app.is_empty() {
+        bail!("--audio apps needs at least one --app");
+    }
+    if mode == AudioMode::System && !args.app.is_empty() {
+        bail!("system audio already includes every app; use --audio game or apps with --app");
+    }
+    let mut inputs = Vec::new();
+    let system = || system_source(&excluded_apps(args));
+    match (mode, target) {
+        (AudioMode::None | AudioMode::Apps, _) => {}
+        (AudioMode::Game, VideoTarget::Window(h)) => {
+            let pid = klip_platform::window_info(h)?.pid;
+            let source = if klip_capture::audio::process_loopback_supported() && pid != 0 {
+                AudioSource::Process { pid }
+            } else {
+                eprintln!(
+                    "Per-application audio isn't available here; recording all system audio."
+                );
+                AudioSource::System { device: None }
+            };
+            inputs.push(AudioInput {
+                label: "Game".into(),
+                source,
+            });
+        }
+        (AudioMode::Game | AudioMode::System, _) => inputs.push(AudioInput {
+            label: "System".into(),
+            source: system(),
+        }),
+    }
+    if !args.app.is_empty() {
+        if !klip_capture::audio::process_loopback_supported() {
+            bail!("recording single apps needs Windows 10 version 2004 or newer");
+        }
+        let roots = apps::app_roots(&klip_platform::list_processes()?, &args.app);
+        let pids: Vec<u32> = roots.iter().map(|(pid, _)| *pid).collect();
+        let source = match pids.as_slice() {
+            [] => bail!("none of the --app programs is running"),
+            [pid] => AudioSource::Process { pid: *pid },
+            _ => AudioSource::Apps { pids },
+        };
+        inputs.push(AudioInput {
+            label: apps::label_for(&args.app),
+            source,
+        });
+    }
+    if let Some(mic) = &args.mic {
+        inputs.push(AudioInput {
+            label: "Microphone".into(),
+            source: AudioSource::Device {
+                device: (mic != "default").then(|| mic.clone()),
+            },
+        });
+    }
+    if inputs.is_empty() {
+        return Ok(None);
+    }
+    let bitrate = args.audio_bitrate.saturating_mul(1000);
+    if !klip_capture::audio::BITRATES.contains(&bitrate) {
+        bail!("--audio-bitrate must be one of 96, 128, 160, 192, 256, 320");
+    }
+    Ok(Some(AudioConfig {
+        inputs,
+        bitrate,
+        separate_tracks: !args.no_separate_tracks,
+    }))
+}
+
 fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
     let discovery = discovery_path(cli)?;
     if let Ok(mut c) = Client::connect(&discovery, Duration::from_millis(500))
@@ -213,9 +378,14 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             .ok_or_else(|| anyhow!("no Videos folder; pass --out"))?
             .join("Klip"),
     };
+    let audio = pick_audio(args, target)?;
+    let audio_kbps = audio.as_ref().map_or(0, |a| {
+        let tracks = u32::try_from(a.track_labels().len()).unwrap_or(u32::MAX);
+        (a.bitrate / 1000).saturating_mul(tracks)
+    });
     let max_buffer_bytes = match args.max_buffer_mb {
         Some(mb) => mb.saturating_mul(1024 * 1024),
-        None => estimate_buffer_bytes(args.buffer, args.bitrate),
+        None => estimate_buffer_bytes(args.buffer, args.bitrate.saturating_add(audio_kbps)),
     };
     let cfg = RecorderConfig {
         buffer: args.buffer,
@@ -233,6 +403,7 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             bitrate_kbps: args.bitrate,
             keyframe_interval: args.fps,
         },
+        audio,
     };
     let recorder = Arc::new(Recorder::start(cfg).context("could not start capture")?);
     let server = Server::start(recorder.clone(), Some(&discovery)).context("control channel")?;
@@ -249,8 +420,16 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             "max_buffer_bytes": max_buffer_bytes,
             "clip_dir": clip_dir.to_string_lossy(),
             "port": server.port(),
+            "audio": status.get("audio"),
         })
     );
+    if let Some(e) = status
+        .get("audio")
+        .and_then(|a| a.get("error"))
+        .and_then(|e| e.as_str())
+    {
+        eprintln!("Audio is not recording: {e}");
+    }
     eprintln!(
         "Recording with {} at {}x{}. Save a clip with `klip-cli clip --last 30s`; stop with Ctrl+C.",
         encoder.element,
@@ -340,6 +519,8 @@ fn run() -> Result<()> {
             }
             Ok(())
         }
+        Cmd::AudioDevices => audio_devices(),
+        Cmd::AudioApps => audio_apps(),
         Cmd::Windows { text } => {
             klip_platform::enable_dpi_awareness();
             for w in klip_platform::find_windows(text)? {
@@ -356,6 +537,56 @@ fn run() -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn audio_devices() -> Result<()> {
+    let devices = klip_capture::audio::list_devices()?;
+    if devices.is_empty() {
+        println!("No audio devices found.");
+    }
+    for (title, loopback) in [("Inputs (--mic DEVICE)", false), ("Outputs", true)] {
+        println!("{title}:");
+        for d in devices.iter().filter(|d| d.loopback == loopback) {
+            println!("  {}\n    {}", d.name, d.id);
+        }
+    }
+    println!("Without an id, the default device (when recording starts) is used.");
+    Ok(())
+}
+
+fn audio_apps() -> Result<()> {
+    let procs = klip_platform::list_processes()?;
+    let sessions = klip_platform::audio_sessions()?;
+    if sessions.is_empty() {
+        println!("No app has audio right now.");
+        return Ok(());
+    }
+    let excluded: Vec<String> = apps::DEFAULT_EXCLUDED_APPS
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let excluded_roots = apps::app_roots(&procs, &excluded);
+    println!("{:>7}  {:<8} app", "pid", "playing");
+    for s in sessions {
+        let exe = procs
+            .iter()
+            .find(|p| p.pid == s.pid)
+            .map_or("?", |p| p.exe.as_str());
+        // A session can belong to a child process of a music player.
+        let left_out = excluded.iter().any(|e| e.eq_ignore_ascii_case(exe))
+            || excluded_roots.iter().any(|(pid, _)| *pid == s.pid);
+        println!(
+            "{:>7}  {:<8} {exe}{}",
+            s.pid,
+            if s.active { "yes" } else { "no" },
+            if left_out {
+                "  (left out of system audio by default)"
+            } else {
+                ""
+            }
+        );
+    }
+    Ok(())
 }
 
 fn main() -> std::process::ExitCode {

@@ -212,12 +212,13 @@ fn audio_is_trimmed_to_anchor_and_included_in_snapshots() {
             max_duration: 5 * NANOS_PER_SEC,
             max_bytes: u64::MAX,
         },
-        &[TrackKind::Video, TrackKind::Audio],
+        &[TrackKind::Video, TrackKind::Audio, TrackKind::Audio],
     )
     .unwrap();
     r.set_track_info(0, video_info(0)).unwrap();
     r.set_track_info(1, audio_info()).unwrap();
-    // 20 ms audio packets interleaved with 60 fps video for 12 s.
+    r.set_track_info(2, audio_info()).unwrap();
+    // 20 ms audio packets (track 2; track 1 stays empty) with 60 fps video for 12 s.
     let audio_step = NANOS_PER_SEC / 50;
     let mut next_audio = 0;
     for i in 0..60 * 12 {
@@ -230,12 +231,14 @@ fn audio_is_trimmed_to_anchor_and_included_in_snapshots() {
                 keyframe: true,
                 data: Bytes::from_static(&[0; 10]),
             };
-            r.push(1, a).unwrap();
+            r.push(2, a).unwrap();
             next_audio += audio_step;
         }
     }
     let snap = r.snapshot(i64::MAX).unwrap();
+    // The empty track is left out; snapshot tracks keep their ring index.
     assert_eq!(snap.tracks.len(), 2);
+    assert_eq!((snap.tracks[0].track, snap.tracks[1].track), (0, 2));
     let a = &snap.tracks[1].packets;
     assert!(a[0].pts >= snap.start);
     assert!(a[0].pts < snap.start + audio_step);
@@ -300,4 +303,58 @@ proptest! {
             }
         }
     }
+}
+
+#[test]
+fn snapshot_until_cuts_at_the_request_time() {
+    let mut r = Ring::new(
+        RingConfig {
+            max_duration: 60 * NANOS_PER_SEC,
+            max_bytes: u64::MAX,
+        },
+        &[TrackKind::Video, TrackKind::Audio, TrackKind::Audio],
+    )
+    .unwrap();
+    r.set_track_info(0, video_info(0)).unwrap();
+    r.set_track_info(1, audio_info()).unwrap();
+    let audio_step = NANOS_PER_SEC / 50;
+    for i in 0..600 {
+        r.push(0, pkt(i, i % 60 == 0, 100)).unwrap();
+    }
+    for k in 0..500 {
+        let t = k * audio_step;
+        r.push(
+            1,
+            Packet {
+                pts: t,
+                dts: t,
+                duration: audio_step,
+                keyframe: true,
+                data: Bytes::from_static(&[0; 10]),
+            },
+        )
+        .unwrap();
+    }
+    assert_eq!(r.anchor_end(), Some(600 * FRAME));
+    assert_eq!(r.track_end(1), Some(10 * NANOS_PER_SEC));
+    assert_eq!(r.track_end(2), None);
+    assert_eq!(r.active_secondary_tracks(), [1]);
+    let until = 400 * FRAME;
+    let snap = r.snapshot_until(Some(until), 2 * NANOS_PER_SEC).unwrap();
+    let v = &snap.tracks[0].packets;
+    assert_eq!(v.last().unwrap().dts, 399 * FRAME);
+    // End 400 frames, 2 s back is frame 280: the keyframe at or before it is 240.
+    assert_eq!(v[0].dts, 240 * FRAME);
+    assert_eq!(snap.end, until);
+    let a = &snap.tracks[1].packets;
+    assert!(a.last().unwrap().pts < until && a.last().unwrap().dts_end() >= until);
+    assert_eq!(
+        r.snapshot_until(Some(0), NANOS_PER_SEC).unwrap_err(),
+        SnapshotError::Empty
+    );
+    // No limit is the same as a plain snapshot.
+    assert_eq!(
+        r.snapshot_until(None, NANOS_PER_SEC).unwrap().end,
+        r.snapshot(NANOS_PER_SEC).unwrap().end
+    );
 }

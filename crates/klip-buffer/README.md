@@ -10,6 +10,11 @@ by duration and bytes.
 - Other tracks are trimmed to the anchor's first packet.
 - `snapshot(length)` copies (refcounts) the packets from the keyframe at or before
   `end - length` to the end. With 1-second GOPs a 30 s request gives 30–31 s.
+  `snapshot_until(Some(t), length)` ends at the last video packet starting before `t`
+  (saves cut at the request time while waiting for audio). Snapshot tracks carry their
+  ring index (`TrackSnapshot::track`); tracks without data are left out.
+- `track_end`, `anchor_end`, `active_secondary_tracks` let the recorder see whether audio
+  has caught up.
 - A new codec description (`set_track_info` with different SPS/PPS) drops that track's
   packets, since old and new packets can't share one MP4 sample description.
 - Hostile input (oversized packets, timestamps going backwards, delta frames before the

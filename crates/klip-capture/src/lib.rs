@@ -7,15 +7,22 @@
 //!
 //! The encode half ([`build_encode_chain`]) is public so tests and benchmarks can feed it
 //! from an `appsrc` with known frames.
+//!
+//! Audio ([`audio`]) runs in its own pipeline so a failing device never stops video. All
+//! pipelines of a recording share one [`TimeBase`] (clock and base time), so their
+//! timestamps are on the same timeline.
 
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
+pub mod apps;
+pub mod audio;
+mod lag;
 mod props;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::thread::JoinHandle;
 
 use bytes::Bytes;
@@ -24,7 +31,8 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_video as gst_video;
 use klip_media::{
-    Codec, Colorimetry, MAX_PACKET_BYTES, Nanos, Packet, TrackInfo, TrackParams, VideoParams,
+    AudioParams, Codec, Colorimetry, FrameGrid, MAX_PACKET_BYTES, Nanos, Packet, TrackInfo,
+    TrackParams, VideoParams,
 };
 use klip_probe::{EncoderChoice, EncoderFamily};
 
@@ -85,6 +93,60 @@ pub trait PacketSink: Send + Sync + 'static {
     fn on_track_info(&self, track: usize, info: TrackInfo);
     fn on_packet(&self, track: usize, packet: Packet);
     fn on_error(&self, message: String);
+    /// Non-fatal problems, e.g. an audio device that failed and now records silence.
+    fn on_warning(&self, message: String) {
+        tracing::warn!(warning = %message, "capture warning");
+    }
+}
+
+/// One clock and base time shared by every pipeline of a recording, so buffers from
+/// different pipelines (video, audio) carry running times on the same timeline.
+#[derive(Clone, Debug)]
+pub struct TimeBase {
+    clock: gst::Clock,
+    base_time: gst::ClockTime,
+}
+
+impl TimeBase {
+    /// The monotonic system clock, with "now" as time zero.
+    pub fn new() -> Result<TimeBase, CaptureError> {
+        klip_probe::init().map_err(gst_err)?;
+        let clock = gst::SystemClock::obtain();
+        let base_time = clock.time();
+        Ok(TimeBase { clock, base_time })
+    }
+
+    /// Make `pipeline` use this clock and base time (call before starting it).
+    pub fn apply(&self, pipeline: &gst::Pipeline) {
+        pipeline.use_clock(Some(&self.clock));
+        pipeline.set_start_time(gst::ClockTime::NONE);
+        pipeline.set_base_time(self.base_time);
+    }
+
+    /// Clock time (ns) of running time zero. On Windows the system clock counts
+    /// QueryPerformanceCounter time, the same base WASAPI and WGC timestamps use, so this
+    /// maps clip times to other QPC-based logs (tests, bookmarks).
+    pub fn base_clock_ns(&self) -> u64 {
+        self.base_time.nseconds()
+    }
+
+    /// Current running time on this timeline.
+    pub fn now(&self) -> Nanos {
+        let t = self.clock.time().saturating_sub(self.base_time);
+        i64::try_from(t.nseconds()).unwrap_or(Nanos::MAX)
+    }
+}
+
+/// How the appsink callback treats buffer timestamps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Timing {
+    /// Keep them.
+    AsIs,
+    /// Snap video to a constant-rate grid of this many frames per second (see
+    /// [`FrameGrid`]). Only applied to streams without reordering (pts == dts).
+    FrameGrid(u32),
+    /// Add this offset (e.g. minus an encoder's delay).
+    Shift(Nanos),
 }
 
 /// Live counters of a session.
@@ -94,7 +156,10 @@ pub struct CaptureStats {
     pub bytes: AtomicU64,
     pub keyframes: AtomicU64,
     pub errors: AtomicU64,
+    pub warnings: AtomicU64,
     pub callback_panics: AtomicU64,
+    /// Video frames whose timestamp grid had to restart (see [`FrameGrid`]).
+    pub grid_restarts: AtomicU64,
 }
 
 /// Scale `(w, h)` down to fit in `(max_w, max_h)`, keeping aspect ratio, never upscaling,
@@ -206,16 +271,74 @@ fn configure_encoder(el: &gst::Element, cfg: &EncodeConfig) -> Result<(), Captur
     Ok(())
 }
 
+/// The first timestamp that entered an encoder, recorded by a pad probe. Some encoders
+/// offset their output timestamps (GStreamer's NVENC elements add 1000 hours through the
+/// `min-pts` mechanism so B-frame DTS can't go negative); the appsink callback uses this
+/// to move packets back onto the capture timeline, which audio shares.
+#[derive(Clone, Debug, Default)]
+pub struct InputOrigin(Arc<OnceLock<Nanos>>);
+
+impl InputOrigin {
+    /// Record the timestamp of the first buffer that passes `pad`.
+    pub fn watch(pad: &gst::Pad) -> InputOrigin {
+        let origin = InputOrigin::default();
+        let cell = origin.0.clone();
+        pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
+            if let Some(gst::PadProbeData::Buffer(b)) = &info.data
+                && let Some(pts) = clock_ns(b.pts())
+            {
+                let _ = cell.set(pts);
+                return gst::PadProbeReturn::Remove;
+            }
+            gst::PadProbeReturn::Ok
+        });
+        origin
+    }
+
+    pub fn get(&self) -> Option<Nanos> {
+        self.0.get().copied()
+    }
+}
+
+/// The encode half of a video pipeline (see [`build_encode_chain`]).
+#[derive(Debug)]
+pub struct EncodeChain {
+    /// Link your source to this.
+    pub input: gst::Element,
+    pub appsink: gst_app::AppSink,
+    /// First timestamp into the encoder.
+    pub origin: InputOrigin,
+}
+
+impl EncodeChain {
+    /// Route the encoded packets to `sink` as `track`, with timestamps back on the input
+    /// timeline (undoing any encoder offset) and then adjusted by `timing`.
+    pub fn attach(
+        &self,
+        track: usize,
+        sink: Arc<dyn PacketSink>,
+        stats: Arc<CaptureStats>,
+        timing: Timing,
+    ) {
+        attach(
+            &self.appsink,
+            track,
+            sink,
+            stats,
+            SinkState::new(timing, Some(self.origin.clone())),
+        );
+    }
+}
+
 /// Build `d3d11convert → NV12 (w x h) → [download/upload] → queue → encoder → parser →
-/// appsink` inside `bin`. Input must be `video/x-raw(memory:D3D11Memory)`. Returns the
-/// first element (link your source to it) and the appsink.
+/// appsink` inside `bin`. Input must be `video/x-raw(memory:D3D11Memory)`.
 pub fn build_encode_chain(
     bin: &gst::Pipeline,
     cfg: &EncodeConfig,
     width: u32,
     height: u32,
     fps: u32,
-) -> Result<(gst::Element, gst_app::AppSink), CaptureError> {
+) -> Result<EncodeChain, CaptureError> {
     if width == 0 || height == 0 || fps == 0 || fps > 1000 {
         return Err(CaptureError::Config(format!(
             "bad size/fps {width}x{height}@{fps}"
@@ -255,6 +378,11 @@ pub fn build_encode_chain(
         )));
     }
     configure_encoder(&encoder, cfg)?;
+    let origin = InputOrigin::watch(
+        &encoder
+            .static_pad("sink")
+            .ok_or_else(|| CaptureError::Gst("encoder has no sink pad".into()))?,
+    );
     chain.push(encoder);
     let (parser, out_caps) = parser_and_caps(cfg.encoder.codec)?;
     chain.push(make(parser)?);
@@ -267,7 +395,11 @@ pub fn build_encode_chain(
     chain.push(appsink.clone().upcast());
     bin.add_many(&chain).map_err(gst_err)?;
     gst::Element::link_many(&chain).map_err(gst_err)?;
-    Ok((convert, appsink))
+    Ok(EncodeChain {
+        input: convert,
+        appsink,
+        origin,
+    })
 }
 
 fn clock_ns(t: Option<gst::ClockTime>) -> Option<Nanos> {
@@ -286,13 +418,15 @@ fn colorimetry_from_caps(s: &gst::StructureRef) -> Option<Colorimetry> {
     })
 }
 
-/// Describe an encoded video stream from its parser caps.
+/// Describe an encoded stream from its parser caps: H.264/H.265/AV1 video or raw
+/// (not ADTS) AAC.
 pub fn track_info_from_caps(caps: &gst::CapsRef) -> Result<TrackInfo, String> {
     let s = caps.structure(0).ok_or("empty caps")?;
     let codec = match s.name().as_str() {
         "video/x-h264" => Codec::H264,
         "video/x-h265" => Codec::H265,
         "video/x-av1" => Codec::Av1,
+        "audio/mpeg" => return aac_track_info(s),
         other => return Err(format!("unsupported caps {other}")),
     };
     let codec_data = s
@@ -315,8 +449,98 @@ pub fn track_info_from_caps(caps: &gst::CapsRef) -> Result<TrackInfo, String> {
     Ok(info)
 }
 
+fn aac_track_info(s: &gst::StructureRef) -> Result<TrackInfo, String> {
+    if s.get::<i32>("mpegversion").ok() != Some(4)
+        || s.get::<&str>("stream-format").ok() != Some("raw")
+    {
+        return Err("only raw MPEG-4 AAC is supported".into());
+    }
+    let codec_data = s
+        .get::<gst::Buffer>("codec_data")
+        .map_err(|_| "caps have no codec_data".to_string())?;
+    let map = codec_data.map_readable().map_err(|e| e.to_string())?;
+    let rate = s.get::<i32>("rate").map_err(|e| e.to_string())?;
+    let channels = s.get::<i32>("channels").map_err(|e| e.to_string())?;
+    let info = TrackInfo {
+        codec: Codec::Aac,
+        codec_data: Bytes::copy_from_slice(map.as_slice()),
+        params: TrackParams::Audio(AudioParams {
+            sample_rate: u32::try_from(rate).map_err(|e| e.to_string())?,
+            channels: u16::try_from(channels).map_err(|e| e.to_string())?,
+        }),
+        bitrate: s
+            .get::<i32>("bitrate")
+            .ok()
+            .and_then(|b| u32::try_from(b).ok()),
+    };
+    info.validate().map_err(|e| e.to_string())?;
+    Ok(info)
+}
+
 struct SinkState {
     caps: Option<gst::Caps>,
+    timing: Timing,
+    grid: Option<FrameGrid>,
+    origin: Option<InputOrigin>,
+    /// Shift back onto the input timeline, fixed by the first packet.
+    restore: Option<Nanos>,
+}
+
+impl SinkState {
+    fn new(timing: Timing, origin: Option<InputOrigin>) -> SinkState {
+        let grid = match timing {
+            Timing::FrameGrid(fps) => FrameGrid::new(fps),
+            Timing::AsIs | Timing::Shift(_) => None,
+        };
+        SinkState {
+            caps: None,
+            timing,
+            grid,
+            origin,
+            restore: None,
+        }
+    }
+
+    /// Adjusted (pts, dts).
+    fn retime(&mut self, pts: Nanos, dts: Nanos, stats: &CaptureStats) -> (Nanos, Nanos) {
+        if let Some(origin) = &self.origin {
+            let shift = match self.restore {
+                Some(s) => s,
+                None => {
+                    let s = match origin.get() {
+                        Some(first_in) => first_in.saturating_sub(pts),
+                        None => {
+                            tracing::warn!("encoder input time unknown; keeping its timestamps");
+                            0
+                        }
+                    };
+                    tracing::debug!(
+                        shift = s,
+                        "encoder timestamps moved onto the capture timeline"
+                    );
+                    self.restore = Some(s);
+                    s
+                }
+            };
+            return self.adjust(pts.saturating_add(shift), dts.saturating_add(shift), stats);
+        }
+        self.adjust(pts, dts, stats)
+    }
+
+    fn adjust(&mut self, pts: Nanos, dts: Nanos, stats: &CaptureStats) -> (Nanos, Nanos) {
+        match (self.timing, self.grid.as_mut()) {
+            (Timing::Shift(by), _) => (pts.saturating_add(by), dts.saturating_add(by)),
+            (Timing::FrameGrid(_), Some(grid)) if pts == dts => {
+                let before = grid.restarts();
+                let t = grid.snap(pts);
+                if grid.restarts() != before {
+                    stats.grid_restarts.fetch_add(1, Ordering::Relaxed);
+                }
+                (t, t)
+            }
+            _ => (pts, dts),
+        }
+    }
 }
 
 fn handle_sample(
@@ -342,6 +566,10 @@ fn handle_sample(
     let map = buffer.map_readable().map_err(|e| e.to_string())?;
     let pts = clock_ns(buffer.pts()).ok_or("buffer without timestamp")?;
     let dts = clock_ns(buffer.dts()).unwrap_or(pts);
+    let (pts, dts) = state
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retime(pts, dts, stats);
     let keyframe = !buffer.flags().contains(gst::BufferFlags::DELTA_UNIT);
     let packet = Packet {
         pts,
@@ -361,15 +589,36 @@ fn handle_sample(
     Ok(())
 }
 
-/// Route an appsink's samples to `sink` as packets of `track`. Panics inside the callback
-/// are caught and counted; the stream keeps flowing.
+/// Route an appsink's samples to `sink` as packets of `track`, timestamps as they are.
+/// Panics inside the callback are caught and counted; the stream keeps flowing.
 pub fn attach_sink(
     appsink: &gst_app::AppSink,
     track: usize,
     sink: Arc<dyn PacketSink>,
     stats: Arc<CaptureStats>,
 ) {
-    let state = Mutex::new(SinkState { caps: None });
+    attach_sink_with(appsink, track, sink, stats, Timing::AsIs);
+}
+
+/// [`attach_sink`] with a timestamp adjustment.
+pub fn attach_sink_with(
+    appsink: &gst_app::AppSink,
+    track: usize,
+    sink: Arc<dyn PacketSink>,
+    stats: Arc<CaptureStats>,
+    timing: Timing,
+) {
+    attach(appsink, track, sink, stats, SinkState::new(timing, None));
+}
+
+fn attach(
+    appsink: &gst_app::AppSink,
+    track: usize,
+    sink: Arc<dyn PacketSink>,
+    stats: Arc<CaptureStats>,
+    state: SinkState,
+) {
+    let state = Mutex::new(state);
     appsink.set_callbacks(
         gst_app::AppSinkCallbacks::builder()
             .new_sample(move |appsink| {
@@ -410,6 +659,75 @@ impl std::fmt::Debug for CaptureSession {
     }
 }
 
+/// Reference caps of the arrival-time meta on captured frames.
+const ARRIVAL_META: &str = "timestamp/x-klip-arrival";
+
+/// How often the WGC source looks for a new frame, relative to the capture rate. The
+/// source stamps and hands over the newest frame once per slot of its frame-rate grid, so
+/// at the capture rate a frame could be up to a whole frame old, by an amount that differs
+/// per recording. Polling faster keeps that under a few ms; `videorate` then brings the
+/// rate back down by picking the frame nearest each output slot.
+const SOURCE_RATE_FACTOR: u32 = 8;
+const SOURCE_RATE_MIN: u32 = 240;
+const SOURCE_RATE_MAX: u32 = 1000;
+
+/// Stamp `src`'s buffers with their arrival time on `tb`'s timeline, and remember that time
+/// in a `ReferenceTimestampMeta` (rate conversion downstream rewrites the timestamps).
+fn restamp_on_arrival(src: &gst::Element, tb: &TimeBase) -> Result<(), CaptureError> {
+    let pad = src
+        .static_pad("src")
+        .ok_or_else(|| CaptureError::Gst("capture source has no src pad".into()))?;
+    let tb = tb.clone();
+    let caps = gst::Caps::new_empty_simple(ARRIVAL_META);
+    let last = Mutex::new(Nanos::MIN);
+    pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
+        if let Some(gst::PadProbeData::Buffer(buffer)) = info.data.as_mut() {
+            let mut last = last.lock().unwrap_or_else(PoisonError::into_inner);
+            // Strictly increasing even if two frames arrive within one clock tick.
+            let now = tb.now().max(last.saturating_add(1));
+            *last = now;
+            let t = gst::ClockTime::from_nseconds(u64::try_from(now).unwrap_or(0));
+            let b = buffer.make_mut();
+            b.set_pts(t);
+            b.set_dts(gst::ClockTime::NONE);
+            gst::ReferenceTimestampMeta::add(b, &caps, t, gst::ClockTime::NONE);
+        }
+        gst::PadProbeReturn::Ok
+    });
+    Ok(())
+}
+
+/// After rate conversion: give each kept frame its arrival time back, snapped to the
+/// capture rate's frame grid (constant frame rate, phase following the arrivals).
+fn snap_kept_frames(pad: &gst::Pad, fps: u32, stats: Arc<CaptureStats>) {
+    let grid = Mutex::new(FrameGrid::new(fps));
+    pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
+        let Some(gst::PadProbeData::Buffer(buffer)) = info.data.as_mut() else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let arrival = buffer
+            .iter_meta::<gst::ReferenceTimestampMeta>()
+            .find(|m| {
+                m.reference()
+                    .structure(0)
+                    .is_some_and(|s| s.name() == ARRIVAL_META)
+            })
+            .and_then(|m| i64::try_from(m.timestamp().nseconds()).ok());
+        let mut grid = grid.lock().unwrap_or_else(PoisonError::into_inner);
+        if let (Some(arrival), Some(g)) = (arrival, grid.as_mut()) {
+            let before = g.restarts();
+            let t = g.snap(arrival);
+            if g.restarts() != before {
+                stats.grid_restarts.fetch_add(1, Ordering::Relaxed);
+            }
+            let b = buffer.make_mut();
+            b.set_pts(gst::ClockTime::from_nseconds(u64::try_from(t).unwrap_or(0)));
+            b.set_dts(gst::ClockTime::NONE);
+        }
+        gst::PadProbeReturn::Ok
+    });
+}
+
 fn source_size(target: VideoTarget) -> Result<(u32, u32, VideoTarget), CaptureError> {
     match target {
         VideoTarget::Window(h) => {
@@ -439,11 +757,12 @@ fn source_size(target: VideoTarget) -> Result<(u32, u32, VideoTarget), CaptureEr
 }
 
 impl CaptureSession {
-    /// Build and start a screen/window capture session (Windows).
+    /// Build and start a screen/window capture session (Windows). Packets go to track 0.
     pub fn start(
         video: &VideoConfig,
         encode: &EncodeConfig,
         sink: Arc<dyn PacketSink>,
+        timebase: Option<&TimeBase>,
     ) -> Result<CaptureSession, CaptureError> {
         klip_probe::init().map_err(gst_err)?;
         if video.fps == 0 || video.fps > 1000 {
@@ -473,30 +792,56 @@ impl CaptureSession {
             }
             VideoTarget::PrimaryMonitor => {}
         }
+        if let Some(tb) = timebase {
+            restamp_on_arrival(&src, tb)?;
+        }
+        let source_rate = video
+            .fps
+            .saturating_mul(SOURCE_RATE_FACTOR)
+            .clamp(SOURCE_RATE_MIN, SOURCE_RATE_MAX);
+        let poll = capsfilter(&format!(
+            "video/x-raw(memory:D3D11Memory),framerate={source_rate}/1"
+        ))?;
+        let videorate = make("videorate")?;
+        // Never invent frames; keep the one nearest each output slot.
+        props::set_str(&videorate, "drop-only", "true");
         let rate = capsfilter(&format!(
             "video/x-raw(memory:D3D11Memory),framerate={}/1",
             video.fps
         ))?;
-        pipeline.add_many([&src, &rate]).map_err(gst_err)?;
-        src.link(&rate).map_err(gst_err)?;
-        let (first, appsink) = build_encode_chain(&pipeline, encode, out_w, out_h, video.fps)?;
-        rate.link(&first).map_err(gst_err)?;
+        pipeline
+            .add_many([&src, &poll, &videorate, &rate])
+            .map_err(gst_err)?;
+        gst::Element::link_many([&src, &poll, &videorate, &rate]).map_err(gst_err)?;
+        let chain = build_encode_chain(&pipeline, encode, out_w, out_h, video.fps)?;
+        rate.link(&chain.input).map_err(gst_err)?;
 
         let stats = Arc::new(CaptureStats::default());
-        attach_sink(&appsink, 0, sink.clone(), stats.clone());
-        let session = Self::run(pipeline, sink, stats, (out_w, out_h))?;
+        if timebase.is_some() {
+            let pad = rate
+                .static_pad("src")
+                .ok_or_else(|| CaptureError::Gst("capsfilter has no src pad".into()))?;
+            snap_kept_frames(&pad, video.fps, stats.clone());
+        }
+        chain.attach(0, sink.clone(), stats.clone(), Timing::AsIs);
+        let session = Self::run(pipeline, sink, stats, (out_w, out_h), timebase)?;
         tracing::info!(width = out_w, height = out_h, fps = video.fps, encoder = %encode.encoder.element, "capture started");
         Ok(session)
     }
 
-    /// Start an already-built pipeline and watch its bus. Used by [`CaptureSession::start`]
-    /// and by tests that build their own source.
+    /// Start an already-built pipeline and watch its bus. Used by [`CaptureSession::start`],
+    /// the audio session and tests that build their own source. With a `timebase`, the
+    /// pipeline uses its clock and base time.
     pub fn run(
         pipeline: gst::Pipeline,
         sink: Arc<dyn PacketSink>,
         stats: Arc<CaptureStats>,
         output: (u32, u32),
+        timebase: Option<&TimeBase>,
     ) -> Result<CaptureSession, CaptureError> {
+        if let Some(tb) = timebase {
+            tb.apply(&pipeline);
+        }
         let bus = pipeline
             .bus()
             .ok_or_else(|| CaptureError::Gst("pipeline has no bus".into()))?;
@@ -526,7 +871,10 @@ impl CaptureSession {
                                 sink.on_error(format!("{src}: {}", e.error()));
                             }
                             gst::MessageView::Warning(w) => {
-                                tracing::warn!(warning = %w.error(), "pipeline warning");
+                                thread_stats.warnings.fetch_add(1, Ordering::Relaxed);
+                                let src =
+                                    msg.src().map(|s| s.name().to_string()).unwrap_or_default();
+                                sink.on_warning(format!("{src}: {}", w.error()));
                             }
                             gst::MessageView::Eos(_) => {
                                 sink.on_error("capture stream ended".into());
@@ -598,6 +946,36 @@ mod tests {
         assert_eq!(fit_size(1281, 721, 1920, 1080), (1280, 720));
         assert_eq!(fit_size(0, 0, 0, 0), (64, 64));
         assert_eq!(fit_size(u32::MAX, u32::MAX, 1920, 1080), (1080, 1080));
+    }
+
+    /// Regression: NVENC output carried a 1000 h offset, so audio (on the real timeline)
+    /// looked older than every video frame and was evicted from the ring.
+    #[test]
+    fn encoder_offset_is_undone_then_grid_applied() {
+        const HOURS_1000: Nanos = 3_600_000_000_000_000;
+        let stats = CaptureStats::default();
+        let first_in = 5_000_000_000;
+        let origin = InputOrigin(Arc::new(OnceLock::from(first_in)));
+        let mut st = SinkState::new(Timing::FrameGrid(60), Some(origin));
+        let out: Vec<(Nanos, Nanos)> = (0..4)
+            .map(|i| {
+                // Encoder output: input time + 1000 h - first input, with 1 ms jitter.
+                let t = HOURS_1000 + i * 16_666_667 + if i == 2 { 1_000_000 } else { 0 };
+                st.retime(t, t, &stats)
+            })
+            .collect();
+        assert_eq!(
+            out,
+            [
+                (5_000_000_000, 5_000_000_000),
+                (5_016_666_667, 5_016_666_667),
+                (5_033_333_333, 5_033_333_333),
+                (5_050_000_000, 5_050_000_000),
+            ]
+        );
+        // Without an origin, timestamps pass through (audio, appsrc tests).
+        let mut plain = SinkState::new(Timing::Shift(-10), None);
+        assert_eq!(plain.retime(100, 90, &stats), (90, 80));
     }
 
     #[test]

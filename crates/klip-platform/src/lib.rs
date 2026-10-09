@@ -7,6 +7,8 @@
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
 #[cfg(windows)]
+mod wasapi;
+#[cfg(windows)]
 mod windows_impl;
 
 /// Errors from OS queries.
@@ -92,6 +94,154 @@ pub struct MonitorInfo {
     pub height: u32,
     pub primary: bool,
     pub device_name: String,
+}
+
+/// What an audio capture records.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CaptureEndpoint {
+    /// Loopback of an output device (`None`: the default output when capture starts).
+    Loopback { device: Option<String> },
+    /// One process tree's audio (`include`), or everything except it (Windows 10 2004+).
+    Process { pid: u32, include: bool },
+    /// A capture device such as a microphone (`None`: the default input).
+    Input { device: Option<String> },
+}
+
+/// A packet of captured audio: interleaved 32-bit float at the capture's rate/channels.
+#[derive(Clone, Copy, Debug)]
+pub struct AudioPacket<'a> {
+    /// QueryPerformanceCounter time of the first frame, in ns (see [`qpc_now_ns`]).
+    pub qpc_ns: i64,
+    pub frames: u32,
+    /// `None` for silence.
+    pub data: Option<&'a [f32]>,
+    /// The source reported a gap before this packet.
+    pub discontinuity: bool,
+}
+
+/// Receives captured audio on the capture thread. Must be quick.
+pub trait AudioCaptureSink: Send {
+    fn packet(&mut self, packet: AudioPacket<'_>);
+    /// Problems (device unavailable, lost, back) as user-facing text.
+    fn notice(&mut self, message: String);
+}
+
+/// A running audio capture (its own thread). Stops on drop.
+pub struct AudioCapture {
+    #[cfg(windows)]
+    handle: wasapi::Handle,
+}
+
+impl std::fmt::Debug for AudioCapture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioCapture").finish_non_exhaustive()
+    }
+}
+
+impl AudioCapture {
+    /// Start capturing `endpoint` as float `rate` Hz x `channels`. A device that can't be
+    /// opened (or is lost later) produces silence and a notice, and is retried.
+    pub fn start(
+        endpoint: CaptureEndpoint,
+        rate: u32,
+        channels: u16,
+        sink: Box<dyn AudioCaptureSink>,
+    ) -> Result<AudioCapture, PlatformError> {
+        #[cfg(windows)]
+        {
+            Ok(AudioCapture {
+                handle: wasapi::start(endpoint, rate, channels, sink)?,
+            })
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (endpoint, rate, channels, sink);
+            Err(PlatformError::Unsupported)
+        }
+    }
+
+    /// Stop and wait for the capture thread.
+    pub fn stop(mut self) {
+        self.shutdown();
+    }
+
+    fn shutdown(&mut self) {
+        #[cfg(windows)]
+        self.handle.shutdown();
+    }
+}
+
+impl Drop for AudioCapture {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+/// Current QueryPerformanceCounter time in ns: the clock of [`AudioPacket::qpc_ns`], WGC
+/// frame times and (on Windows) GStreamer's system clock.
+pub fn qpc_now_ns() -> i64 {
+    #[cfg(windows)]
+    {
+        wasapi::qpc_now_ns()
+    }
+    #[cfg(not(windows))]
+    {
+        0
+    }
+}
+
+/// Whether per-process audio capture is available (Windows 10 2004+).
+pub fn process_loopback_supported() -> bool {
+    #[cfg(windows)]
+    {
+        wasapi::process_loopback_supported()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+/// A running process.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProcessInfo {
+    pub pid: u32,
+    pub parent_pid: u32,
+    /// Executable file name, e.g. `Spotify.exe` (no path).
+    pub exe: String,
+}
+
+/// A process with an audio session on an active output device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AudioSession {
+    pub pid: u32,
+    /// Playing right now (otherwise the session exists but is idle).
+    pub active: bool,
+}
+
+/// All running processes (pid, parent, executable name).
+pub fn list_processes() -> Result<Vec<ProcessInfo>, PlatformError> {
+    #[cfg(windows)]
+    {
+        windows_impl::list_processes()
+    }
+    #[cfg(not(windows))]
+    {
+        Err(PlatformError::Unsupported)
+    }
+}
+
+/// Processes that have an audio session on any active output device (system sounds
+/// excluded), one entry per process.
+pub fn audio_sessions() -> Result<Vec<AudioSession>, PlatformError> {
+    #[cfg(windows)]
+    {
+        windows_impl::audio_sessions()
+    }
+    #[cfg(not(windows))]
+    {
+        Err(PlatformError::Unsupported)
+    }
 }
 
 /// Enumerate GPU adapters.
@@ -196,5 +346,72 @@ mod tests {
             window_info(u64::MAX),
             Err(PlatformError::NoSuchWindow(_))
         ));
+        let procs = list_processes().unwrap();
+        let me = procs.iter().find(|p| p.pid == std::process::id()).unwrap();
+        assert!(me.exe.to_lowercase().ends_with(".exe"), "{me:?}");
+        assert!(procs.iter().any(|p| p.pid == me.parent_pid));
+        // May be empty (no audio playing), but must not fail or list pid 0.
+        assert!(audio_sessions().unwrap().iter().all(|s| s.pid != 0));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn audio_capture_is_continuous_and_qpc_stamped() {
+        use std::sync::{Arc, Mutex};
+
+        type Log = Arc<Mutex<Vec<(i64, u32)>>>;
+        struct Collect(Log, Arc<Mutex<Vec<String>>>);
+        impl AudioCaptureSink for Collect {
+            fn packet(&mut self, p: AudioPacket<'_>) {
+                if let Some(d) = p.data {
+                    assert_eq!(d.len(), p.frames as usize * 2);
+                }
+                self.0.lock().unwrap().push((p.qpc_ns, p.frames));
+            }
+            fn notice(&mut self, message: String) {
+                self.1.lock().unwrap().push(message);
+            }
+        }
+        // Without an audio device, both still produce (generated) silence.
+        for endpoint in [
+            CaptureEndpoint::Process {
+                pid: std::process::id(),
+                include: true,
+            },
+            CaptureEndpoint::Loopback { device: None },
+        ] {
+            let log: Log = Arc::default();
+            let notices = Arc::default();
+            let t0 = qpc_now_ns();
+            let cap = AudioCapture::start(
+                endpoint.clone(),
+                48_000,
+                2,
+                Box::new(Collect(log.clone(), Arc::clone(&notices))),
+            )
+            .unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            cap.stop();
+            let t1 = qpc_now_ns();
+            let log = log.lock().unwrap();
+            println!(
+                "{endpoint:?}: {} packets, notices {:?}",
+                log.len(),
+                notices.lock().unwrap()
+            );
+            let frames: u64 = log.iter().map(|p| u64::from(p.1)).sum();
+            assert!(
+                frames >= 48_000 * 3 / 10,
+                "{endpoint:?}: only {frames} frames"
+            );
+            for w in log.windows(2) {
+                let end = w[0].0 + i64::from(w[0].1) * 1_000_000_000 / 48_000;
+                assert!(
+                    (w[1].0 - end).abs() < 2_000_000,
+                    "{endpoint:?}: gap/overlap {w:?}"
+                );
+            }
+            assert!(log[0].0 >= t0 - 100_000_000 && log.last().unwrap().0 <= t1);
+        }
     }
 }

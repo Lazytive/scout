@@ -4,13 +4,22 @@ A free, open-source game clipper for Windows and Linux: an always-on replay buff
 saves the last moments of your game to a plain MP4 with one key, using your GPU's hardware
 encoder (NVIDIA, AMD, Intel). No account, no telemetry. "Klip" is a working name.
 
-**Status: early development.** What exists today is a recorder CLI on Windows with NVENC.
+**Status: early development.** What exists today is a recorder CLI on Windows with NVENC
+and audio (game, apps, microphone) in sync with the video.
 See [ROADMAP.md](ROADMAP.md) for what works and what's measured.
 
 ## Anti-cheat safety
 
 Klip never injects into games, hooks their rendering, or reads their memory. It captures
-through OS APIs only (Windows Graphics Capture; on Linux the ScreenCast portal + PipeWire).
+through OS APIs only (Windows Graphics Capture and WASAPI; on Linux the ScreenCast portal +
+PipeWire).
+
+## Privacy
+
+Recordings stay on your computer. When Klip records a game's audio it also listens to the
+whole system mix, only to measure timing: that audio is analysed in memory for a few
+seconds and never written anywhere. Music players are left out of system audio by
+default, and the microphone is off unless you turn it on.
 
 ## Building (Windows)
 

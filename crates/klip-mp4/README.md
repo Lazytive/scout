@@ -17,6 +17,10 @@ every clip save. Decision record: `docs/adr/0003-own-mp4-writer.md`.
   offset.
 - Samples are interleaved by decode time, one sample per chunk. `co64` and a 64-bit
   `mdat` header are chosen automatically above 4 GiB.
+- `Mp4Track::new(info, packets).named("Game").enabled(false)`: the name goes in `hdlr`
+  (ffprobe `handler_name`), `enabled` in the `tkhd` flags (ffprobe `default` disposition).
+  With more than one audio track, all audio tracks share alternate group 1, so players
+  play the enabled one instead of all at once.
 - `save_mp4_atomic`: writes `<name>.part`, fsyncs, renames; refuses to overwrite and
   removes the temp file on failure.
 

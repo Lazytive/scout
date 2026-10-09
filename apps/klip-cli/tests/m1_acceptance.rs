@@ -15,79 +15,14 @@
     clippy::indexing_slicing
 )]
 
-use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
+mod common;
+
+use std::path::PathBuf;
+use std::process::Command;
 use std::time::{Duration, Instant};
 
+use common::{KillOnDrop, cli, game_exe, run_json, spawn_ready, stop_recorder};
 use klip_testkit::{continuity, oracle};
-use serde_json::Value;
-
-fn exe_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_klip-cli"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-/// Spawn a process and wait for its first stdout line that parses as JSON with
-/// `"event":"ready"`. Remaining stdout is drained in the background.
-fn spawn_ready(cmd: &mut Command, timeout: Duration) -> (Child, Value) {
-    let mut child = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .unwrap_or_else(|e| panic!("spawn {cmd:?}: {e}"));
-    let stdout = child.stdout.take().unwrap();
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if let Ok(v) = serde_json::from_str::<Value>(&line)
-                && v["event"] == "ready"
-            {
-                let _ = tx.send(v);
-            }
-        }
-    });
-    match rx.recv_timeout(timeout) {
-        Ok(v) => (child, v),
-        Err(_) => {
-            let _ = child.kill();
-            panic!("{cmd:?} did not become ready within {timeout:?}");
-        }
-    }
-}
-
-fn cli(discovery: &Path) -> Command {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_klip-cli"));
-    c.arg("--discovery").arg(discovery);
-    c
-}
-
-fn run_json(cmd: &mut Command) -> Value {
-    let out = cmd.output().unwrap();
-    assert!(
-        out.status.success(),
-        "{cmd:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
-        panic!(
-            "{cmd:?} printed non-JSON ({e}): {}",
-            String::from_utf8_lossy(&out.stdout)
-        )
-    })
-}
-
-struct KillOnDrop(Child);
-
-impl Drop for KillOnDrop {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
 
 #[test]
 #[ignore = "hardware: needs GPU encoder, desktop session, ffmpeg; run via `cargo xtask e2e`"]
@@ -100,16 +35,7 @@ fn record_buffer_and_clip_last_30s() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(30);
-    let game_exe = exe_dir().join(if cfg!(windows) {
-        "klip-testgame.exe"
-    } else {
-        "klip-testgame"
-    });
-    assert!(
-        game_exe.exists(),
-        "{} missing: build it (cargo xtask e2e does)",
-        game_exe.display()
-    );
+    let game_exe = game_exe();
 
     let tmp = tempfile::tempdir().unwrap();
     let discovery = tmp.path().join("control.json");
@@ -119,6 +45,7 @@ fn record_buffer_and_clip_last_30s() {
 
     let (game, ready) = spawn_ready(
         Command::new(&game_exe).args([
+            "--background",
             "--fps",
             &game_fps.to_string(),
             "--width",
@@ -157,14 +84,7 @@ fn record_buffer_and_clip_last_30s() {
     let saved = run_json(cli(&discovery).args(["clip", "--last", &format!("{clip_secs}s")]));
     let cli_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let status = run_json(cli(&discovery).arg("status"));
-    let _ = cli(&discovery).arg("stop").status();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < deadline {
-        if rec.0.try_wait().unwrap().is_some() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    stop_recorder(&discovery, &mut rec);
     println!("clip: {saved}");
     println!("status: {status}");
     println!("clip command round trip: {cli_ms:.1} ms");
@@ -179,8 +99,12 @@ fn record_buffer_and_clip_last_30s() {
         ["ftyp", "moov", "mdat"]
     );
     let streams = oracle::probe_streams(&path).unwrap();
-    assert_eq!(streams.len(), 1, "{streams:?}");
-    let v = &streams[0];
+    let videos: Vec<_> = streams
+        .iter()
+        .filter(|s| s.codec_type.as_deref() == Some("video"))
+        .collect();
+    assert_eq!(videos.len(), 1, "{streams:?}");
+    let v = videos[0];
     assert_eq!(v.codec_name.as_deref(), Some("h264"));
     assert_eq!((v.width, v.height), (Some(1280), Some(720)));
     let dur = v.duration_secs().unwrap();

@@ -5,6 +5,50 @@ reason)`.
 
 ## Unreleased
 
+- M2.4 — App selection: `klip_platform::{list_processes, audio_sessions}`,
+  `klip_capture::apps` (default list of music players left out of system audio,
+  `plan_system`: whole mix / exclude one tree / per-app capture, `app_roots` so
+  multi-process apps are captured once), `AudioSource::Apps`, CLI `--audio apps`, `--app`,
+  `--exclude-app`, `--no-default-excludes`, `audio-apps`. (Claude Opus 5.5: keep other
+  people's music out of shared clips)
+- M2.3 — A/V sync acceptance: test game `--beep`, `--beep-log`, `--tap-log` (its own
+  loopback measurement of each beep), `--background`, frame log after GPU completion;
+  `klip-testkit` `audio` (beeps, onsets) and `sync`; `tests/m2_audio.rs` (sync ≤ 1 frame
+  with per-stream stamp latency, mic track layout, excluded app left out); e2e helpers in
+  `tests/common`; `diag_*` diagnostics skipped by `cargo xtask e2e`. (Claude Opus 5.5: M2
+  acceptance)
+- M2.3 — Video timing: the WGC source polls at 8x the capture rate, frames are stamped on
+  arrival (kept in a `ReferenceTimestampMeta`), `videorate drop-only` returns to the
+  capture rate, and kept frames are snapped to a frame grid that re-centres on the
+  arrival phase. The source's own stamps were up to a frame late by a per-run amount.
+  (Claude Opus 5.5: found by the sync test's per-stream breakdown)
+- M2.1 — Audio capture rewritten: own WASAPI reader in `klip-platform` (`AudioCapture`:
+  loopback, process loopback, input; QPC capture stamps; silence when idle; retry on
+  failure), `klip_media::DriftAligner`, `appsrc` inputs, live process-loopback lag
+  measurement against the system mix (`klip-capture/src/lag.rs`). Replaces
+  `wasapi2src`, whose arrival-time stamps put audio −20 to +23 ms off, differently per
+  run and source type. (Claude Opus 5.5: sync measurements)
+- M2.1 — Fix: heap corruption in process-loopback activation: the `windows` crate's `Drop`
+  for `PROPVARIANT` freed the stack blob; now `ManuallyDrop`. Regression test:
+  `audio_capture_is_continuous_and_qpc_stamped`. (Claude Opus 5.5)
+- M2.2 — AAC tracks: `build_aac_chain` (`mfaacenc` → `aacparse`), AAC caps → `TrackInfo`,
+  `tests/synthetic_audio.rs` (beeps land within 0.01 ms; no encoder-delay correction
+  needed), MP4 track names / enabled flag / audio alternate group, ring snapshots keep
+  track indices, ADR 0005 accepted, ADR 0008. (Claude Opus 5.5: M2)
+- M2.2 — Saves cut at the request time and wait up to 250 ms for audio to cover the end
+  (`Ring::snapshot_until`); audio used to stop ~60 ms before the video. (Claude Opus 5.5:
+  found in the first audio clips)
+- M2.1 — Recorder audio tracks and status (`audio`, `clock_base_ns`, clip `start_ns`),
+  shared `TimeBase` for all pipelines, CLI `--audio`, `--mic`, `--audio-bitrate`,
+  `--no-separate-tracks`, `audio-devices`. (Claude Opus 5.5: M2)
+- M2.1 — Fix: NVENC output timestamps carried a 1000-hour offset (GStreamer `min-pts`);
+  harmless for video-only clips, but every audio packet was evicted as "older than the
+  video". The first encoder input time is now recorded and packets moved back
+  (`InputOrigin`), with a regression test. (Claude Opus 5.5: found by the audio smoke test)
+- M2 — Video timestamps snapped to the capture frame grid (`klip_media::FrameGrid`):
+  constant frame rate where no frame is missing, all frames kept. (Claude Opus 5.5: CFR
+  for editors)
+
 - M1.12 — Acceptance: `apps/klip-cli/tests/m1_acceptance.rs` (test game + record + clip,
   ffprobe/ffmpeg oracle, frame continuity) and `crates/klip-recorder/tests/synthetic_encode.rs`
   (exact frame round trip through NVENC, ring, MP4). (Claude Opus 5.5: M1 acceptance)

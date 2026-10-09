@@ -1,15 +1,21 @@
-//! The recorder: a capture session feeding the replay ring, clip saves (snapshot → MP4,
-//! no re-encode), status, and the command handler for the control channel.
+//! The recorder: capture sessions (video, audio) feeding the replay ring, clip saves
+//! (snapshot → MP4, no re-encode), status, and the command handler for the control
+//! channel.
+//!
+//! Ring tracks: 0 is video; audio tracks follow in [`AudioConfig::track_labels`] order
+//! (the mix first). Audio is best effort: if it can't start, video records anyway and
+//! status reports why.
 
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use klip_buffer::{PushError, Ring, RingConfig, Snapshot, SnapshotError};
-use klip_capture::{CaptureError, CaptureSession, EncodeConfig, PacketSink, VideoConfig};
+use klip_capture::audio::{AudioConfig, AudioSession};
+use klip_capture::{CaptureError, CaptureSession, EncodeConfig, PacketSink, TimeBase, VideoConfig};
 use klip_control::{CommandError, Handler, commands};
 use klip_media::{NANOS_PER_MILLI, Nanos, Packet, TrackInfo, TrackKind, nanos_to_millis};
 use klip_mp4::{Mp4Error, Mp4Options, Mp4Track, save_mp4_atomic};
@@ -41,6 +47,8 @@ pub struct RecorderConfig {
     pub clip_dir: PathBuf,
     pub video: VideoConfig,
     pub encode: EncodeConfig,
+    /// `None`: no audio.
+    pub audio: Option<AudioConfig>,
 }
 
 /// Bytes needed to hold `buffer` of video at `bitrate_kbps` (VBR peaks at 1.5x) plus one
@@ -55,11 +63,22 @@ pub fn estimate_buffer_bytes(buffer: Nanos, bitrate_kbps: u32) -> u64 {
         .saturating_mul(secs.saturating_add(1))
 }
 
+/// Longest a save waits for audio to reach the video's end (audio arrives a few tens of
+/// milliseconds after video).
+pub const AUDIO_CATCH_UP: Duration = Duration::from_millis(250);
+
+/// Audio tracks whose newest packet is older than this before the video's end are treated
+/// as stalled; saves don't wait for them.
+const STALLED_TRACK: Nanos = 2_000_000_000;
+
 /// A replay ring that a capture pipeline can push into.
 pub struct RingSink {
     ring: Mutex<Ring>,
     last_error: Mutex<Option<String>>,
+    last_warning: Mutex<Option<String>>,
     rejected_unexpected: AtomicU64,
+    /// Bit `i` set once track `i` delivered its first packet (for the debug log).
+    seen_tracks: AtomicU64,
 }
 
 impl std::fmt::Debug for RingSink {
@@ -71,12 +90,21 @@ impl std::fmt::Debug for RingSink {
 impl RingSink {
     /// A ring with one video track (track 0).
     pub fn new(cfg: RingConfig) -> Result<RingSink, RecorderError> {
-        let ring = Ring::new(cfg, &[TrackKind::Video])
+        RingSink::with_audio(cfg, 0)
+    }
+
+    /// A ring with a video track (0) and `audio_tracks` audio tracks (1..).
+    pub fn with_audio(cfg: RingConfig, audio_tracks: usize) -> Result<RingSink, RecorderError> {
+        let mut kinds = vec![TrackKind::Video];
+        kinds.extend(std::iter::repeat_n(TrackKind::Audio, audio_tracks));
+        let ring = Ring::new(cfg, &kinds)
             .ok_or_else(|| RecorderError::Config("ring needs a video track".into()))?;
         Ok(RingSink {
             ring: Mutex::new(ring),
             last_error: Mutex::new(None),
+            last_warning: Mutex::new(None),
             rejected_unexpected: AtomicU64::new(0),
+            seen_tracks: AtomicU64::new(0),
         })
     }
 
@@ -89,12 +117,53 @@ impl RingSink {
         self.ring().snapshot(length)
     }
 
+    /// Copy out the last `length` up to the video packet that starts before `until`.
+    pub fn snapshot_until(
+        &self,
+        until: Option<Nanos>,
+        length: Nanos,
+    ) -> Result<Snapshot, SnapshotError> {
+        self.ring().snapshot_until(until, length)
+    }
+
+    /// End of the buffered video.
+    pub fn video_end(&self) -> Option<Nanos> {
+        self.ring().anchor_end()
+    }
+
+    /// Wait until every live audio track reaches `until`, at most `timeout`. Returns the
+    /// time waited.
+    pub fn wait_for_audio(&self, until: Nanos, timeout: Duration) -> Duration {
+        let t0 = Instant::now();
+        loop {
+            let behind = {
+                let ring = self.ring();
+                ring.active_secondary_tracks().into_iter().any(|i| {
+                    ring.track_end(i)
+                        .is_some_and(|e| e < until && e > until.saturating_sub(STALLED_TRACK))
+                })
+            };
+            let waited = t0.elapsed();
+            if !behind || waited >= timeout {
+                return waited;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
     pub fn stats(&self) -> klip_buffer::RingStats {
         self.ring().stats()
     }
 
     pub fn last_error(&self) -> Option<String> {
         self.last_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub fn last_warning(&self) -> Option<String> {
+        self.last_warning
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -109,6 +178,13 @@ impl PacketSink for RingSink {
     }
 
     fn on_packet(&self, track: usize, packet: Packet) {
+        let bit = u32::try_from(track)
+            .ok()
+            .and_then(|t| 1u64.checked_shl(t))
+            .unwrap_or(0);
+        if bit != 0 && self.seen_tracks.fetch_or(bit, Ordering::Relaxed) & bit == 0 {
+            tracing::debug!(track, pts = packet.pts, "first packet");
+        }
         match self.ring().push(track, packet) {
             Ok(()) | Err(PushError::WaitingForKeyframe) => {}
             Err(e) => {
@@ -125,6 +201,14 @@ impl PacketSink for RingSink {
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(message);
     }
+
+    fn on_warning(&self, message: String) {
+        tracing::warn!(warning = %message, "capture warning");
+        *self
+            .last_warning
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(message);
+    }
 }
 
 /// A saved clip.
@@ -134,28 +218,60 @@ pub struct SavedClip {
     pub duration: Nanos,
     pub bytes: u64,
     pub frames: usize,
+    pub audio_tracks: usize,
+    /// Running time of the clip's first frame (clip time 0) on the recorder's timeline.
+    pub start: Nanos,
     /// Wall time from the request to the renamed file, in milliseconds.
     pub save_ms: f64,
+    /// Part of `save_ms` spent waiting for audio to catch up with video.
+    pub audio_wait_ms: f64,
 }
 
-/// Save the last `length` of `sink` into `dir` as a new MP4.
-pub fn save_from(sink: &RingSink, dir: &Path, length: Nanos) -> Result<SavedClip, RecorderError> {
+/// Save the last `length` of `sink` into `dir` as a new MP4. `names[i]` names ring track
+/// `i` in the file. The first audio track is the one players play; the others are
+/// written disabled (editors still import them).
+pub fn save_from(
+    sink: &RingSink,
+    dir: &Path,
+    length: Nanos,
+    names: &[String],
+) -> Result<SavedClip, RecorderError> {
     let t0 = Instant::now();
-    let snap = sink.snapshot(length)?;
+    // The clip ends where it was requested; audio arrives a little later than video, so
+    // give it a moment to cover that end.
+    let until = sink.video_end();
+    let waited = match until {
+        Some(u) => sink.wait_for_audio(u, AUDIO_CATCH_UP),
+        None => Duration::ZERO,
+    };
+    let snap = sink.snapshot_until(until, length)?;
     std::fs::create_dir_all(dir)?;
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let path = unique_clip_path(dir)?;
+    let mut audio_seen = false;
     let tracks: Vec<Mp4Track<'_>> = snap
         .tracks
         .iter()
-        .map(|t| Mp4Track {
-            info: &t.info,
-            packets: &t.packets,
+        .map(|t| {
+            let mut m = Mp4Track::new(&t.info, &t.packets);
+            if let Some(name) = names.get(t.track).filter(|n| !n.is_empty()) {
+                m = m.named(name);
+            }
+            if t.info.kind() == TrackKind::Audio {
+                m = m.enabled(!audio_seen);
+                audio_seen = true;
+            }
+            m
         })
         .collect();
+    let audio_tracks = snap
+        .tracks
+        .iter()
+        .filter(|t| t.info.kind() == TrackKind::Audio)
+        .count();
     let summary = save_mp4_atomic(
         &path,
         &tracks,
@@ -170,7 +286,10 @@ pub fn save_from(sink: &RingSink, dir: &Path, length: Nanos) -> Result<SavedClip
         duration: summary.duration,
         bytes: summary.bytes,
         frames,
+        audio_tracks,
+        start: snap.start,
         save_ms: t0.elapsed().as_secs_f64() * 1000.0,
+        audio_wait_ms: waited.as_secs_f64() * 1000.0,
     })
 }
 
@@ -196,6 +315,12 @@ fn unique_clip_path(dir: &Path) -> Result<PathBuf, RecorderError> {
 pub struct Recorder {
     sink: Arc<RingSink>,
     session: Mutex<Option<CaptureSession>>,
+    audio: Mutex<Option<AudioSession>>,
+    /// Why audio isn't recording, if it was requested and failed to start.
+    audio_error: Option<String>,
+    /// Name of each ring track.
+    track_names: Vec<String>,
+    timebase: TimeBase,
     cfg: RecorderConfig,
     started: Instant,
     output: (u32, u32),
@@ -219,15 +344,42 @@ impl Recorder {
                 "buffer length must be positive".into(),
             ));
         }
-        let sink = Arc::new(RingSink::new(RingConfig {
-            max_duration: cfg.buffer,
-            max_bytes: cfg.max_buffer_bytes,
-        })?);
-        let session = CaptureSession::start(&cfg.video, &cfg.encode, sink.clone())?;
+        let audio_labels = cfg
+            .audio
+            .as_ref()
+            .map(AudioConfig::track_labels)
+            .unwrap_or_default();
+        let sink = Arc::new(RingSink::with_audio(
+            RingConfig {
+                max_duration: cfg.buffer,
+                max_bytes: cfg.max_buffer_bytes,
+            },
+            audio_labels.len(),
+        )?);
+        // One clock and base time for every pipeline keeps audio and video in sync.
+        let timebase = TimeBase::new()?;
+        let session =
+            CaptureSession::start(&cfg.video, &cfg.encode, sink.clone(), Some(&timebase))?;
         let output = session.output_size();
+        let (audio, audio_error) = match &cfg.audio {
+            None => (None, None),
+            Some(a) => match AudioSession::start(a, 1, sink.clone(), Some(&timebase)) {
+                Ok(s) => (Some(s), None),
+                Err(e) => {
+                    tracing::error!(error = %e, "audio could not start; recording video only");
+                    (None, Some(e.to_string()))
+                }
+            },
+        };
+        let mut track_names = vec![String::new()];
+        track_names.extend(audio_labels);
         Ok(Recorder {
             sink,
             session: Mutex::new(Some(session)),
+            audio: Mutex::new(audio),
+            audio_error,
+            track_names,
+            timebase,
             cfg,
             started: Instant::now(),
             output,
@@ -242,11 +394,13 @@ impl Recorder {
             .save_lock
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        let clip = save_from(&self.sink, &self.cfg.clip_dir, length)?;
+        let clip = save_from(&self.sink, &self.cfg.clip_dir, length, &self.track_names)?;
         tracing::info!(
             ms = clip.save_ms,
             bytes = clip.bytes,
             frames = clip.frames,
+            audio_tracks = clip.audio_tracks,
+            audio_wait_ms = clip.audio_wait_ms,
             "clip saved"
         );
         Ok(clip)
@@ -265,6 +419,7 @@ impl Recorder {
                 )
             })
             .unwrap_or((0, 0));
+        drop(session);
         json!({
             "buffered_ms": nanos_to_millis(s.buffered),
             "buffer_ms": nanos_to_millis(self.cfg.buffer),
@@ -283,7 +438,45 @@ impl Recorder {
             "capture_packets": packets,
             "capture_errors": errors,
             "last_error": self.sink.last_error(),
+            "last_warning": self.sink.last_warning(),
+            "audio": self.audio_status(),
+            "clock_base_ns": self.timebase.base_clock_ns(),
             "uptime_ms": u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        })
+    }
+
+    fn audio_status(&self) -> Value {
+        let Some(cfg) = &self.cfg.audio else {
+            return Value::Null;
+        };
+        let audio = self.audio.lock().unwrap_or_else(PoisonError::into_inner);
+        let process_lags: Vec<Value> = audio
+            .as_ref()
+            .map(|a| {
+                a.process_lags()
+                    .into_iter()
+                    .map(|l| json!({ "label": l.label, "lag_ms": l.lag_ms, "measurements": l.measurements }))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let counters = audio.as_ref().and_then(|a| a.stats()).map(|st| {
+            json!({
+                "packets": st.packets.load(Ordering::Relaxed),
+                "errors": st.errors.load(Ordering::Relaxed),
+                "warnings": st.warnings.load(Ordering::Relaxed),
+            })
+        });
+        json!({
+            "tracks": self.track_names.get(1..).unwrap_or_default(),
+            "inputs": cfg.inputs.iter().map(|i| json!({
+                "label": i.label,
+                "source": i.source.describe(),
+            })).collect::<Vec<_>>(),
+            "bitrate": cfg.bitrate,
+            "running": counters.is_some(),
+            "process_lag": process_lags,
+            "counters": counters,
+            "error": self.audio_error,
         })
     }
 
@@ -298,6 +491,14 @@ impl Recorder {
 
     /// Stop capturing. Buffered data stays available for saves until drop.
     pub fn stop_capture(&self) {
+        let audio = self
+            .audio
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(a) = audio {
+            a.stop();
+        }
         let session = self
             .session
             .lock()
@@ -348,7 +549,10 @@ impl Handler for Recorder {
                     "duration_ms": nanos_to_millis(clip.duration),
                     "bytes": clip.bytes,
                     "frames": clip.frames,
+                    "audio_tracks": clip.audio_tracks,
+                    "start_ns": clip.start,
                     "save_ms": clip.save_ms,
+                    "audio_wait_ms": clip.audio_wait_ms,
                 }))
             }
             other => Err(CommandError::unknown(other)),
@@ -394,7 +598,7 @@ mod tests {
         })
         .unwrap();
         assert!(matches!(
-            save_from(&sink, dir.path(), 1_000_000_000),
+            save_from(&sink, dir.path(), 1_000_000_000, &[]),
             Err(RecorderError::Snapshot(SnapshotError::Empty))
         ));
         sink.on_track_info(0, info());
@@ -409,12 +613,66 @@ mod tests {
         for i in 1..=300 {
             sink.on_packet(0, packet(i));
         }
-        let a = save_from(&sink, dir.path(), 2_000_000_000).unwrap();
-        let b = save_from(&sink, dir.path(), 2_000_000_000).unwrap();
+        let a = save_from(&sink, dir.path(), 2_000_000_000, &[]).unwrap();
+        let b = save_from(&sink, dir.path(), 2_000_000_000, &[]).unwrap();
         assert_ne!(a.path, b.path);
         assert!(a.path.exists() && b.path.exists());
         assert_eq!(a.frames, 121, "from keyframe 180 to frame 300");
         assert_eq!(std::fs::metadata(&a.path).unwrap().len(), a.bytes);
+        assert_eq!(sink.rejected_unexpected.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn audio_tracks_are_saved_named_with_only_the_first_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let sink = RingSink::with_audio(
+            RingConfig {
+                max_duration: 10 * 1_000_000_000,
+                max_bytes: u64::MAX,
+            },
+            3,
+        )
+        .unwrap();
+        sink.on_track_info(0, info());
+        let aac = TrackInfo {
+            codec: Codec::Aac,
+            codec_data: vec![0x11u8, 0x90].into(),
+            params: TrackParams::Audio(klip_media::AudioParams {
+                sample_rate: 48_000,
+                channels: 2,
+            }),
+            bitrate: Some(160_000),
+        };
+        // Track 2 never gets a description (e.g. its device failed before any data).
+        sink.on_track_info(1, aac.clone());
+        sink.on_track_info(3, aac);
+        for i in 0..=120 {
+            sink.on_packet(0, packet(i));
+        }
+        let step = 21_333_333;
+        for k in 0..90 {
+            for track in [1, 3] {
+                sink.on_packet(
+                    track,
+                    Packet {
+                        pts: k * step,
+                        dts: k * step,
+                        duration: step,
+                        keyframe: true,
+                        data: vec![0u8; 50].into(),
+                    },
+                );
+            }
+        }
+        let names: Vec<String> = ["", "Mix", "Game", "Microphone"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let clip = save_from(&sink, dir.path(), 1_000_000_000, &names).unwrap();
+        assert_eq!(clip.audio_tracks, 2);
+        let data = std::fs::read(&clip.path).unwrap();
+        let has = |needle: &[u8]| data.windows(needle.len()).any(|w| w == needle);
+        assert!(has(b"Mix\0") && has(b"Microphone\0") && !has(b"Game\0"));
         assert_eq!(sink.rejected_unexpected.load(Ordering::Relaxed), 0);
     }
 

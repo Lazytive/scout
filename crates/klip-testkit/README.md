@@ -13,5 +13,14 @@ Test support only (used by tests, the test game and benchmarks; never shipped).
   order without an oracle.
 - `continuity`: steps between consecutive counters → duplicates, drops (big steps),
   reordering, unreadable frames.
+- `audio`: the test beep (1 kHz, 60 ms, starts at the peak), `render_beeps_s16` for
+  synthetic sources, `onsets` (threshold crossing after a quiet gap; sample-exact on clean
+  input, AAC pre-echo stays below the threshold).
+- `sync`: A/V sync of a clip against the test game's frame and beep logs. The median of
+  `clip time − game time` over all barcoded frames maps the game clock onto the clip
+  (absorbing capture latency); each beep's error is its detected onset minus that
+  prediction.
+- `oracle` also decodes audio (`decode_audio_mono`) and lists frame times of any stream
+  (`frame_times(path, "a:0")`).
 
 Dev tooling, so `arithmetic_side_effects` is allowed in this crate (ADR 0001).

@@ -48,6 +48,14 @@ pub struct StreamInfo {
     pub pix_fmt: Option<String>,
     pub color_primaries: Option<String>,
     pub color_transfer: Option<String>,
+    pub start_time: Option<String>,
+    pub bit_rate: Option<String>,
+    /// e.g. `{"default": 1, ...}`.
+    #[serde(default)]
+    pub disposition: std::collections::HashMap<String, i64>,
+    /// e.g. `handler_name`.
+    #[serde(default)]
+    pub tags: std::collections::HashMap<String, String>,
 }
 
 impl StreamInfo {
@@ -123,13 +131,19 @@ pub fn probe_streams(path: &Path) -> Result<Vec<StreamInfo>, OracleError> {
 
 /// Presentation times (seconds) of every frame of the first video stream, in decode order.
 pub fn video_frame_times(path: &Path) -> Result<Vec<f64>, OracleError> {
+    frame_times(path, "v:0")
+}
+
+/// Presentation times (seconds) of every frame of the stream `selector` (`v:0`, `a:1`,
+/// …), in decode order, edit lists applied.
+pub fn frame_times(path: &Path, selector: &str) -> Result<Vec<f64>, OracleError> {
     let out = run(
         "ffprobe",
         &[
             "-v",
             "error",
             "-select_streams",
-            "v:0",
+            selector,
             "-show_entries",
             "frame=pts_time",
             "-of",
@@ -147,6 +161,38 @@ pub fn video_frame_times(path: &Path) -> Result<Vec<f64>, OracleError> {
                 .map_err(|e| OracleError::Parse("ffprobe frame times", format!("{l:?}: {e}")))
         })
         .collect()
+}
+
+/// Decode audio stream `index` (0 = first audio stream) to mono S16 at `rate` Hz. The
+/// first sample is at the stream's first frame time (see [`frame_times`]).
+pub fn decode_audio_mono(path: &Path, index: usize, rate: u32) -> Result<Vec<i16>, OracleError> {
+    let map = format!("0:a:{index}");
+    let rate = rate.to_string();
+    let out = run(
+        "ffmpeg",
+        &[
+            "-v",
+            "error",
+            "-nostdin",
+            "-i",
+            path_str(path)?,
+            "-map",
+            &map,
+            "-ac",
+            "1",
+            "-ar",
+            &rate,
+            "-f",
+            "s16le",
+            "-",
+        ],
+    )?;
+    Ok(out
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| i16::from_le_bytes(*b))
+        .collect())
 }
 
 /// Decode the first video stream to `width`x`height` 8-bit gray with ffmpeg (no frame

@@ -11,6 +11,7 @@ publish.workspace = true
 anyhow.workspace = true
 bytemuck.workspace = true
 clap.workspace = true
+cpal.workspace = true
 klip-media.workspace = true
 klip-testkit.workspace = true
 pollster.workspace = true

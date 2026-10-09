@@ -9,6 +9,24 @@ Windows (Win32/DXGI via the `windows` crate):
   Titles are personal data: callers must not log them.
 - `list_monitors`: HMONITOR, position/size, primary flag.
 - `enable_dpi_awareness`: per-monitor-v2, so sizes are physical pixels.
+- `list_processes`: pid, parent pid, executable name (Toolhelp snapshot).
+- `audio_sessions`: processes with an audio session on any active output device (WASAPI
+  session manager; system sounds and expired sessions left out), and whether each is
+  playing. Used to pick apps for audio capture; exe names are shown to the user only.
+- `AudioCapture` (`wasapi.rs`): a WASAPI capture thread for an output's loopback, a
+  process tree (process loopback, include or exclude; async activation with a COM
+  completion handler) or an input device. Float at the requested rate (AUTOCONVERTPCM),
+  event-driven, every packet stamped with WASAPI's QPC capture time. Silence is generated
+  while a stream delivers nothing; a failed or lost device becomes silence + a notice and
+  is retried every 2 s. Packets that overlap generated silence are trimmed.
+- `qpc_now_ns` (the clock of those stamps) and `process_loopback_supported` (build 19041+,
+  via `RtlGetVersion`).
+
+Gotcha: the `windows` crate implements `Drop` for `PROPVARIANT` (it calls
+`PropVariantClear`). The process-loopback activation PROPVARIANT points at a stack struct,
+so it is wrapped in `ManuallyDrop`; otherwise the heap is corrupted (found by
+`audio_capture_is_continuous_and_qpc_stamped`). Diagnostic: `tests/loopback_offset.rs`
+(`diag_`, needs `KLIP_DIAG_PID`) compares process and system loopback timing.
 
 Linux: returns `PlatformError::Unsupported` until M4 (portal + PipeWire live elsewhere).
 

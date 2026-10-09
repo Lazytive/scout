@@ -1,11 +1,15 @@
 //! Klip test game: a wgpu window that draws a barcoded frame counter (klip-testkit
 //! layout), a moving bar and scrolling checker for motion, and a white flash once per
 //! second. Prints one JSON line `{"event":"ready",...}` with its pid and window handle
-//! after the first frame, so tests can point the recorder at it.
+//! after the first frame, so tests can point the recorder at it. With `--beep` it also
+//! plays a short 1 kHz tone at every flash (see `beep.rs`).
 //!
 //! Dev tool, so `arithmetic_side_effects` is allowed (ADR 0001).
 
 #![allow(clippy::arithmetic_side_effects)]
+
+mod beep;
+mod tap;
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -55,6 +59,21 @@ struct Args {
     /// Window title.
     #[arg(long, default_value = "Klip Test Game")]
     title: String,
+    /// Play a short tone at every flash (once per second of game time).
+    #[arg(long)]
+    beep: bool,
+    /// Write `beep_index,nanoseconds_since_start` (predicted playback time) for every beep.
+    /// Implies --beep.
+    #[arg(long)]
+    beep_log: Option<PathBuf>,
+    /// Write `beep_index,nanoseconds_since_start` for every beep as measured at the audio
+    /// engine's loopback tap (WASAPI capture timestamps). Implies --beep.
+    #[arg(long)]
+    tap_log: Option<PathBuf>,
+    /// Open without taking keyboard focus (automated tests, so they don't pull you out of
+    /// whatever you're doing).
+    #[arg(long)]
+    background: bool,
 }
 
 fn parse_dur(s: &str) -> Result<Duration, String> {
@@ -274,6 +293,10 @@ impl Gfx {
         self.queue.submit([enc.finish()]);
         self.window.pre_present_notify();
         self.queue.present(frame);
+        // Wait for the GPU to finish the frame, so the time logged after this is when the
+        // frame was ready to show, not when the CPU queued it (which differs by the GPU
+        // queue depth, i.e. by how busy the GPU is). Tests compare against that time.
+        self.device.poll(wgpu::PollType::wait_indefinitely())?;
         Ok(())
     }
 }
@@ -286,6 +309,9 @@ struct App {
     next_frame: Instant,
     period: Duration,
     log: Option<BufWriter<File>>,
+    beeper: Option<beep::Beeper>,
+    beep_log: Option<BufWriter<File>>,
+    tap_log: Option<BufWriter<File>>,
     announced: bool,
     error: Option<anyhow::Error>,
 }
@@ -300,7 +326,8 @@ impl App {
         let mut attrs = Window::default_attributes()
             .with_title(self.args.title.clone())
             .with_inner_size(PhysicalSize::new(self.args.width, self.args.height))
-            .with_resizable(false);
+            .with_resizable(false)
+            .with_active(!self.args.background);
         match self.args.mode {
             Mode::Windowed => {}
             Mode::Borderless => attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(None))),
@@ -338,6 +365,11 @@ impl App {
             "height": size.height,
             "fps": self.args.fps,
             "gfx": gfx.describe,
+            "beep_rate": self.beeper.as_ref().map(|b| b.rate),
+            // Game time `game_ns` is QueryPerformanceCounter time `qpc_ns` (both in ns).
+            "anchor": self.beeper.as_ref().and_then(|b| b.anchor()).map(|(qpc, game)| {
+                serde_json::json!({ "qpc_ns": qpc as u64, "game_ns": game as u64 })
+            }),
         });
         let mut out = std::io::stdout().lock();
         writeln!(out, "{line}")?;
@@ -355,6 +387,10 @@ impl App {
         if let Some(log) = &mut self.log {
             writeln!(log, "{counter},{}", t.as_nanos())?;
         }
+        // Keep logs on disk once a second, so they survive the process being killed.
+        if counter.is_multiple_of(self.args.fps) {
+            self.flush_logs()?;
+        }
         self.counter = self.counter.wrapping_add(1) & barcode::COUNTER_MASK;
         if !self.announced {
             self.announced = true;
@@ -370,6 +406,27 @@ impl App {
         let now = Instant::now();
         if self.next_frame + self.period * 2 < now {
             self.next_frame = now + self.period;
+        }
+        Ok(())
+    }
+}
+
+impl App {
+    fn flush_logs(&mut self) -> Result<()> {
+        if let (Some(b), Some(log)) = (&self.beeper, &mut self.beep_log) {
+            for (k, ns) in b.take_log() {
+                writeln!(log, "{k},{ns}")?;
+            }
+            log.flush()?;
+        }
+        if let (Some(b), Some(log)) = (&self.beeper, &mut self.tap_log) {
+            for (k, ns) in b.take_tap_log() {
+                writeln!(log, "{k},{ns}")?;
+            }
+            log.flush()?;
+        }
+        if let Some(log) = &mut self.log {
+            log.flush()?;
         }
         Ok(())
     }
@@ -434,8 +491,21 @@ fn main() -> Result<()> {
         Some(p) => Some(BufWriter::new(File::create(p).context("frames log")?)),
         None => None,
     };
+    let beep_log = match &args.beep_log {
+        Some(p) => Some(BufWriter::new(File::create(p).context("beep log")?)),
+        None => None,
+    };
+    let tap_log = match &args.tap_log {
+        Some(p) => Some(BufWriter::new(File::create(p).context("tap log")?)),
+        None => None,
+    };
     let period = Duration::from_secs_f64(1.0 / f64::from(args.fps));
     let now = Instant::now();
+    let beeper = if args.beep || args.beep_log.is_some() || args.tap_log.is_some() {
+        Some(beep::start(now, args.tap_log.is_some())?)
+    } else {
+        None
+    };
     let mut app = App {
         args,
         gfx: None,
@@ -444,13 +514,20 @@ fn main() -> Result<()> {
         next_frame: now,
         period,
         log,
+        beeper,
+        beep_log,
+        tap_log,
         announced: false,
         error: None,
     };
     let event_loop = EventLoop::new()?;
     event_loop.run_app(&mut app)?;
-    if let Some(log) = &mut app.log {
-        log.flush()?;
+    app.flush_logs()?;
+    if let Some(b) = &app.beeper {
+        let errors = b.underruns.load(std::sync::atomic::Ordering::Relaxed);
+        if errors > 0 {
+            eprintln!("audio stream reported {errors} errors");
+        }
     }
     match app.error {
         Some(e) => Err(e),

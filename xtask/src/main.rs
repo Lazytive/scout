@@ -3,7 +3,8 @@
 //! - `ci`: fmt, clippy `-D warnings`, tests, cargo deny, layers, audit
 //! - `layers`: dependency direction + `unsafe` only in klip-platform
 //! - `audit`: licence/asset audit
-//! - `e2e`: hardware acceptance tests (`#[ignore]`d tests, release build, one at a time)
+//! - `e2e`: hardware acceptance tests (`#[ignore]`d tests except `diag_*` diagnostics,
+//!   release build, one at a time)
 //!
 //! Dev tool, so `arithmetic_side_effects` is allowed (ADR 0001).
 
@@ -198,6 +199,9 @@ fn e2e() -> Result<()> {
         "--ignored",
         "--nocapture",
         "--test-threads=1",
+        // Diagnostics print measurements and may need manual setup; run them by name.
+        "--skip",
+        "diag_",
     ]);
     run_step("hardware acceptance tests", c)
 }

@@ -65,9 +65,9 @@ fn synthetic_frames_survive_encode_ring_and_mux_exactly() {
         bitrate_kbps: 8_000,
         keyframe_interval: FPS as u32,
     };
-    let (first, appsink) =
+    let chain =
         klip_capture::build_encode_chain(&pipeline, &cfg, W as u32, H as u32, FPS as u32).unwrap();
-    upload.link(&first).unwrap();
+    upload.link(&chain.input).unwrap();
 
     let sink = Arc::new(
         RingSink::new(RingConfig {
@@ -77,8 +77,9 @@ fn synthetic_frames_survive_encode_ring_and_mux_exactly() {
         .unwrap(),
     );
     let stats = Arc::new(CaptureStats::default());
-    klip_capture::attach_sink(&appsink, 0, sink.clone(), stats.clone());
-    let session = CaptureSession::run(pipeline, sink.clone(), stats, (W as u32, H as u32)).unwrap();
+    chain.attach(0, sink.clone(), stats.clone(), klip_capture::Timing::AsIs);
+    let session =
+        CaptureSession::run(pipeline, sink.clone(), stats, (W as u32, H as u32), None).unwrap();
 
     let frame_ns = NANOS_PER_SEC as u64 / FPS;
     for i in 0..FRAMES {
@@ -114,7 +115,7 @@ fn synthetic_frames_survive_encode_ring_and_mux_exactly() {
     let dir = tempfile::tempdir().unwrap();
 
     // Whole buffer: every counter exactly once.
-    let all = save_from(&sink, dir.path(), 120 * NANOS_PER_SEC).unwrap();
+    let all = save_from(&sink, dir.path(), 120 * NANOS_PER_SEC, &[]).unwrap();
     println!(
         "full save: {} frames, {} bytes, {:.2} ms",
         all.frames, all.bytes, all.save_ms
@@ -127,7 +128,7 @@ fn synthetic_frames_survive_encode_ring_and_mux_exactly() {
     assert_eq!(report.frames, FRAMES as usize);
 
     // Last 2 s: starts at the keyframe at or before (end - 2 s), ends at the last frame.
-    let tail = save_from(&sink, dir.path(), 2 * NANOS_PER_SEC).unwrap();
+    let tail = save_from(&sink, dir.path(), 2 * NANOS_PER_SEC, &[]).unwrap();
     let counters = oracle::decode_counters(&tail.path, W, H).unwrap();
     let report = continuity::analyze(&counters);
     println!("tail: {report}");

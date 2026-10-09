@@ -85,6 +85,8 @@ impl std::error::Error for SnapshotError {}
 /// The packets of one track in a snapshot.
 #[derive(Clone, Debug)]
 pub struct TrackSnapshot {
+    /// Index of the track in the ring.
+    pub track: usize,
     pub info: TrackInfo,
     pub packets: Vec<Packet>,
 }
@@ -389,14 +391,47 @@ impl Ring {
         self.evicted = self.evicted.saturating_add(evicted);
     }
 
+    /// End (last DTS + duration) of track `track`, if it has packets.
+    pub fn track_end(&self, track: usize) -> Option<Nanos> {
+        self.tracks.get(track).and_then(TrackRing::end)
+    }
+
+    /// End of the anchor track.
+    pub fn anchor_end(&self) -> Option<Nanos> {
+        self.track_end(self.anchor)
+    }
+
+    /// Indices of non-anchor tracks that have a description (i.e. are producing data).
+    pub fn active_secondary_tracks(&self) -> Vec<usize> {
+        self.tracks
+            .iter()
+            .enumerate()
+            .filter(|(i, t)| *i != self.anchor && t.info.is_some())
+            .map(|(i, _)| i)
+            .collect()
+    }
+
     /// Copy out the last `length` of the buffer, starting at the anchor keyframe at or
     /// before `end - length` (or the oldest keyframe if the buffer is shorter).
     pub fn snapshot(&self, length: Nanos) -> Result<Snapshot, SnapshotError> {
+        self.snapshot_until(None, length)
+    }
+
+    /// Like [`Ring::snapshot`], but ignoring anchor packets that start at or after
+    /// `until`: the clip ends where it was requested even if saving waited for other
+    /// tracks to catch up.
+    pub fn snapshot_until(
+        &self,
+        until: Option<Nanos>,
+        length: Nanos,
+    ) -> Result<Snapshot, SnapshotError> {
         if length <= 0 {
             return Err(SnapshotError::InvalidLength);
         }
         let a = self.tracks.get(self.anchor).ok_or(SnapshotError::Empty)?;
-        let (Some(info), Some(end)) = (a.info.as_ref(), a.end()) else {
+        let limit = until.unwrap_or(Nanos::MAX);
+        let last = a.packets.iter().rev().find(|p| p.dts < limit);
+        let (Some(info), Some(end)) = (a.info.as_ref(), last.map(Packet::dts_end)) else {
             return Err(SnapshotError::Empty);
         };
         // A keyframe up to SNAP_TOLERANCE after the target counts as "at" it, so timestamp
@@ -411,7 +446,13 @@ impl Ring {
             .map(|(i, _)| i)
             .next_back()
             .unwrap_or(0);
-        let anchor_packets: Vec<Packet> = a.packets.iter().skip(start_idx).cloned().collect();
+        let anchor_packets: Vec<Packet> = a
+            .packets
+            .iter()
+            .skip(start_idx)
+            .take_while(|p| p.dts < limit)
+            .cloned()
+            .collect();
         let Some(start) = anchor_packets.first().map(|p| p.dts) else {
             return Err(SnapshotError::Empty);
         };
@@ -419,6 +460,7 @@ impl Ring {
         for (i, t) in self.tracks.iter().enumerate() {
             if i == self.anchor {
                 tracks.push(TrackSnapshot {
+                    track: i,
                     info: info.clone(),
                     packets: anchor_packets.clone(),
                 });
@@ -435,6 +477,7 @@ impl Ring {
                 .collect();
             if !packets.is_empty() {
                 tracks.push(TrackSnapshot {
+                    track: i,
                     info: tinfo.clone(),
                     packets,
                 });

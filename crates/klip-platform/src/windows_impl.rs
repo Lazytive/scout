@@ -1,16 +1,27 @@
-//! Win32/DXGI queries. Every `unsafe` block is a call into a documented OS API with
-//! arguments owned by this function; nothing here dereferences foreign memory.
+//! Win32/DXGI/WASAPI queries. Every `unsafe` block is a call into a documented OS API
+//! with arguments owned by this function; nothing here dereferences foreign memory. All
+//! of it is read-only: nothing touches other processes.
 
 #![allow(unsafe_code)]
 
 use std::ffi::c_void;
 
-use windows::Win32::Foundation::{HWND, LPARAM, RECT};
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT, S_OK};
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_ERROR_NOT_FOUND, IDXGIFactory1,
 };
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW,
+};
+use windows::Win32::Media::Audio::{
+    AudioSessionStateActive, AudioSessionStateExpired, DEVICE_STATE_ACTIVE, IAudioSessionControl2,
+    IAudioSessionManager2, IMMDeviceEnumerator, MMDeviceEnumerator, eRender,
+};
+use windows::Win32::System::Com::{
+    CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
+};
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
@@ -19,9 +30,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClientRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow,
     IsWindowVisible, MONITORINFOF_PRIMARY,
 };
-use windows::core::BOOL;
+use windows::core::{BOOL, Interface};
 
-use crate::{GpuAdapter, GpuVendor, MonitorInfo, PlatformError, WindowInfo};
+use crate::{
+    AudioSession, GpuAdapter, GpuVendor, MonitorInfo, PlatformError, ProcessInfo, WindowInfo,
+};
 
 fn os(e: windows::core::Error) -> PlatformError {
     PlatformError::Os(e.message())
@@ -182,4 +195,106 @@ pub(crate) fn list_monitors() -> Result<Vec<MonitorInfo>, PlatformError> {
 pub(crate) fn enable_dpi_awareness() -> bool {
     // SAFETY: no preconditions; fails harmlessly if awareness was already set.
     unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) }.is_ok()
+}
+
+pub(crate) fn list_processes() -> Result<Vec<ProcessInfo>, PlatformError> {
+    // SAFETY: valid flags; the returned handle is closed below.
+    let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }.map_err(os)?;
+    let mut entry = PROCESSENTRY32W {
+        dwSize: u32::try_from(std::mem::size_of::<PROCESSENTRY32W>()).unwrap_or(0),
+        ..Default::default()
+    };
+    let mut out = Vec::new();
+    // SAFETY: `snap` is a live snapshot handle and `entry` is a writable PROCESSENTRY32W
+    // with dwSize set.
+    let mut ok = unsafe { Process32FirstW(snap, &raw mut entry) }.is_ok();
+    while ok {
+        out.push(ProcessInfo {
+            pid: entry.th32ProcessID,
+            parent_pid: entry.th32ParentProcessID,
+            exe: wide_to_string(&entry.szExeFile),
+        });
+        // SAFETY: as above.
+        ok = unsafe { Process32NextW(snap, &raw mut entry) }.is_ok();
+    }
+    // SAFETY: `snap` came from CreateToolhelp32Snapshot and is closed exactly once.
+    let _ = unsafe { CloseHandle(snap) };
+    Ok(out)
+}
+
+/// Uninitialises COM on drop if this thread's `CoInitializeEx` succeeded.
+struct ComGuard(bool);
+
+impl Drop for ComGuard {
+    fn drop(&mut self) {
+        if self.0 {
+            // SAFETY: pairs with the successful CoInitializeEx in `com_init` on this thread.
+            unsafe { CoUninitialize() };
+        }
+    }
+}
+
+fn com_init() -> ComGuard {
+    // SAFETY: CoInitializeEx may be called on any thread. If the thread already uses another
+    // apartment model it fails with RPC_E_CHANGED_MODE, COM is still usable, and we must not
+    // uninitialise.
+    let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+    ComGuard(hr.is_ok())
+}
+
+pub(crate) fn audio_sessions() -> Result<Vec<AudioSession>, PlatformError> {
+    let _com = com_init();
+    // SAFETY: standard in-process activation of the MMDevice enumerator.
+    let enumerator: IMMDeviceEnumerator =
+        unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }.map_err(os)?;
+    // SAFETY: live interface, valid flow and state mask.
+    let devices =
+        unsafe { enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) }.map_err(os)?;
+    // SAFETY: live interface.
+    let count = unsafe { devices.GetCount() }.map_err(os)?;
+    let mut out: Vec<AudioSession> = Vec::new();
+    for i in 0..count {
+        // SAFETY: `i` is below the collection's count.
+        let Ok(device) = (unsafe { devices.Item(i) }) else {
+            continue;
+        };
+        // SAFETY: live device; IAudioSessionManager2 is a documented activation target.
+        let Ok(manager) = (unsafe { device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) })
+        else {
+            continue;
+        };
+        // SAFETY: live interface.
+        let Ok(sessions) = (unsafe { manager.GetSessionEnumerator() }) else {
+            continue;
+        };
+        // SAFETY: live interface.
+        let n = unsafe { sessions.GetCount() }.unwrap_or(0);
+        for k in 0..n {
+            // SAFETY: `k` is below the enumerator's count.
+            let Ok(control) = (unsafe { sessions.GetSession(k) }) else {
+                continue;
+            };
+            let Ok(control) = control.cast::<IAudioSessionControl2>() else {
+                continue;
+            };
+            // SAFETY: live interface.
+            let state = unsafe { control.GetState() };
+            // SAFETY: live interface.
+            let system_sounds = unsafe { control.IsSystemSoundsSession() } == S_OK;
+            // SAFETY: live interface.
+            let pid = unsafe { control.GetProcessId() };
+            let (Ok(state), Ok(pid)) = (state, pid) else {
+                continue;
+            };
+            if pid == 0 || system_sounds || state == AudioSessionStateExpired {
+                continue;
+            }
+            let active = state == AudioSessionStateActive;
+            match out.iter_mut().find(|s| s.pid == pid) {
+                Some(s) => s.active |= active,
+                None => out.push(AudioSession { pid, active }),
+            }
+        }
+    }
+    Ok(out)
 }
