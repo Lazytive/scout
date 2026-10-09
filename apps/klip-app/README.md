@@ -16,8 +16,8 @@ the OS, live), **Dark** (FilmCraft greys), **Graphite** (Photocraft greys), **Li
 **OLED black**. The sun button in the header (as in Photocraft) picks one; it is saved as
 `appearance.theme` and applied at once, also when another client changes the setting
 (`settings_changed`). The native title bar follows (`setTheme`). `app.css` paints Dark,
-or Light when the OS is in light mode, before the settings arrive; the overlay (M6.9)
-will use the same tokens.
+or Light when the OS is in light mode, before the settings arrive; the overlay uses the
+same tokens.
 
 ## Pieces
 
@@ -94,7 +94,8 @@ and audits npm licences from `package-lock.json` (shipped packages: permissive o
 
 Development and test overrides (environment): `KLIP_SETTINGS` (settings file),
 `KLIP_DISCOVERY` (control-channel discovery file), `KLIP_WINDOW_POS=x,y` (create the
-window there, visible and **not activated**: tests put it on a second monitor). Never
+window there, visible and **not activated**: tests put it off-screen, e.g. `12000,200`,
+and capture it with `tools/window-shot.ps1`). Never
 run a dev build with the real settings while someone plays: it would buffer their game
 and take their hotkeys.
 

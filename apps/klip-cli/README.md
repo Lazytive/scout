@@ -1,7 +1,8 @@
 # klip-cli
 
-Recorder CLI (M1, audio M2). The desktop app (M6) will host the same recorder and
-command set.
+Recorder CLI (M1, audio M2). `klip-cli daemon` runs the same engine as the desktop app
+(M6, ADR 0014); every other command talks to whichever of them runs, through the control
+channel.
 
 ```
 klip-cli record [--buffer 120s] [--fps 60] [--bitrate 20000] [--max-size 1920x1080]

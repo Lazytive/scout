@@ -7,7 +7,8 @@
   `session.toggle`, `bookmark.add`; engine: `engine.status`, `app.quit`,
   `settings.get`, `settings.set`, `games.list`, `overlay.menu`, `storage.status`,
   `storage.cleanup`, `clip.star`; setup: `encoders.list`, `audio.devices`, `audio.meter`,
-  `recording.estimate`, `hotkeys.pause`, `hotkeys.resume`, `games.candidates`).
+  `recording.estimate`, `hotkeys.pause`, `hotkeys.resume`, `games.candidates`; overlay:
+  `overlay.preview`).
 - `Handler`: implemented by whoever executes commands (the recorder now, the app later).
 - `Server`: listens on `127.0.0.1:<ephemeral>`, writes a discovery file
   (`%LOCALAPPDATA%\Klip\control.json` / `$XDG_RUNTIME_DIR/klip/control.json`) with the

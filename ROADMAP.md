@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (M6 in progress: M6.1–M6.10).
+Last updated: 2026-10-09 (end of M6).
 
 | | Milestone | State |
 |---|---|---|
@@ -10,7 +10,7 @@ Last updated: 2026-10-09 (M6 in progress: M6.1–M6.10).
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
-| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap, Tauri app shell, themes, Settings + first-run setup, overlay, benchmark done (M6.1–M6.10); docs next |
+| M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; Linux paths written, not yet run |
 | M7 | Library | |
 | M8 | Editor, Normal mode + export presets | |
 | M9 | Editor, Advanced mode | |
@@ -187,22 +187,33 @@ use drift by several percent between separate runs.
 
 ## Approximate / not done yet
 
-- **App shell (M6)**: Home, Settings, the first-run setup and the overlay work; the
-  Library page is M7. Overlay: Windows only (Linux gets the notification and sound;
-  layer-shell later); its effect on VRR/G-Sync over a real game is unmeasured (needs
-  the human or PresentMon); the quick menu takes the focus while open (the user opened
-  it), which a game in exclusive fullscreen would not survive, so it is not shown then. The window doesn't remember its size and position. "Allow
-  local control" applies at the next start. Per-game profiles cover buffer, quality,
-  game sound and microphone (not custom numbers or voice apps). Settings changes to quality/audio/folders apply when the next game starts
-  (the running buffer isn't restarted). Voice apps that start after the game aren't
-  added to the running recording. Game detection is checked on synthetic snapshots and
-  the test game; real store installs are on the human checklist. Linux engine paths
-  (portal per game start, process-only detection, Proton paths) are untested.
+- **App shell (M6)**:
+  - The Library page is M7; the window doesn't remember its size and position.
+  - Changes to quality, audio or folders apply when the next game starts (the running
+    buffer isn't restarted); "Allow local control" applies at the next start; voice apps
+    that start after the game aren't added to its recording.
+  - Per-game profiles cover buffer, quality, game sound and microphone (not custom
+    numbers or voice apps).
+  - Game detection is checked on synthetic snapshots and the test game; real store
+    installs are on the human checklist. The engine follows the game's process, not its
+    windows: a game that replaces its window isn't re-targeted (the capture supervisor
+    falls back to its monitor, ADR 0011).
+  - Overlay: Windows only (Linux gets the sound and notification; layer-shell later);
+    its effect on VRR/G-Sync over a real game is unmeasured (human checklist or
+    PresentMon); the quick menu takes the focus while open, so it isn't shown over an
+    exclusive-fullscreen game.
+  - **After a game, the process keeps ~380 MB private memory** (encoder, decoder and
+    driver state; 89 MB before the first game). A child process for capture/encode and
+    thumbnails would give it back.
+  - The cost numbers come from the benchmark scene on one high-end GPU; a real game and
+    a mid-range GPU are not measured.
+  - Linux: the app, the engine's portal path per game, process-only game detection and
+    Proton paths are written but not yet run.
 
 - **Full-session recording on Linux** is untested (same code; the gates and e2e run
-  there next time). Windows hotkeys for recording/bookmark come with the app (M6); until
-  then `klip-cli session start|stop|toggle` and `klip-cli bookmark` (bindable to a
-  desktop shortcut). On Linux `--record-hotkey` and `--bookmark-hotkey` use the portal.
+  there next time). Recording and bookmark hotkeys work in the app and `klip-cli daemon`
+  (Windows: RegisterHotKey; Linux: the portal), and in `klip-cli record --record-hotkey
+  --bookmark-hotkey`.
 - **Finished recordings are not faststart** (index at the end); sharing goes through the
   editor's export. Most video editors ignore `chpl` chapters, so bookmarks show in VLC,
   mpv and ffprobe now, and in Klip's editor later.
@@ -245,11 +256,13 @@ use drift by several percent between separate runs.
 - **Exclusive fullscreen** switching is unit-tested only (an automatic test would take
   over a monitor and the focus); DXGI captures clip HDR highlights (no tone-map on that
   path).
-- Not measured yet: FPS cost on a real game, recorder RAM (estimate for the ring:
-  `(video + audio bitrate) x 1.5 x (buffer + 1 s)` = 457 MB cap for 120 s at 20 Mbit/s +
-  one AAC track).
-- If the captured window closes, the recorder keeps the buffer (clips still save) but
-  doesn't recover capture; restart/re-target logic comes with game detection (M6).
+- Not measured yet: FPS cost and RAM in a real game (the benchmark scene is measured,
+  M6.10). The ring's cap is `(video + audio bitrate) x 1.5 x (buffer + 1 s)` = 457 MB for
+  120 s at 20 Mbit/s + one AAC track; low-motion scenes fill much less (the bench scene
+  used 7–18 MB for ~10–25 s).
+- If the captured window closes while its process lives on, the recorder keeps the
+  buffer (clips still save) but doesn't re-target a new window; when the process exits
+  the engine stops the recorder (M6).
 - **Linux** (M4, ADR 0012): video through the screen-cast portal and PipeWire audio work
   on KDE Wayland with NVENC; the hotkey works through the GlobalShortcuts portal; not
   yet: X11 and GNOME (M4.6), VA-API
@@ -322,36 +335,35 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    `session` shows size and fragments; stopping should take well under a second and the
    file should play to the end with sound in sync.
 
-## Manual checks for the human (M6, so far)
+## Manual checks for the human (M6)
 
-0. The app: `cd apps/klip-app && npm ci && npm run build`, then `cargo run -p klip-app`
+1. The app: `cd apps/klip-app && npm ci && npm run build`, then `cargo run -p klip-app`
    (it uses your real settings: default hotkeys Alt+F10 etc., buffers detected games).
-   Tray icon grey while waiting, blue while a game is buffered, red dot while recording;
-   left click opens the window, closing it keeps Klip in the tray, Quit in the tray menu
-   ends it. Does the look match Photocraft / FilmCraft closely enough? The sun button
-   switches Dark / Graphite / Light / OLED / follow system.
-5. Overlay (Minimal, the default): in a borderless/windowed game, save a clip: the card
+   The first-run setup appears once. Tray icon grey while waiting, blue while a game is
+   buffered, red dot while recording; left click opens the window, closing it keeps Klip
+   in the tray, Quit in the tray menu ends it. Does the look match Photocraft / FilmCraft
+   closely enough? The sun button switches follow system / Dark / Graphite / Light / OLED.
+2. Hotkeys: in a real (non anti-cheat) game in fullscreen, Alt+F10 saves a clip; a key
+   combination another app holds (e.g. the NVIDIA overlay's Alt+F10) shows as "already
+   used by another app" in Settings → Hotkeys.
+3. Overlay (Minimal, the default): in a borderless/windowed game, save a clip: the card
    appears top right of the game's monitor for ~3 s with a picture, the game keeps the
    keyboard (keep moving while it shows), and the G-Sync/FreeSync indicator (NVIDIA
    overlay "G-SYNC indicator" or the monitor's OSD) stays on, or tell me if it drops
    while the card shows. In an exclusive-fullscreen game: no card, just the sound.
    Full mode: the dot while recording; the quick-menu hotkey (set one) opens the menu,
    Esc closes it and the game gets the focus back. Settings → Overlay → "Show me".
-4. Settings: "Start Klip with Windows" adds Klip to Task Manager's startup apps and
+4. Game detection: start a few games from Steam / Epic / Xbox app / Battle.net (no
+   anti-cheat titles without asking): Home shows the right name and starts buffering;
+   launchers and store clients don't count. Battle.net games have no common library
+   folder: add them under Settings → Games.
+5. Settings: "Start Klip with Windows" adds Klip to Task Manager's startup apps and
    unticking removes it; "Choose…" opens the folder picker; the microphone Test meter
    moves when you speak; a hotkey field takes a new combination (your old hotkeys don't
    fire while it listens).
-
-1. Storage cap: in a test clip folder, set `storage.cap_gb` low (e.g. 1) with a few
-   GB of clips, star one old clip, save a new clip: the oldest unstarred clips appear
-   in the Recycle Bin (restorable), the starred one stays.
-2. Game detection: start a few games from Steam / Epic / Xbox app / Battle.net (no
-   anti-cheat titles without asking): `klip-cli daemon` prints `game_started` with the
-   right name; launchers and store clients don't count. Battle.net games have no common
-   library folder: add them to `games.user_games`.
-3. Hotkeys: in a real (non anti-cheat) game in fullscreen, Alt+F10 saves a clip; a key
-   combination another app holds (e.g. the NVIDIA overlay's Alt+F10) shows up as an
-   error in the `hotkeys` event.
+6. Storage cap: in a test clip folder, set the size limit low (e.g. 1 GB) with a few GB
+   of clips, star one old clip, save a new clip: the oldest unstarred clips appear in the
+   Recycle Bin (restorable), the starred one stays.
 
 ## Known bugs
 

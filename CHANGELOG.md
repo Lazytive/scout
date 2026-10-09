@@ -5,6 +5,11 @@ reason)`.
 
 ## Unreleased
 
+- M6.11 — M6 wrap-up: ADR 0014 accepted with everything M6 decided (detection, storage,
+  shell, look and themes, settings UI, overlay, benchmark method), ROADMAP M6 → done with
+  an honest list (memory after a game, overlay vs VRR unmeasured, Linux paths unrun) and
+  the human checklist, stale README lines fixed. (Claude Opus 5.5: M6 done)
+
 - M6.10 — `cargo xtask bench` (`apps/klip-cli/tests/bench.rs`): GPU-load calibration,
   uncapped and 144-fps-capped scenarios, interleaved Klip off/on pairs with a 95 %
   interval, engine CPU/RAM, 30 s save latency, idle cost; JSON in `target/bench/`.

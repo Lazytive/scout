@@ -1,6 +1,6 @@
 # 0014: Desktop app architecture: engine crate, settings file, thin Tauri shell
 
-Status: proposed (M6.1, 2026-10-09); confirmed at the end of M6.
+Status: accepted (M6, 2026-10-09). Written at M6.1, completed with what M6 built.
 
 ## Context
 M6 turns the recorder CLI into a tray app: settings, first-run setup, hotkeys, game
@@ -55,14 +55,47 @@ windows are hard to drive from tests.
 - The control channel (ADR 0006) is hosted by the engine and on by default (loopback,
   token file readable only by the user), so `klip-cli clip` works as a desktop-shortcut
   fallback; a setting turns it off.
-
+- **Game detection** (M6.3): a program is a game when the user listed it, or when its
+  executable is inside a store's library folder (Steam, Epic, GOG, Xbox, EA, Ubisoft,
+  Riot, itch, Heroic) and it has a window of at least 640x480; store clients, browsers,
+  launchers and helpers are left out, the user's "never" list always wins. Only OS
+  process/window lists and `PROCESS_QUERY_LIMITED_INFORMATION` paths are read. One poll
+  every 2 s (3.6 ms). The engine follows the game's *process*: the recorder starts when
+  a game is found and stops when the process exits; replay buffer modes `games`
+  (default), `always` (the desktop when no game runs) and `off`.
+- **Storage** (M6.5): stars live in `<clip folder>/.klip/library.json` (losing it loses
+  stars, never clips); over the size cap (GiB) the oldest unstarred clips go to the
+  Recycle Bin / Trash (default) or are deleted, never the clip just saved.
 - **Tauri shell** (M6.6): one Tauri command, `klip(cmd, args)`, forwards to the engine's
   command handler (the same as the control channel's), and engine events go to the
   window as `klip://event`; the UI has no other back door. Single instance; closing the
   window keeps Klip in the tray; quitting shuts the engine down first. The tray icon is
   drawn at runtime (no asset). Test overrides by environment (`KLIP_SETTINGS`,
   `KLIP_DISCOVERY`, `KLIP_WINDOW_POS`) keep test runs away from the user's settings,
-  hotkeys and focus.
+  hotkeys and focus; UI checks run the window off-screen and capture it with
+  `PrintWindow` (`tools/window-shot.ps1`). The built front end is embedded by default
+  (`custom-protocol` feature).
+- **Look and themes** (M6.6–M6.7, ADR 0004): the maintainer's Photocraft / FilmCraft
+  style. Themes are colour tokens only: follow system (default, the maintainer's
+  choice), Dark (FilmCraft greys), Graphite (Photocraft greys), Light, OLED black; every
+  text and outline colour pair is tested for WCAG AA contrast.
+- **Settings UI and first run** (M6.8): every control saves at once through the strict
+  `settings.set` and shows the engine's rejection under the field. While a hotkey field
+  listens, the engine's hotkeys are unbound (`hotkeys.pause`, back by themselves after
+  a minute) so the keys reach the field. Start with the OS is applied only when the
+  setting changes, so a choice made in the OS's startup-apps list isn't overridden.
+- **Overlay** (M6.9): a separate transparent, click-through window that is never
+  activated (`WS_EX_NOACTIVATE`, shown with `SWP_NOACTIVATE`), on the game's monitor.
+  On by default as the Minimal card (the maintainer's choice); Full adds a recording dot
+  and a quick menu (the only state that takes focus, which it hands back to the game);
+  Off or a game in exclusive fullscreen: no window, only the sound (synthesised, no
+  asset) and/or a system notification. Thumbnails are decoded from the saved clip after
+  the save (the card appears at once, the picture follows) and cached for the library.
+- **Performance** (M6.10): measured with `cargo xtask bench` by switching the replay
+  buffer off and on within one long run of the benchmark scene (separate runs drift
+  more than the effect). Capture asks Windows for at most twice the recording rate
+  (`MinUpdateInterval`); skipping frames in Klip was tried and dropped (it left slots
+  empty).
 
 ## Consequences
 - Settings, game rules and storage policy are unit- and property-tested in pure crates;
@@ -71,3 +104,11 @@ windows are hard to drive from tests.
 - Two front doors (CLI daemon, app) run one engine, so a fix lands in both.
 - `RegisterHotKey` takes the keys away from the focused game; users who need the same
   keys in a game must pick another combination (the settings page says so).
+- Measured cost on the benchmark scene (RTX 4080 SUPER): none with a 144 fps cap,
+  2.9 % ± 1.0 % fewer frames uncapped; the engine uses 6 % of one core. But once a game
+  was recorded the process keeps ~380 MB private memory (encoder, decoder and driver
+  state): moving capture/encode and thumbnails into a child process is the likely fix.
+- The overlay is Windows-only so far; on Linux the sound and notification stand in
+  (layer-shell later). The Linux engine paths are written but not yet run.
+- Whether a window over a borderless game turns VRR off while the card shows is not
+  measured (human checklist; PresentMon could measure it).
