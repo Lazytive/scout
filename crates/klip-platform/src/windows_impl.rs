@@ -6,12 +6,23 @@
 
 use std::ffi::c_void;
 
-use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT, S_OK};
+use std::collections::HashMap;
+
+use windows::Win32::Devices::Display::{
+    DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL, DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
+    DISPLAYCONFIG_DEVICE_INFO_HEADER, DISPLAYCONFIG_MODE_INFO, DISPLAYCONFIG_PATH_INFO,
+    DISPLAYCONFIG_SDR_WHITE_LEVEL, DISPLAYCONFIG_SOURCE_DEVICE_NAME, DisplayConfigGetDeviceInfo,
+    GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
+};
+use windows::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, HWND, LPARAM, POINT, RECT, S_OK};
+use windows::Win32::Graphics::Dxgi::Common::DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_ERROR_NOT_FOUND, IDXGIFactory1,
+    CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_ERROR_NOT_FOUND, IDXGIDevice,
+    IDXGIFactory1, IDXGIOutput6,
 };
 use windows::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW,
+    ClientToScreen, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST,
+    MONITORINFO, MONITORINFOEXW, MonitorFromWindow,
 };
 use windows::Win32::Media::Audio::{
     AudioSessionStateActive, AudioSessionStateExpired, DEVICE_STATE_ACTIVE, IAudioSessionControl2,
@@ -26,6 +37,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
+use windows::Win32::UI::Shell::{QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClientRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow,
     IsWindowVisible, MONITORINFOF_PRIMARY,
@@ -55,7 +67,7 @@ pub(crate) fn list_gpus() -> Result<Vec<GpuAdapter>, PlatformError> {
     // SAFETY: CreateDXGIFactory1 has no preconditions; the windows crate owns the
     // returned COM reference and releases it on drop.
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(os)?;
-    let mut out = Vec::new();
+    let mut out: Vec<GpuAdapter> = Vec::new();
     for index in 0u32..64 {
         // SAFETY: any index is valid input; past the end it returns DXGI_ERROR_NOT_FOUND.
         let adapter = match unsafe { factory.EnumAdapters1(index) } {
@@ -67,7 +79,17 @@ pub(crate) fn list_gpus() -> Result<Vec<GpuAdapter>, PlatformError> {
         let desc = unsafe { adapter.GetDesc1() }.map_err(os)?;
         let luid = i64::from(desc.AdapterLuid.HighPart).wrapping_shl(32)
             | i64::from(desc.AdapterLuid.LowPart);
+        // The same adapter can be enumerated more than once (e.g. when virtual display
+        // drivers are installed); the LUID identifies it.
+        if out.iter().any(|g| g.luid == luid) {
+            continue;
+        }
+        // SAFETY: live interface; the IID is a static GUID.
+        let driver_version = unsafe { adapter.CheckInterfaceSupport(&IDXGIDevice::IID) }
+            .ok()
+            .and_then(|v| u64::try_from(v).ok());
         out.push(GpuAdapter {
+            driver_version,
             index,
             name: wide_to_string(&desc.Description),
             vendor: GpuVendor::from_pci_id(desc.VendorId),
@@ -125,13 +147,21 @@ fn info_for(hwnd: HWND) -> Result<WindowInfo, PlatformError> {
     let (client_width, client_height) = rect_size(&rect);
     // SAFETY: IsIconic accepts any handle value.
     let minimized = unsafe { IsIconic(hwnd) }.as_bool();
+    let mut origin = POINT::default();
+    // SAFETY: `origin` is a valid in/out pointer; on failure it stays (0, 0).
+    let _ = unsafe { ClientToScreen(hwnd, &raw mut origin) };
+    // SAFETY: MonitorFromWindow accepts any window handle; NEAREST always returns one.
+    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
     Ok(WindowInfo {
         handle,
         pid,
         title: String::from_utf16_lossy(title.get(..n).unwrap_or(&[])),
         client_width,
         client_height,
+        client_x: origin.x,
+        client_y: origin.y,
         minimized,
+        monitor: monitor.0 as usize as u64,
     })
 }
 
@@ -167,6 +197,8 @@ pub(crate) fn list_monitors() -> Result<Vec<MonitorInfo>, PlatformError> {
     if !ok.as_bool() {
         return Err(PlatformError::Os("EnumDisplayMonitors failed".into()));
     }
+    let outputs = dxgi_outputs().unwrap_or_default();
+    let white = sdr_white_levels().unwrap_or_default();
     let mut out = Vec::new();
     for hmon in handles {
         let mut info = MONITORINFOEXW::default();
@@ -179,17 +211,162 @@ pub(crate) fn list_monitors() -> Result<Vec<MonitorInfo>, PlatformError> {
         }
         let r = info.monitorInfo.rcMonitor;
         let (width, height) = rect_size(&r);
+        let handle = hmon.0 as usize as u64;
+        let device_name = wide_to_string(&info.szDevice);
+        let output = outputs.get(&handle);
         out.push(MonitorInfo {
-            handle: hmon.0 as usize as u64,
+            handle,
             x: r.left,
             y: r.top,
             width,
             height,
             primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
-            device_name: wide_to_string(&info.szDevice),
+            adapter_luid: output.map(|o| o.luid),
+            hdr: output.is_some_and(|o| o.hdr),
+            sdr_white_nits: white.get(&device_name).copied(),
+            max_nits: output.and_then(|o| (o.max_nits > 0.0).then_some(o.max_nits)),
+            device_name,
         });
     }
     Ok(out)
+}
+
+/// What DXGI knows about the output showing a monitor.
+struct OutputInfo {
+    luid: i64,
+    hdr: bool,
+    max_nits: f32,
+}
+
+/// HMONITOR → adapter LUID and HDR state, from every adapter's outputs.
+fn dxgi_outputs() -> Result<HashMap<u64, OutputInfo>, PlatformError> {
+    // SAFETY: CreateDXGIFactory1 has no preconditions; the returned COM reference is
+    // released on drop.
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(os)?;
+    let mut map = HashMap::new();
+    for a in 0u32..64 {
+        // SAFETY: any index is valid; past the end it returns DXGI_ERROR_NOT_FOUND.
+        let Ok(adapter) = (unsafe { factory.EnumAdapters1(a) }) else {
+            break;
+        };
+        // SAFETY: live interface.
+        let Ok(desc) = (unsafe { adapter.GetDesc1() }) else {
+            continue;
+        };
+        let luid = i64::from(desc.AdapterLuid.HighPart).wrapping_shl(32)
+            | i64::from(desc.AdapterLuid.LowPart);
+        for o in 0u32..64 {
+            // SAFETY: any index is valid; past the end it returns DXGI_ERROR_NOT_FOUND.
+            let Ok(output) = (unsafe { adapter.EnumOutputs(o) }) else {
+                break;
+            };
+            // IDXGIOutput6 exists on Windows 10 1803+; without it there is no HDR.
+            let Ok(output6) = output.cast::<IDXGIOutput6>() else {
+                // SAFETY: live interface.
+                if let Ok(d) = unsafe { output.GetDesc() } {
+                    map.entry(d.Monitor.0 as usize as u64)
+                        .or_insert(OutputInfo {
+                            luid,
+                            hdr: false,
+                            max_nits: 0.0,
+                        });
+                }
+                continue;
+            };
+            // SAFETY: live interface.
+            let Ok(d) = (unsafe { output6.GetDesc1() }) else {
+                continue;
+            };
+            // The first adapter that lists a monitor drives it.
+            map.entry(d.Monitor.0 as usize as u64)
+                .or_insert(OutputInfo {
+                    luid,
+                    hdr: d.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,
+                    max_nits: if d.MaxLuminance.is_finite() {
+                        d.MaxLuminance
+                    } else {
+                        0.0
+                    },
+                });
+        }
+    }
+    Ok(map)
+}
+
+/// GDI device name (`\\.\DISPLAY1`) → SDR white level in nits, from the display
+/// configuration.
+fn sdr_white_levels() -> Result<HashMap<String, f32>, PlatformError> {
+    let mut n_paths = 0u32;
+    let mut n_modes = 0u32;
+    // SAFETY: valid flags and out pointers.
+    let r = unsafe {
+        GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &raw mut n_paths, &raw mut n_modes)
+    };
+    if r != ERROR_SUCCESS {
+        return Err(PlatformError::Os(format!(
+            "GetDisplayConfigBufferSizes: {r:?}"
+        )));
+    }
+    // Capped: a machine has a handful of displays.
+    let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); n_paths.min(256) as usize];
+    let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); n_modes.min(512) as usize];
+    let mut n_paths = u32::try_from(paths.len()).unwrap_or(0);
+    let mut n_modes = u32::try_from(modes.len()).unwrap_or(0);
+    // SAFETY: the arrays hold the number of elements passed in the counts; the OS writes
+    // at most that many and updates the counts.
+    let r = unsafe {
+        QueryDisplayConfig(
+            QDC_ONLY_ACTIVE_PATHS,
+            &raw mut n_paths,
+            paths.as_mut_ptr(),
+            &raw mut n_modes,
+            modes.as_mut_ptr(),
+            None,
+        )
+    };
+    if r != ERROR_SUCCESS {
+        return Err(PlatformError::Os(format!("QueryDisplayConfig: {r:?}")));
+    }
+    let mut map = HashMap::new();
+    for p in paths.iter().take(n_paths as usize) {
+        let mut source = DISPLAYCONFIG_SOURCE_DEVICE_NAME {
+            header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
+                r#type: DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
+                size: u32::try_from(size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>()).unwrap_or(0),
+                adapterId: p.sourceInfo.adapterId,
+                id: p.sourceInfo.id,
+            },
+            ..Default::default()
+        };
+        // SAFETY: the header's type and size describe `source`, which is writable.
+        if unsafe { DisplayConfigGetDeviceInfo(&raw mut source.header) } != 0 {
+            continue;
+        }
+        let mut white = DISPLAYCONFIG_SDR_WHITE_LEVEL {
+            header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
+                r#type: DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL,
+                size: u32::try_from(size_of::<DISPLAYCONFIG_SDR_WHITE_LEVEL>()).unwrap_or(0),
+                adapterId: p.targetInfo.adapterId,
+                id: p.targetInfo.id,
+            },
+            SDRWhiteLevel: 0,
+        };
+        // SAFETY: as above, for `white`.
+        if unsafe { DisplayConfigGetDeviceInfo(&raw mut white.header) } != 0 {
+            continue;
+        }
+        // 1000 = 80 nits (scRGB 1.0).
+        let nits = white.SDRWhiteLevel as f32 * 80.0 / 1000.0;
+        if nits > 0.0 && nits.is_finite() {
+            map.insert(wide_to_string(&source.viewGdiDeviceName), nits);
+        }
+    }
+    Ok(map)
+}
+
+pub(crate) fn exclusive_fullscreen_active() -> bool {
+    // SAFETY: no preconditions; returns the state by value.
+    unsafe { SHQueryUserNotificationState() }.is_ok_and(|s| s == QUNS_RUNNING_D3D_FULL_SCREEN)
 }
 
 pub(crate) fn enable_dpi_awareness() -> bool {

@@ -1,13 +1,13 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (end of M2).
+Last updated: 2026-10-09 (M3.1–M3.3).
 
 | | Milestone | State |
 |---|---|---|
 | M0 | Repo, rules, gates | **done** |
 | M1 | Recorder CLI (Windows, NVENC) | **done**: acceptance passes |
 | M2 | Audio (game/per-app/mic tracks, A/V sync ≤ 1 frame) | **done**: acceptance passes |
-| M3 | All GPUs + fallbacks, HDR tone-mapping | next |
+| M3 | All GPUs + fallbacks, HDR tone-mapping | in progress: M3.1–M3.3 done |
 | M4 | Linux (portal + PipeWire, VA-API) | |
 | M5 | Full-session recording + bookmarks | |
 | M6 | Desktop app shell (Tauri) | |
@@ -38,8 +38,16 @@ Video (M1, re-measured after the M2 timing changes):
   start ~60–70 ms more.
 - Synthetic exactness test (600 known frames → NVENC → ring → MP4 → ffmpeg decode):
   600/600 frames back, in order; a 2 s cut is exactly 120 frames starting on a keyframe.
-- Encoder probe on this machine: all of `nvd3d11{h264,h265,av1}enc`,
-  `nv{h264,h265,av1}enc` (CUDA) and Media Foundation H.264/HEVC MFTs pass a 1 s encode.
+- Encoders (M3, `every_working_encoder_round_trips_exactly`, real-time feed, GPU at
+  84–99 % from another game): all 14 installed encoders give back every frame exactly
+  and cut on keyframes: NVENC D3D11 + CUDA (H.264/H.265/AV1), D3D12 H.264 (both DXGI
+  adapters), NVIDIA MF H.264/HEVC (both adapters), Microsoft software MF H.264/HEVC.
+- Encoder choice: ranked list for the monitor's GPU (here `nvd3d11h264enc`,
+  `d3d12h264enc`, `mfh264enc`, …); isolated probes take 0.9–1.7 s each, once per setup
+  (cached); a recorder whose first encoder can't start runs with the next one
+  (missing AMF → NVENC: started in 206–227 ms).
+- Platform: both monitors here report HDR on (SDR white 120 / 140 nits, peak 400 / 648
+  nits), the adapter that drives them, and the virtual-display copy of the GPU.
 
 Audio (M2):
 - A/V sync with the test game (beep at every flash, game audio by process loopback):
@@ -82,10 +90,19 @@ Audio (M2):
 - **Mic:** no gain, noise suppression or push-to-talk yet; off by default.
 - **Save waits for audio** up to 250 ms (typically 50–100 ms).
 - Static content gives ~1 fps (WGC only sends changed frames), so desktop capture is VFR.
-- Only NVENC was tested on real hardware. AMF/QSV/VA-API property maps are unverified
-  (M3). Hybrid laptops, exclusive-fullscreen fallback and HDR are M3.
-- DXGI lists the RTX 4080 SUPER twice on this machine (virtual display drivers from
-  Parsec / Virtual Desktop are installed); harmless now, dedupe by LUID in M3.
+- **AMF and QSV are unverified**: property names come from the GStreamer docs; no AMD or
+  Intel hardware here. VA-API is M4. Hybrid-laptop ranking is by GPU vendor (two GPUs of
+  one vendor can't be told apart) and untested on a real laptop.
+- **HDR content is clipped** (measured, primary monitor in HDR mode): an HDR game's
+  highlights above SDR white become flat white, and with WGC its SDR parts come out too
+  bright when the game's paper white isn't 80 nits. SDR games on an HDR desktop are
+  exact. Fix in progress (M3.4/M3.5: own FP16 WGC capture + tone-map).
+- **NVENC and Media Foundation in one process** (ADR 0009): handled by starting MF first
+  and ranking D3D12 before MF hardware, but a session on NVIDIA's MF encoder still breaks
+  later NVENC sessions in that process (the start fallback then picks the next encoder).
+- DXGI lists the RTX 4080 SUPER twice with different LUIDs (virtual display drivers from
+  Parsec / Virtual Desktop); the copy has no outputs and ranks after the real one.
+- Exclusive-fullscreen fallback: not done yet (M3.6).
 - Not measured yet: FPS cost on a real game, recorder RAM (estimate for the ring:
   `(video + audio bitrate) x 1.5 x (buffer + 1 s)` = 457 MB cap for 120 s at 20 Mbit/s +
   one AAC track).

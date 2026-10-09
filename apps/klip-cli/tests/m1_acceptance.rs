@@ -22,7 +22,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use common::{KillOnDrop, cli, game_exe, run_json, spawn_ready, stop_recorder};
-use klip_testkit::{continuity, oracle};
+use klip_testkit::{continuity, oracle, sync};
 
 #[test]
 #[ignore = "hardware: needs GPU encoder, desktop session, ffmpeg; run via `cargo xtask e2e`"]
@@ -40,21 +40,25 @@ fn record_buffer_and_clip_last_30s() {
     let tmp = tempfile::tempdir().unwrap();
     let discovery = tmp.path().join("control.json");
     let clips = tmp.path().join("clips");
+    let frames_log = tmp.path().join("frames.csv");
     let game_fps = 120;
     let capture_fps = 60;
 
     let (game, ready) = spawn_ready(
-        Command::new(&game_exe).args([
-            "--background",
-            "--fps",
-            &game_fps.to_string(),
-            "--width",
-            "1280",
-            "--height",
-            "720",
-            "--duration",
-            &format!("{}s", clip_secs + 40),
-        ]),
+        Command::new(&game_exe)
+            .args([
+                "--background",
+                "--fps",
+                &game_fps.to_string(),
+                "--width",
+                "1280",
+                "--height",
+                "720",
+                "--duration",
+                &format!("{}s", clip_secs + 40),
+            ])
+            .arg("--frames-log")
+            .arg(&frames_log),
         Duration::from_secs(30),
     );
     let _game = KillOnDrop(game);
@@ -146,8 +150,26 @@ fn record_buffer_and_clip_last_30s() {
         "decoded frame count matches container"
     );
     // Frame continuity: every captured frame is new (no repeats) and no gap is larger
-    // than one missed capture tick.
-    assert_eq!(report.duplicates, 0, "repeated frames");
+    // than one missed capture tick. Repeats are only a failure if the game itself drew at
+    // least the capture rate during the clip; when another app loads the GPU the test
+    // game can fall below it, and then a capture tick without a new game frame repeats
+    // the last one.
+    let (first, last) = (report.first.unwrap(), report.last.unwrap());
+    let game_times = sync::parse_log(&std::fs::read_to_string(&frames_log).unwrap());
+    let allowed =
+        continuity::allowed_repeats(&game_times, first, last, 1.0 / f64::from(capture_fps));
+    println!(
+        "test game drew {:.1} fps during the clip; its frame gaps allow {allowed} repeats",
+        f64::from(last - first) / dur
+    );
+    if allowed > 0 {
+        println!("WARNING: the test game stalled (GPU busy?), so some repeats are expected");
+    }
+    assert!(
+        report.duplicates <= allowed,
+        "repeated frames: {} with {allowed} justified by game stalls",
+        report.duplicates
+    );
     let big_gaps = report.steps_over(expected_step * 2 + 1);
     println!("steps over {}: {big_gaps}", expected_step * 2 + 1);
     assert_eq!(big_gaps, 0, "gaps longer than one capture tick");

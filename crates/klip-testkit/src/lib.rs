@@ -6,6 +6,7 @@
 //! - [`continuity`]: dropped/duplicated frame analysis of counter sequences.
 //! - [`audio`]: test beeps and an onset detector.
 //! - [`sync`]: A/V sync of a clip against the test game's frame and beep logs.
+//! - [`patches`]: brightness patches for colour and HDR tone-mapping checks.
 //!
 //! Dev tooling, so `arithmetic_side_effects` is allowed here (ADR 0001).
 
@@ -15,4 +16,5 @@ pub mod audio;
 pub mod barcode;
 pub mod continuity;
 pub mod oracle;
+pub mod patches;
 pub mod sync;

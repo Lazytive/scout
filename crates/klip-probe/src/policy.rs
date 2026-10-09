@@ -1,7 +1,7 @@
 //! Which encoders Klip may ever use (AGENTS.md rules 5 and 6).
 //!
 //! The **allowlist** is the gate: only GPU vendor encoders, OS encoders (Media
-//! Foundation) and, on Linux only, openh264 (meant to be Cisco's binary from the Flatpak
+//! Foundation, Direct3D 12 Video Encode) and, on Linux only, openh264 (meant to be Cisco's binary from the Flatpak
 //! extension). The **denylist** names GPL and other software encoders that are present in
 //! common GStreamer builds; it exists for the licence audit and as a second check. This
 //! file is the only product source allowed to mention denied element names
@@ -22,6 +22,9 @@ pub enum EncoderFamily {
     Qsv,
     /// Windows Media Foundation (hardware or Microsoft software MFT).
     MediaFoundation,
+    /// Direct3D 12 Video Encode: the GPU's hardware encoder through the OS video API,
+    /// for any vendor whose driver supports it (no vendor runtime needed).
+    D3d12,
     /// Linux VA-API (AMD/Intel).
     VaApi,
     /// Cisco openh264 (Linux Flatpak extension only).
@@ -83,6 +86,12 @@ pub const ALLOWED: &[AllowedEncoder] = &[
     enc("qsvh264enc", Codec::H264, F::Qsv, V::Intel),
     enc("qsvh265enc", Codec::H265, F::Qsv, V::Intel),
     enc("qsvav1enc", Codec::Av1, F::Qsv, V::Intel),
+    enc("d3d12h264enc", Codec::H264, F::D3d12, V::Os),
+    enc("d3d12h265enc", Codec::H265, F::D3d12, V::Os),
+    enc("d3d12av1enc", Codec::Av1, F::D3d12, V::Os),
+    enc("mfh264enc", Codec::H264, F::MediaFoundation, V::Os),
+    enc("mfh265enc", Codec::H265, F::MediaFoundation, V::Os),
+    enc("mfav1enc", Codec::Av1, F::MediaFoundation, V::Os),
     enc("vah264enc", Codec::H264, F::VaApi, V::Os),
     enc("vah265enc", Codec::H265, F::VaApi, V::Os),
     enc("vaav1enc", Codec::Av1, F::VaApi, V::Os),
@@ -125,49 +134,36 @@ pub fn is_denied(element: &str) -> bool {
     })
 }
 
-/// If `element` is a Media Foundation encoder (`mf<codec>enc` or
-/// `mf<codec>device<N>enc`), its codec.
-pub fn media_foundation_codec(element: &str) -> Option<Codec> {
-    let rest = element.strip_prefix("mf")?;
-    let rest = rest.strip_suffix("enc")?;
-    let (codec, tail) = if let Some(t) = rest.strip_prefix("h264") {
-        (Codec::H264, t)
-    } else if let Some(t) = rest.strip_prefix("h265") {
-        (Codec::H265, t)
-    } else {
-        let t = rest.strip_prefix("av1")?;
-        (Codec::Av1, t)
-    };
-    if tail.is_empty() {
-        return Some(codec);
-    }
+/// The element name without a per-device suffix: GStreamer registers the encoder of the
+/// first adapter as e.g. `mfh264enc` and the others as `mfh264device<N>enc` (Media
+/// Foundation, D3D12, NVENC D3D11, AMF, QSV all do this). `None` if `element` has no such
+/// suffix.
+pub fn without_device_suffix(element: &str) -> Option<String> {
+    let rest = element.strip_suffix("enc")?;
+    let pos = rest.rfind("device")?;
+    let (base, tail) = rest.split_at(pos);
     let digits = tail.strip_prefix("device")?;
-    (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())).then_some(codec)
+    if base.is_empty() || digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(format!("{base}enc"))
 }
 
-/// Look up an element on the allowlist (including Media Foundation names). Denied names
-/// always return `None`.
+/// Look up an element on the allowlist, including per-device names (see
+/// [`without_device_suffix`]). The returned entry's `element` is the allowlisted base
+/// name. Denied names always return `None`.
 pub fn allowed(element: &str) -> Option<AllowedEncoder> {
     if is_denied(element) {
         return None;
     }
-    if let Some(a) = ALLOWED.iter().find(|a| a.element == element) {
-        if a.linux_only && !cfg!(target_os = "linux") {
-            return None;
-        }
-        return Some(*a);
+    let found = ALLOWED.iter().find(|a| a.element == element).or_else(|| {
+        let base = without_device_suffix(element)?;
+        ALLOWED.iter().find(|a| a.element == base)
+    })?;
+    if found.linux_only && !cfg!(target_os = "linux") {
+        return None;
     }
-    if cfg!(windows) {
-        let codec = media_foundation_codec(element)?;
-        return Some(AllowedEncoder {
-            element: "",
-            codec,
-            family: F::MediaFoundation,
-            vendor: V::Os,
-            linux_only: false,
-        });
-    }
-    None
+    Some(*found)
 }
 
 #[cfg(test)]
@@ -197,17 +193,35 @@ mod tests {
     }
 
     #[test]
-    fn media_foundation_names() {
-        assert_eq!(media_foundation_codec("mfh264enc"), Some(Codec::H264));
+    fn per_device_names() {
+        let codec = |n: &str| allowed(n).map(|a| a.codec);
+        assert_eq!(codec("mfh264enc"), Some(Codec::H264));
+        assert_eq!(codec("mfh265device2enc"), Some(Codec::H265));
+        assert_eq!(codec("mfav1device10enc"), Some(Codec::Av1));
+        assert_eq!(codec("d3d12h264device1enc"), Some(Codec::H264));
+        assert_eq!(codec("nvd3d11h265device3enc"), Some(Codec::H265));
+        assert_eq!(codec("qsvav1device2enc"), Some(Codec::Av1));
+        assert_eq!(codec("mfh264deviceenc"), None);
+        assert_eq!(codec("mfaacenc"), None);
+        assert_eq!(codec("mfh264dec"), None);
+        assert_eq!(codec("mfh264device2xenc"), None);
+        assert_eq!(codec("device1enc"), None);
+        assert_eq!(codec("x264device1enc"), None);
         assert_eq!(
-            media_foundation_codec("mfh265device2enc"),
-            Some(Codec::H265)
+            allowed("d3d12h264device1enc").unwrap().family,
+            EncoderFamily::D3d12
         );
-        assert_eq!(media_foundation_codec("mfav1device10enc"), Some(Codec::Av1));
-        assert_eq!(media_foundation_codec("mfh264deviceenc"), None);
-        assert_eq!(media_foundation_codec("mfaacenc"), None);
-        assert_eq!(media_foundation_codec("mfh264dec"), None);
-        assert_eq!(media_foundation_codec("mfh264device2xenc"), None);
+        assert_eq!(
+            without_device_suffix("mfh264device12enc").as_deref(),
+            Some("mfh264enc")
+        );
+    }
+
+    #[test]
+    fn denied_names_with_device_suffix_stay_denied() {
+        // A denied software encoder never sneaks in under a device-style name.
+        assert!(allowed("x264enc").is_none());
+        assert!(allowed("avenc_h264_device1enc").is_none());
     }
 
     #[test]

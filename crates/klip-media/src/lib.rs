@@ -5,6 +5,7 @@
 
 use bytes::Bytes;
 
+pub mod av1;
 mod drift;
 mod grid;
 

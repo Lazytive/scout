@@ -160,6 +160,9 @@ pub struct CaptureStats {
     pub callback_panics: AtomicU64,
     /// Video frames whose timestamp grid had to restart (see [`FrameGrid`]).
     pub grid_restarts: AtomicU64,
+    /// Frames dropped in front of the encoder because it fell behind (the queue there
+    /// leaks rather than stalling capture).
+    pub encoder_queue_drops: AtomicU64,
 }
 
 /// Scale `(w, h)` down to fit in `(max_w, max_h)`, keeping aspect ratio, never upscaling,
@@ -218,8 +221,14 @@ fn parser_and_caps(codec: Codec) -> Result<(&'static str, &'static str), Capture
     }
 }
 
-/// Apply rate control and GOP settings for an encoder family. Unknown properties are
-/// skipped with a log line; the required ones (bitrate, keyframe interval) error out.
+/// Apply rate control and GOP settings for an encoder family: VBR at the target bitrate
+/// with peaks up to 1.5x, one keyframe (IDR) per `keyframe_interval` frames, no
+/// B-frames. Unknown properties are skipped with a log line; the required ones (bitrate,
+/// keyframe interval) error out.
+///
+/// Property names: NVENC, Media Foundation and D3D12 verified on an RTX 4080 SUPER with
+/// GStreamer 1.28.6; AMF and QSV taken from the GStreamer 1.28 element documentation
+/// (no AMD/Intel hardware tested yet, see ROADMAP.md).
 fn configure_encoder(el: &gst::Element, cfg: &EncodeConfig) -> Result<(), CaptureError> {
     let kbps = cfg.bitrate_kbps.to_string();
     let max_kbps = cfg
@@ -245,15 +254,34 @@ fn configure_encoder(el: &gst::Element, cfg: &EncodeConfig) -> Result<(), Captur
         EncoderFamily::MediaFoundation => {
             req("bitrate", &kbps)?;
             req("gop-size", &gop)?;
+            // Peak-constrained VBR; the default ("uvbr") has no peak limit.
+            props::set_str(el, "rc-mode", "pcvbr");
+            props::set_str(el, "max-bitrate", &max_kbps);
             props::set_str(el, "bframes", "0");
             props::set_str(el, "low-latency", "true");
         }
-        EncoderFamily::Amf | EncoderFamily::Qsv => {
-            // Property names verified on AMD/Intel hardware in M3.
+        EncoderFamily::D3d12 => {
             req("bitrate", &kbps)?;
             req("gop-size", &gop)?;
+            props::set_str(el, "rate-control", "vbr");
+            props::set_str(el, "max-bitrate", &max_kbps);
+        }
+        EncoderFamily::Amf => {
+            req("bitrate", &kbps)?;
+            req("gop-size", &gop)?;
+            // AMF's "vbr" is peak-constrained VBR.
+            props::set_str(el, "rate-control", "vbr");
             props::set_str(el, "max-bitrate", &max_kbps);
             props::set_str(el, "b-frames", "0");
+        }
+        EncoderFamily::Qsv => {
+            req("bitrate", &kbps)?;
+            req("gop-size", &gop)?;
+            props::set_str(el, "rate-control", "vbr");
+            props::set_str(el, "max-bitrate", &max_kbps);
+            props::set_str(el, "b-frames", "0");
+            // Every I-frame an IDR, so each keyframe can start a clip.
+            props::set_str(el, "idr-interval", "0");
         }
         EncoderFamily::VaApi => {
             req("bitrate", &kbps)?;
@@ -308,6 +336,8 @@ pub struct EncodeChain {
     pub appsink: gst_app::AppSink,
     /// First timestamp into the encoder.
     pub origin: InputOrigin,
+    /// The leaky queue in front of the encoder.
+    queue: gst::Element,
 }
 
 impl EncodeChain {
@@ -320,6 +350,12 @@ impl EncodeChain {
         stats: Arc<CaptureStats>,
         timing: Timing,
     ) {
+        let drops = stats.clone();
+        // Emitted when the queue is full, right before it drops the incoming frame.
+        self.queue.connect("overrun", false, move |_| {
+            drops.encoder_queue_drops.fetch_add(1, Ordering::Relaxed);
+            None
+        });
         attach(
             &self.appsink,
             track,
@@ -351,17 +387,14 @@ pub fn build_encode_chain(
         "video/x-raw(memory:D3D11Memory),format=NV12,width={width},height={height},pixel-aspect-ratio=1/1"
     );
     chain.push(capsfilter(&nv12)?);
-    let software_mf = family == EncoderFamily::MediaFoundation
-        && !cfg.encoder.description.contains("NVIDIA")
-        && !cfg.encoder.description.contains("AMD")
-        && !cfg.encoder.description.contains("Intel");
     match family {
         EncoderFamily::NvencCuda => {
             chain.push(make("d3d11download")?);
             chain.push(make("cudaupload")?);
         }
-        EncoderFamily::VaApi | EncoderFamily::OpenH264 => chain.push(make("d3d11download")?),
-        EncoderFamily::MediaFoundation if software_mf => chain.push(make("d3d11download")?),
+        // D3D11 → D3D12 on the GPU (shared texture), no download.
+        EncoderFamily::D3d12 => chain.push(make("d3d12upload")?),
+        _ if cfg.encoder.needs_system_memory() => chain.push(make("d3d11download")?),
         _ => {}
     }
     let queue = make("queue")?;
@@ -369,7 +402,7 @@ pub fn build_encode_chain(
     props::set_str(&queue, "max-size-bytes", "0");
     props::set_str(&queue, "max-size-time", "0");
     props::set_str(&queue, "leaky", "downstream");
-    chain.push(queue);
+    chain.push(queue.clone());
     let encoder = make(&cfg.encoder.element)?;
     if klip_probe::allowed(&cfg.encoder.element).is_none() {
         return Err(CaptureError::Config(format!(
@@ -399,6 +432,7 @@ pub fn build_encode_chain(
         input: convert,
         appsink,
         origin,
+        queue,
     })
 }
 
@@ -421,6 +455,16 @@ fn colorimetry_from_caps(s: &gst::StructureRef) -> Option<Colorimetry> {
 /// Describe an encoded stream from its parser caps: H.264/H.265/AV1 video or raw
 /// (not ADTS) AAC.
 pub fn track_info_from_caps(caps: &gst::CapsRef) -> Result<TrackInfo, String> {
+    track_info_with_frame(caps, None)
+}
+
+/// Like [`track_info_from_caps`], with the stream's first frame for codecs whose caps
+/// don't carry the configuration (AV1 from `av1parse`: `av1C` is built from the
+/// sequence header in the first keyframe).
+pub fn track_info_with_frame(
+    caps: &gst::CapsRef,
+    first_frame: Option<&[u8]>,
+) -> Result<TrackInfo, String> {
     let s = caps.structure(0).ok_or("empty caps")?;
     let codec = match s.name().as_str() {
         "video/x-h264" => Codec::H264,
@@ -429,15 +473,22 @@ pub fn track_info_from_caps(caps: &gst::CapsRef) -> Result<TrackInfo, String> {
         "audio/mpeg" => return aac_track_info(s),
         other => return Err(format!("unsupported caps {other}")),
     };
-    let codec_data = s
-        .get::<gst::Buffer>("codec_data")
-        .map_err(|_| "caps have no codec_data".to_string())?;
-    let map = codec_data.map_readable().map_err(|e| e.to_string())?;
+    let codec_data = match s.get::<gst::Buffer>("codec_data") {
+        Ok(b) => Bytes::copy_from_slice(b.map_readable().map_err(|e| e.to_string())?.as_slice()),
+        Err(_) if codec == Codec::Av1 => {
+            let frame = first_frame.ok_or("AV1 caps have no codec_data")?;
+            Bytes::from(
+                klip_media::av1::config_record(frame)
+                    .ok_or("no AV1 sequence header in the first frame")?,
+            )
+        }
+        Err(_) => return Err("caps have no codec_data".into()),
+    };
     let width = s.get::<i32>("width").map_err(|e| e.to_string())?;
     let height = s.get::<i32>("height").map_err(|e| e.to_string())?;
     let info = TrackInfo {
         codec,
-        codec_data: Bytes::copy_from_slice(map.as_slice()),
+        codec_data,
         params: TrackParams::Video(VideoParams {
             width: u32::try_from(width).map_err(|e| e.to_string())?,
             height: u32::try_from(height).map_err(|e| e.to_string())?,
@@ -551,19 +602,19 @@ fn handle_sample(
     state: &Mutex<SinkState>,
 ) -> Result<(), String> {
     let sample = appsink.pull_sample().map_err(|e| e.to_string())?;
-    if let Some(caps) = sample.caps() {
-        let mut st = state.lock().unwrap_or_else(PoisonError::into_inner);
-        if st.caps.as_ref().map(|c| c.as_ref()) != Some(caps) {
-            let info = track_info_from_caps(caps)?;
-            st.caps = Some(caps.to_owned());
-            sink.on_track_info(track, info);
-        }
-    }
     let buffer = sample.buffer().ok_or("sample without buffer")?;
     if buffer.size() > MAX_PACKET_BYTES {
         return Err(format!("encoded frame too large ({} bytes)", buffer.size()));
     }
     let map = buffer.map_readable().map_err(|e| e.to_string())?;
+    if let Some(caps) = sample.caps() {
+        let mut st = state.lock().unwrap_or_else(PoisonError::into_inner);
+        if st.caps.as_ref().map(|c| c.as_ref()) != Some(caps) {
+            let info = track_info_with_frame(caps, Some(map.as_slice()))?;
+            st.caps = Some(caps.to_owned());
+            sink.on_track_info(track, info);
+        }
+    }
     let pts = clock_ns(buffer.pts()).ok_or("buffer without timestamp")?;
     let dts = clock_ns(buffer.dts()).unwrap_or(pts);
     let (pts, dts) = state

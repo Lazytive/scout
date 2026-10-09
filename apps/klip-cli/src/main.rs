@@ -5,7 +5,7 @@
 //! - `klip-cli clip --last 30s` asks the running recorder to save a clip. Bind it to a
 //!   desktop shortcut as a hotkey fallback.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -190,19 +190,94 @@ fn gpu_vendors() -> Vec<klip_platform::GpuVendor> {
     }
 }
 
-fn pick_encoder(codec: Codec, requested: Option<&str>) -> Result<klip_probe::EncoderChoice> {
+/// Where probe results are remembered between runs.
+fn encoder_cache_path() -> Option<PathBuf> {
+    dirs::cache_dir().map(|d| d.join("Klip").join("encoders.json"))
+}
+
+/// The probe cache for this machine's current setup (empty if none or outdated).
+fn load_encoder_cache() -> (klip_probe::ProbeCache, Option<PathBuf>) {
+    let adapters: Vec<(u32, u32, Option<u64>)> = klip_platform::list_gpus()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|g| !g.software)
+        .map(|g| (g.vendor_id, g.device_id, g.driver_version))
+        .collect();
+    let fp = klip_probe::fingerprint(&adapters, &klip_probe::installed_encoders());
+    let path = encoder_cache_path();
+    let cache = match &path {
+        Some(p) => klip_probe::ProbeCache::load(p, &fp),
+        None => klip_probe::ProbeCache::new(&fp),
+    };
+    (cache, path)
+}
+
+fn save_encoder_cache(cache: &klip_probe::ProbeCache, path: Option<&Path>) {
+    if let Some(p) = path
+        && let Err(e) = cache.save(p)
+    {
+        tracing::warn!(error = %e, "could not save the encoder cache");
+    }
+}
+
+/// Vendor of the GPU that shows `target` (encoding there avoids copies between GPUs).
+fn target_gpu(target: VideoTarget) -> Option<klip_platform::GpuVendor> {
+    let monitors = klip_platform::list_monitors().ok()?;
+    let handle = match target {
+        VideoTarget::PrimaryMonitor => monitors.iter().find(|m| m.primary)?.handle,
+        VideoTarget::Monitor(h) => h,
+        VideoTarget::Window(h) => klip_platform::window_info(h).ok()?.monitor,
+    };
+    let luid = monitors.iter().find(|m| m.handle == handle)?.adapter_luid?;
+    klip_platform::list_gpus()
+        .ok()?
+        .into_iter()
+        .find(|g| g.luid == luid)
+        .map(|g| g.vendor)
+}
+
+/// Probes run in a child copy of this binary, so a misbehaving driver can't take the
+/// recorder down and in-process state can't skew the result.
+fn prober() -> klip_probe::Prober {
+    match std::env::current_exe() {
+        Ok(exe) => klip_probe::Prober::Isolated(exe),
+        Err(_) => klip_probe::Prober::InProcess,
+    }
+}
+
+/// Encoders to try, best first. An explicitly requested encoder is used alone.
+fn pick_encoders(
+    codec: Codec,
+    requested: Option<&str>,
+    prefer: Option<klip_platform::GpuVendor>,
+    cache: &mut klip_probe::ProbeCache,
+) -> Result<Vec<klip_probe::EncoderChoice>> {
     let vendors = gpu_vendors();
     match requested {
-        Some(name) => klip_probe::candidates(codec, &vendors)
+        Some(name) => klip_probe::candidates(codec, &vendors, prefer)
             .into_iter()
             .find(|c| c.element == name)
+            .map(|c| vec![c])
             .ok_or_else(|| {
                 anyhow!(
                     "{name} is not an installed, allowed {} encoder",
                     codec.name()
                 )
             }),
-        None => Ok(klip_probe::best(codec, &vendors, Duration::from_secs(10))?),
+        None => {
+            let list = klip_probe::ranked(
+                codec,
+                &vendors,
+                prefer,
+                cache,
+                &prober(),
+                Duration::from_secs(10),
+            );
+            if list.is_empty() {
+                bail!("no working {} encoder found", codec.name());
+            }
+            Ok(list)
+        }
     }
 }
 
@@ -369,8 +444,16 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
         bail!("--bitrate must be 500..=500000 kbit/s");
     }
     let (max_w, max_h) = parse_size(&args.max_size)?;
-    let encoder = pick_encoder(codec, args.encoder.as_deref())?;
     let target = pick_target(args)?;
+    let (mut cache, cache_path) = load_encoder_cache();
+    let mut encoders = pick_encoders(
+        codec,
+        args.encoder.as_deref(),
+        target_gpu(target),
+        &mut cache,
+    )?;
+    save_encoder_cache(&cache, cache_path.as_deref());
+    let encoder = encoders.remove(0);
     let clip_dir = match &args.out {
         Some(p) => p.clone(),
         None => dirs::video_dir()
@@ -399,20 +482,32 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             show_cursor: !args.no_cursor,
         },
         encode: EncodeConfig {
-            encoder: encoder.clone(),
+            encoder,
             bitrate_kbps: args.bitrate,
             keyframe_interval: args.fps,
         },
+        encoder_fallbacks: encoders,
         audio,
     };
-    let recorder = Arc::new(Recorder::start(cfg).context("could not start capture")?);
+    let recorder = Recorder::start(cfg).context("could not start capture")?;
+    for a in recorder.encoder_attempts() {
+        match &a.error {
+            None => cache.record_started(&a.element),
+            Some(e) => {
+                eprintln!("Encoder {} failed to start: {e}", a.element);
+                cache.record_start_failure(&a.element, e);
+            }
+        }
+    }
+    save_encoder_cache(&cache, cache_path.as_deref());
+    let recorder = Arc::new(recorder);
     let server = Server::start(recorder.clone(), Some(&discovery)).context("control channel")?;
     let status = recorder.status();
     println!(
         "{}",
         json!({
             "event": "ready",
-            "encoder": encoder.element,
+            "encoder": status.get("encoder"),
             "width": status.get("width"),
             "height": status.get("height"),
             "fps": args.fps,
@@ -432,7 +527,10 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
     }
     eprintln!(
         "Recording with {} at {}x{}. Save a clip with `klip-cli clip --last 30s`; stop with Ctrl+C.",
-        encoder.element,
+        status
+            .get("encoder")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?"),
         status.get("width").and_then(|v| v.as_u64()).unwrap_or(0),
         status.get("height").and_then(|v| v.as_u64()).unwrap_or(0),
     );
@@ -482,34 +580,68 @@ fn run() -> Result<()> {
             let codec = Codec::from_name(codec).ok_or_else(|| anyhow!("unknown codec {codec}"))?;
             for g in klip_platform::list_gpus()? {
                 println!(
-                    "GPU {}: {} ({}{})",
+                    "GPU {}: {} ({}{}, LUID {:#x})",
                     g.index,
                     g.name,
                     g.vendor.name(),
-                    if g.software { ", software" } else { "" }
+                    if g.software { ", software" } else { "" },
+                    g.luid
                 );
             }
-            let results = klip_probe::probe_all(codec, &gpu_vendors(), Duration::from_secs(10));
+            let prefer = target_gpu(VideoTarget::PrimaryMonitor);
+            let results = klip_probe::probe_all(
+                codec,
+                &gpu_vendors(),
+                prefer,
+                &prober(),
+                Duration::from_secs(10),
+            );
             if results.is_empty() {
                 println!("No allowed {} encoders are installed.", codec.name());
             }
-            for r in results {
+            // A full probe refreshes the remembered results.
+            let (mut cache, cache_path) = load_encoder_cache();
+            for r in &results {
+                cache.record(r);
                 println!(
-                    "{:<22} {:<4} {:>5} ms  {}{}",
+                    "{:<22} {:<4} {:>5} ms  {}{}{}",
                     r.choice.element,
                     if r.ok { "ok" } else { "FAIL" },
                     r.elapsed.as_millis(),
                     r.choice.description,
-                    r.error.map(|e| format!(" ({e})")).unwrap_or_default()
+                    r.choice
+                        .gpu
+                        .map(|g| format!(" [{}]", g.name()))
+                        .unwrap_or_default(),
+                    r.error
+                        .as_ref()
+                        .map(|e| format!(" ({e})"))
+                        .unwrap_or_default()
                 );
             }
+            save_encoder_cache(&cache, cache_path.as_deref());
             Ok(())
         }
         Cmd::Monitors => {
             klip_platform::enable_dpi_awareness();
+            let gpus = klip_platform::list_gpus().unwrap_or_default();
             for (i, m) in klip_platform::list_monitors()?.into_iter().enumerate() {
+                let gpu = m
+                    .adapter_luid
+                    .and_then(|l| gpus.iter().find(|g| g.luid == l))
+                    .map(|g| g.name.as_str())
+                    .unwrap_or("unknown GPU");
+                let hdr = if m.hdr {
+                    format!(
+                        ", HDR (SDR white {} nits, peak {} nits)",
+                        m.sdr_white_nits.map_or("?".into(), |n| format!("{n:.0}")),
+                        m.max_nits.map_or("?".into(), |n| format!("{n:.0}"))
+                    )
+                } else {
+                    String::new()
+                };
                 println!(
-                    "{i}: {}x{} at ({}, {}){}",
+                    "{i}: {}x{} at ({}, {}){} on {gpu}{hdr}",
                     m.width,
                     m.height,
                     m.x,
@@ -590,6 +722,10 @@ fn audio_apps() -> Result<()> {
 }
 
 fn main() -> std::process::ExitCode {
+    // Encoder probes run in a fresh copy of this binary (klip_probe::isolated).
+    if let Some(code) = klip_probe::worker_main() {
+        return std::process::ExitCode::from(u8::try_from(code).unwrap_or(1));
+    }
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(

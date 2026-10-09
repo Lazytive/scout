@@ -15,6 +15,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use klip_buffer::{PushError, Ring, RingConfig, Snapshot, SnapshotError};
 use klip_capture::audio::{AudioConfig, AudioSession};
+use klip_capture::klip_probe::EncoderChoice;
 use klip_capture::{CaptureError, CaptureSession, EncodeConfig, PacketSink, TimeBase, VideoConfig};
 use klip_control::{CommandError, Handler, commands};
 use klip_media::{NANOS_PER_MILLI, Nanos, Packet, TrackInfo, TrackKind, nanos_to_millis};
@@ -47,9 +48,24 @@ pub struct RecorderConfig {
     pub clip_dir: PathBuf,
     pub video: VideoConfig,
     pub encode: EncodeConfig,
+    /// Encoders to try, in order, if `encode.encoder` fails to start (same settings).
+    pub encoder_fallbacks: Vec<EncoderChoice>,
     /// `None`: no audio.
     pub audio: Option<AudioConfig>,
 }
+
+/// One encoder tried while starting a recording.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EncoderAttempt {
+    pub element: String,
+    /// Why it was given up; `None` for the one that runs.
+    pub error: Option<String>,
+}
+
+/// How long a new capture may take to deliver its first encoded frame. A pipeline that
+/// reports an error before that is given up and the next encoder is tried; one that is
+/// merely slow (a window that hasn't drawn yet) is kept.
+const FIRST_PACKET_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Bytes needed to hold `buffer` of video at `bitrate_kbps` (VBR peaks at 1.5x) plus one
 /// GOP of slack. Used for the default byte cap and the RAM estimate.
@@ -160,6 +176,14 @@ impl RingSink {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    /// Forget the last error (after a failed start that was recovered from).
+    pub fn clear_error(&self) {
+        *self
+            .last_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
     }
 
     pub fn last_warning(&self) -> Option<String> {
@@ -318,6 +342,8 @@ pub struct Recorder {
     audio: Mutex<Option<AudioSession>>,
     /// Why audio isn't recording, if it was requested and failed to start.
     audio_error: Option<String>,
+    /// Encoders tried at start, the running one last.
+    encoder_attempts: Vec<EncoderAttempt>,
     /// Name of each ring track.
     track_names: Vec<String>,
     timebase: TimeBase,
@@ -336,7 +362,88 @@ impl std::fmt::Debug for Recorder {
     }
 }
 
+/// Start the video pipeline with the first encoder of `cfg.encode` + fallbacks that
+/// works: one that fails to build, to start, or reports an error before its first
+/// packet is stopped and the next is tried. Errors that no encoder can fix (the target
+/// window is gone, bad settings) end the search at once.
+fn start_video(
+    cfg: &RecorderConfig,
+    sink: &Arc<RingSink>,
+    timebase: &TimeBase,
+) -> Result<(CaptureSession, EncodeConfig, Vec<EncoderAttempt>), RecorderError> {
+    let mut attempts: Vec<EncoderAttempt> = Vec::new();
+    let mut last_err: Option<CaptureError> = None;
+    let encoders =
+        std::iter::once(cfg.encode.encoder.clone()).chain(cfg.encoder_fallbacks.iter().cloned());
+    for encoder in encoders {
+        if attempts.iter().any(|a| a.element == encoder.element) {
+            continue;
+        }
+        let encode = EncodeConfig {
+            encoder,
+            ..cfg.encode.clone()
+        };
+        let element = encode.encoder.element.clone();
+        let sink_dyn: Arc<dyn PacketSink> = sink.clone();
+        let session = match CaptureSession::start(&cfg.video, &encode, sink_dyn, Some(timebase)) {
+            Ok(s) => s,
+            Err(e @ (CaptureError::Target(_) | CaptureError::Platform(_))) => return Err(e.into()),
+            Err(e) => {
+                tracing::warn!(encoder = %element, error = %e, "encoder failed to start; trying the next");
+                attempts.push(EncoderAttempt {
+                    element,
+                    error: Some(e.to_string()),
+                });
+                last_err = Some(e);
+                continue;
+            }
+        };
+        let t0 = Instant::now();
+        let failed = loop {
+            let st = session.stats();
+            if st.errors.load(Ordering::Relaxed) > 0 {
+                break true;
+            }
+            if st.packets.load(Ordering::Relaxed) > 0 {
+                break false;
+            }
+            if t0.elapsed() >= FIRST_PACKET_TIMEOUT {
+                tracing::warn!(encoder = %element, "no video yet; keeping this encoder");
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        if !failed {
+            tracing::info!(encoder = %element, first_packet_ms = u64::try_from(t0.elapsed().as_millis()).unwrap_or(u64::MAX), "video started");
+            attempts.push(EncoderAttempt {
+                element,
+                error: None,
+            });
+            sink.clear_error();
+            return Ok((session, encode, attempts));
+        }
+        let error = sink
+            .last_error()
+            .unwrap_or_else(|| "pipeline error".to_string());
+        session.stop();
+        tracing::warn!(encoder = %element, error = %error, "encoder failed at start; trying the next");
+        last_err = Some(CaptureError::Gst(error.clone()));
+        attempts.push(EncoderAttempt {
+            element,
+            error: Some(error),
+        });
+    }
+    Err(last_err
+        .map(RecorderError::from)
+        .unwrap_or_else(|| RecorderError::Config("no encoder to try".into())))
+}
+
 impl Recorder {
+    /// Encoders tried at start, the running one last (see [`start_video`]).
+    pub fn encoder_attempts(&self) -> &[EncoderAttempt] {
+        &self.encoder_attempts
+    }
+
     /// Start capturing into a new replay ring.
     pub fn start(cfg: RecorderConfig) -> Result<Recorder, RecorderError> {
         if cfg.buffer <= 0 {
@@ -358,8 +465,9 @@ impl Recorder {
         )?);
         // One clock and base time for every pipeline keeps audio and video in sync.
         let timebase = TimeBase::new()?;
-        let session =
-            CaptureSession::start(&cfg.video, &cfg.encode, sink.clone(), Some(&timebase))?;
+        let mut cfg = cfg;
+        let (session, encode, encoder_attempts) = start_video(&cfg, &sink, &timebase)?;
+        cfg.encode = encode;
         let output = session.output_size();
         let (audio, audio_error) = match &cfg.audio {
             None => (None, None),
@@ -378,6 +486,7 @@ impl Recorder {
             session: Mutex::new(Some(session)),
             audio: Mutex::new(audio),
             audio_error,
+            encoder_attempts,
             track_names,
             timebase,
             cfg,
@@ -410,15 +519,16 @@ impl Recorder {
     pub fn status(&self) -> Value {
         let s = self.sink.stats();
         let session = self.session.lock().unwrap_or_else(PoisonError::into_inner);
-        let (packets, errors) = session
+        let (packets, errors, encoder_drops) = session
             .as_ref()
             .map(|c| {
                 (
                     c.stats().packets.load(Ordering::Relaxed),
                     c.stats().errors.load(Ordering::Relaxed),
+                    c.stats().encoder_queue_drops.load(Ordering::Relaxed),
                 )
             })
-            .unwrap_or((0, 0));
+            .unwrap_or((0, 0, 0));
         drop(session);
         json!({
             "buffered_ms": nanos_to_millis(s.buffered),
@@ -430,6 +540,10 @@ impl Recorder {
             "rejected": s.rejected,
             "evicted": s.evicted,
             "encoder": self.cfg.encode.encoder.element,
+            "encoder_attempts": self.encoder_attempts.iter().map(|a| json!({
+                "element": a.element,
+                "error": a.error,
+            })).collect::<Vec<_>>(),
             "codec": self.cfg.encode.encoder.codec.name(),
             "bitrate_kbps": self.cfg.encode.bitrate_kbps,
             "width": self.output.0,
@@ -437,6 +551,7 @@ impl Recorder {
             "fps": self.cfg.video.fps,
             "capture_packets": packets,
             "capture_errors": errors,
+            "encoder_queue_drops": encoder_drops,
             "last_error": self.sink.last_error(),
             "last_warning": self.sink.last_warning(),
             "audio": self.audio_status(),

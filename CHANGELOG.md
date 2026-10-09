@@ -5,6 +5,38 @@ reason)`.
 
 ## Unreleased
 
+- M3.2/M3.3 — AV1 clips: `klip_media::av1` builds the `av1C` record from the sequence
+  header in the first keyframe (`av1parse` caps carry none), so NVENC AV1 records into
+  MP4; AV1 had never been run end to end. (Claude Opus 5.5: found by the all-encoder
+  round trip)
+- M3.2 — Encoders on Windows can't share a process freely (ADR 0009): `klip_probe::init`
+  starts Media Foundation before any NVENC session (else `mfaacenc` starting after NVENC
+  breaks every later NVENC session: `NV_ENC_ERR_INVALID_VERSION`), D3D12 ranks before
+  hardware MFTs (a session on NVIDIA's MFT breaks later NVENC sessions), probes run in a
+  child copy of the app (`klip_probe::isolated`, `--klip-encoder-probe`). Regression test
+  `nvenc_survives_media_foundation_in_between`. (Claude Opus 5.5: in-process probes
+  reported working NVENC as broken)
+- M3.2 — Encoder selection: D3D12 Video Encode family (`d3d12h264enc`, vendor-neutral),
+  per-device element names for all families, ranking by the GPU vendor of the captured
+  monitor (hybrid laptops), probe cache (`%LOCALAPPDATA%\Klip\encoders.json`,
+  fingerprinted by GStreamer version, adapters + driver, installed encoders), recorder
+  start falls back to the next encoder when one fails before its first frame
+  (`encoder_attempts` in status), CLI ranks for the target's monitor and keeps the
+  cache. (Claude Opus 5.5: M3)
+- M3.3 — Per-family encoder settings: MF peak-constrained VBR (`pcvbr`, default had no
+  peak), D3D12 VBR, AMF/QSV from the GStreamer docs (QSV `idr-interval=0`);
+  `every_working_encoder_round_trips_exactly` checks every installed encoder of every
+  codec (14 here) for exact frames and keyframe cuts. Frames dropped by the encoder's
+  leaky input queue are now counted (`encoder_queue_drops`). (Claude Opus 5.5: M3)
+- M3.1 — Platform: GPUs deduplicated by LUID with driver version; monitors report their
+  adapter, HDR state, SDR white level and peak luminance; windows report screen position
+  and monitor (`WindowInfo::covers`); `exclusive_fullscreen_active`. Test game
+  `--patches`/`--hdr`/`--paper-white` (FP16 scRGB swapchain) and `klip_testkit::patches`
+  for colour and tone-mapping checks. (Claude Opus 5.5: M3; HDR measurements in
+  execution plan)
+- xtask — `e2e` runs with `--no-fail-fast` so one failing test binary doesn't hide the
+  rest. (Claude Opus 5.5)
+
 - M2.4 — App selection: `klip_platform::{list_processes, audio_sessions}`,
   `klip_capture::apps` (default list of music players left out of system audio,
   `plan_system`: whole mix / exclude one tree / per-app capture, `app_roots` so

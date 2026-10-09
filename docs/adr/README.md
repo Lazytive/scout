@@ -13,3 +13,4 @@ One file per decision: context, decision, consequences. Status is `accepted`, `p
 | [0006](0006-control-channel.md) | Loopback JSON-lines control channel with token file | accepted |
 | [0007](0007-test-strategy.md) | Test game, barcodes, ffmpeg as oracle, `xtask e2e` gate | accepted |
 | [0008](0008-audio-capture-and-sync.md) | Audio sources, track layout, one timeline for all pipelines | accepted |
+| [0009](0009-encoder-selection.md) | Encoder ranking, isolated probes, cache, runtime fallback | accepted (M3) |

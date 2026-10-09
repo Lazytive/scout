@@ -7,6 +7,13 @@ struct U {
     band: vec4<f32>,
     // margin, width, height, bar position (0..1)
     misc: vec4<f32>,
+    // hdr (0/1), paper white in scRGB units, patches (0/1), patch count
+    extra: vec4<f32>,
+    // patch row x0, y0, x1, y1 as fractions of the frame
+    row: vec4<f32>,
+    // patch output values (already in the swapchain's encoding), 8 slots
+    p0: vec4<f32>,
+    p1: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: U;
@@ -29,8 +36,31 @@ fn lit(cell: u32) -> bool {
     return ((u.bits.x >> bit) & 1u) == 1u;
 }
 
+fn srgb_to_linear(v: f32) -> f32 {
+    if (v <= 0.04045) {
+        return v / 12.92;
+    }
+    return pow((v + 0.055) / 1.055, 2.4);
+}
+
+// An SDR code value (0..1). In HDR mode it becomes linear scRGB at paper white.
 fn gray(v: f32) -> vec4<f32> {
+    if (u.extra.x > 0.5) {
+        let l = srgb_to_linear(v) * u.extra.y;
+        return vec4<f32>(l, l, l, 1.0);
+    }
     return vec4<f32>(v, v, v, 1.0);
+}
+
+fn raw(v: f32) -> vec4<f32> {
+    return vec4<f32>(v, v, v, 1.0);
+}
+
+fn patch_value(i: u32) -> f32 {
+    if (i < 4u) {
+        return u.p0[i];
+    }
+    return u.p1[i - 4u];
 }
 
 @fragment
@@ -57,6 +87,15 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
             return gray(1.0);
         }
         return gray(0.0);
+    }
+    if (u.extra.z > 0.5) {
+        let rx = px / w;
+        let ry = py / h;
+        if (rx >= u.row.x && rx < u.row.z && ry >= u.row.y && ry < u.row.w) {
+            let n = u32(u.extra.w);
+            let i = min(u32(floor((rx - u.row.x) / (u.row.z - u.row.x) * f32(n))), n - 1u);
+            return raw(patch_value(i));
+        }
     }
     if (u.bits.y == 1u) {
         return gray(1.0);

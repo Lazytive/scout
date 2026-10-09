@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, ValueEnum};
 use klip_testkit::barcode::{self, CELLS, LAYOUT};
+use klip_testkit::patches;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -74,6 +75,16 @@ struct Args {
     /// whatever you're doing).
     #[arg(long)]
     background: bool,
+    /// Draw a row of flat gray patches (klip-testkit `patches`) for colour checks.
+    #[arg(long)]
+    patches: bool,
+    /// Render in HDR: FP16 scRGB swapchain, patches at the luminances in klip-testkit
+    /// `patches::HDR_NITS`, the rest of the picture at `--paper-white`. Implies --patches.
+    #[arg(long)]
+    hdr: bool,
+    /// Brightness of SDR white in HDR mode, in nits.
+    #[arg(long, default_value_t = 80.0)]
+    paper_white: f32,
 }
 
 fn parse_dur(s: &str) -> Result<Duration, String> {
@@ -89,6 +100,44 @@ struct Uniforms {
     bits: [u32; 4],
     band: [f32; 4],
     misc: [f32; 4],
+    extra: [f32; 4],
+    row: [f32; 4],
+    p0: [f32; 4],
+    p1: [f32; 4],
+}
+
+/// How the picture is encoded: patch values and the HDR switch for the shader.
+#[derive(Clone, Copy, Debug)]
+struct Look {
+    hdr: bool,
+    /// Paper white in scRGB units (1.0 = 80 nits).
+    paper: f32,
+    patches: bool,
+}
+
+impl Look {
+    fn uniforms(&self) -> ([f32; 4], [f32; 4], [f32; 4], [f32; 4]) {
+        let mut values = [0f32; 8];
+        for (i, v) in values.iter_mut().enumerate().take(patches::COUNT) {
+            *v = if self.hdr {
+                patches::HDR_NITS.get(i).copied().unwrap_or(0.0) / 80.0
+            } else {
+                f32::from(patches::SDR_CODES.get(i).copied().unwrap_or(0)) / 255.0
+            };
+        }
+        let r = patches::ROW;
+        (
+            [
+                f32::from(u8::from(self.hdr)),
+                self.paper,
+                f32::from(u8::from(self.patches)),
+                patches::COUNT as f32,
+            ],
+            [r.x0, r.y0, r.x1, r.y1],
+            [values[0], values[1], values[2], values[3]],
+            [values[4], values[5], values[6], values[7]],
+        )
+    }
 }
 
 struct Gfx {
@@ -102,10 +151,11 @@ struct Gfx {
     uniforms: wgpu::Buffer,
     /// Backend and present mode, reported in the ready line.
     describe: String,
+    look: Look,
 }
 
 impl Gfx {
-    fn new(window: Arc<Window>) -> Result<Gfx> {
+    fn new(window: Arc<Window>, look: Look) -> Result<Gfx> {
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
         // Most Windows games are Direct3D; capture behaviour should match theirs.
         if cfg!(windows) {
@@ -121,14 +171,24 @@ impl Gfx {
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))?;
         let caps = surface.get_capabilities(&adapter);
-        // A non-sRGB format so the shader's values land unchanged in the frame.
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| !f.is_srgb())
-            .or_else(|| caps.formats.first().copied())
-            .ok_or_else(|| anyhow!("surface has no formats"))?;
+        // A non-sRGB format so the shader's values land unchanged in the frame; in HDR
+        // mode FP16 scRGB (linear, 1.0 = 80 nits), which is how Windows games do HDR.
+        let (format, color_space) = if look.hdr {
+            let f = wgpu::TextureFormat::Rgba16Float;
+            if !caps.formats.contains(&f) {
+                return Err(anyhow!("this surface has no FP16 format, can't render HDR"));
+            }
+            (f, wgpu::SurfaceColorSpace::ExtendedSrgbLinear)
+        } else {
+            let f = caps
+                .formats
+                .iter()
+                .copied()
+                .find(|f| !f.is_srgb())
+                .or_else(|| caps.formats.first().copied())
+                .ok_or_else(|| anyhow!("surface has no formats"))?;
+            (f, wgpu::SurfaceColorSpace::Auto)
+        };
         let present_mode = [wgpu::PresentMode::Immediate, wgpu::PresentMode::Mailbox]
             .into_iter()
             .find(|m| caps.present_modes.contains(m))
@@ -147,7 +207,7 @@ impl Gfx {
                 .unwrap_or(wgpu::CompositeAlphaMode::Auto),
             view_formats: vec![],
             desired_maximum_frame_latency: 1,
-            color_space: wgpu::SurfaceColorSpace::Auto,
+            color_space,
         };
         surface.configure(&device, &config);
 
@@ -214,6 +274,7 @@ impl Gfx {
         });
         let describe = format!("{:?} {:?}", adapter.get_info().backend, present_mode);
         Ok(Gfx {
+            look,
             describe,
             window,
             surface,
@@ -236,7 +297,12 @@ impl Gfx {
 
     fn render(&mut self, counter: u32, fps: u32) -> Result<()> {
         let flash = counter.is_multiple_of(fps);
+        let (extra, row, p0, p1) = self.look.uniforms();
         let u = Uniforms {
+            extra,
+            row,
+            p0,
+            p1,
             bits: [barcode::encode(counter), u32::from(flash), counter, CELLS],
             band: [LAYOUT.x0, LAYOUT.y0, LAYOUT.x1, LAYOUT.y1],
             misc: [
@@ -346,7 +412,12 @@ impl App {
             }
         }
         let window = Arc::new(el.create_window(attrs)?);
-        self.gfx = Some(Gfx::new(window)?);
+        let look = Look {
+            hdr: self.args.hdr,
+            paper: self.args.paper_white.clamp(1.0, 10_000.0) / 80.0,
+            patches: self.args.patches || self.args.hdr,
+        };
+        self.gfx = Some(Gfx::new(window, look)?);
         Ok(())
     }
 
@@ -365,6 +436,7 @@ impl App {
             "height": size.height,
             "fps": self.args.fps,
             "gfx": gfx.describe,
+            "hdr": gfx.look.hdr,
             "beep_rate": self.beeper.as_ref().map(|b| b.rate),
             // Game time `game_ns` is QueryPerformanceCounter time `qpc_ns` (both in ns).
             "anchor": self.beeper.as_ref().and_then(|b| b.anchor()).map(|(qpc, game)| {

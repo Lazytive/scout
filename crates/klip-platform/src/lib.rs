@@ -68,6 +68,9 @@ pub struct GpuAdapter {
     pub luid: i64,
     pub dedicated_video_memory: u64,
     pub software: bool,
+    /// User-mode driver version (DXGI `CheckInterfaceSupport`), changes with driver
+    /// updates.
+    pub driver_version: Option<u64>,
 }
 
 /// A top-level window.
@@ -80,11 +83,28 @@ pub struct WindowInfo {
     pub title: String,
     pub client_width: u32,
     pub client_height: u32,
+    /// Top-left of the client area in screen coordinates (physical pixels when DPI
+    /// awareness is enabled).
+    pub client_x: i32,
+    pub client_y: i32,
     pub minimized: bool,
+    /// The monitor that has the largest part of the window (HMONITOR on Windows).
+    pub monitor: u64,
+}
+
+impl WindowInfo {
+    /// Whether the client area covers all of `m` (borderless or exclusive fullscreen).
+    pub fn covers(&self, m: &MonitorInfo) -> bool {
+        let right = i64::from(self.client_x).saturating_add(i64::from(self.client_width));
+        let bottom = i64::from(self.client_y).saturating_add(i64::from(self.client_height));
+        let m_right = i64::from(m.x).saturating_add(i64::from(m.width));
+        let m_bottom = i64::from(m.y).saturating_add(i64::from(m.height));
+        self.client_x <= m.x && self.client_y <= m.y && right >= m_right && bottom >= m_bottom
+    }
 }
 
 /// A monitor in physical pixels (when DPI awareness is enabled).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MonitorInfo {
     /// HMONITOR on Windows.
     pub handle: u64,
@@ -94,6 +114,17 @@ pub struct MonitorInfo {
     pub height: u32,
     pub primary: bool,
     pub device_name: String,
+    /// LUID of the GPU adapter that drives this monitor (`GpuAdapter::luid`), if DXGI
+    /// lists it. On hybrid laptops the internal panel usually hangs off the iGPU.
+    pub adapter_luid: Option<i64>,
+    /// Windows HDR ("Use HDR") is on: the desktop is composed in scRGB and sent as
+    /// BT.2020 PQ.
+    pub hdr: bool,
+    /// Brightness of SDR white on this monitor in nits (Windows "SDR content brightness"),
+    /// when the OS reports it. 80 nits is scRGB 1.0.
+    pub sdr_white_nits: Option<f32>,
+    /// Peak luminance the display reports, in nits.
+    pub max_nits: Option<f32>,
 }
 
 /// What an audio capture records.
@@ -298,6 +329,20 @@ pub fn list_monitors() -> Result<Vec<MonitorInfo>, PlatformError> {
     }
 }
 
+/// Whether the foreground app runs Direct3D exclusive fullscreen (the shell's
+/// "running D3D full screen" notification state). Window capture can't see such a
+/// game; capture its monitor instead.
+pub fn exclusive_fullscreen_active() -> bool {
+    #[cfg(windows)]
+    {
+        windows_impl::exclusive_fullscreen_active()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
 /// Ask the OS for per-monitor DPI awareness so window and monitor sizes are physical
 /// pixels. Best effort: returns false if it was already set or isn't available.
 pub fn enable_dpi_awareness() -> bool {
@@ -323,6 +368,48 @@ mod tests {
         assert_eq!(GpuVendor::from_pci_id(0x1234), GpuVendor::Other(0x1234));
     }
 
+    fn monitor(x: i32, y: i32, width: u32, height: u32) -> MonitorInfo {
+        MonitorInfo {
+            handle: 1,
+            x,
+            y,
+            width,
+            height,
+            primary: false,
+            device_name: String::new(),
+            adapter_luid: None,
+            hdr: false,
+            sdr_white_nits: None,
+            max_nits: None,
+        }
+    }
+
+    fn window(x: i32, y: i32, w: u32, h: u32) -> WindowInfo {
+        WindowInfo {
+            handle: 1,
+            pid: 1,
+            title: String::new(),
+            client_width: w,
+            client_height: h,
+            client_x: x,
+            client_y: y,
+            minimized: false,
+            monitor: 1,
+        }
+    }
+
+    #[test]
+    fn window_covers_monitor() {
+        let m = monitor(2560, 0, 2560, 1440);
+        assert!(window(2560, 0, 2560, 1440).covers(&m));
+        assert!(window(2550, -10, 2600, 1500).covers(&m));
+        assert!(!window(2560, 0, 2560, 1439).covers(&m));
+        assert!(!window(0, 0, 2560, 1440).covers(&m));
+        // Extreme values don't overflow.
+        assert!(!window(i32::MAX, i32::MAX, u32::MAX, u32::MAX).covers(&m));
+        assert!(window(i32::MIN, i32::MIN, u32::MAX, u32::MAX).covers(&m));
+    }
+
     #[cfg(windows)]
     #[test]
     fn os_queries_do_not_fail() {
@@ -332,12 +419,27 @@ mod tests {
             !gpus.is_empty(),
             "DXGI always lists at least the basic render driver"
         );
-        let monitors = list_monitors().unwrap();
-        // Headless CI may have none, but sizes must be sane when present.
-        for m in monitors {
-            assert!(m.width > 0 && m.height > 0);
+        for (i, g) in gpus.iter().enumerate() {
+            assert!(
+                gpus.iter().skip(i + 1).all(|o| o.luid != g.luid),
+                "adapters are deduplicated by LUID"
+            );
         }
-        let _ = find_windows("").unwrap();
+        let monitors = list_monitors().unwrap();
+        // Headless CI may have none, but values must be sane when present.
+        for m in &monitors {
+            assert!(m.width > 0 && m.height > 0);
+            if let Some(l) = m.adapter_luid {
+                assert!(gpus.iter().any(|g| g.luid == l), "{m:?}");
+            }
+            if let Some(n) = m.sdr_white_nits {
+                assert!((40.0..=1000.0).contains(&n), "{m:?}");
+            }
+        }
+        let _ = exclusive_fullscreen_active();
+        for w in find_windows("").unwrap() {
+            assert!(monitors.is_empty() || monitors.iter().any(|m| m.handle == w.monitor));
+        }
         assert!(matches!(
             window_info(0),
             Err(PlatformError::NoSuchWindow(0))

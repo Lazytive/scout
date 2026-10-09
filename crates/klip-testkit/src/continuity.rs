@@ -88,9 +88,60 @@ pub fn analyze(counters: &[Option<u32>]) -> ContinuityReport {
     r
 }
 
+/// How many repeated frames a constant-rate capture at `period_s` may legitimately
+/// contain between game frames `first..=last`: a game frame that stays on screen for
+/// `g` seconds spans up to `floor(g / period_s)` capture ticks without a new frame.
+/// `game_times`: counter → time the game finished the frame (its frame log, seconds).
+/// Counters missing from the log are skipped.
+pub fn allowed_repeats(
+    game_times: &std::collections::HashMap<u32, f64>,
+    first: u32,
+    last: u32,
+    period_s: f64,
+) -> usize {
+    if period_s <= 0.0 || last <= first {
+        return 0;
+    }
+    let times: Vec<f64> = (first..=last)
+        .filter_map(|c| game_times.get(&c).copied())
+        .collect();
+    times
+        .windows(2)
+        .map(|w| {
+            let gap = match w {
+                [a, b] => b - a,
+                _ => 0.0,
+            };
+            if gap > period_s {
+                (gap / period_s).floor() as usize
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repeats_follow_game_stalls() {
+        let p = 1.0 / 60.0;
+        // A steady 120 fps game never forces a repeat.
+        let steady: std::collections::HashMap<u32, f64> =
+            (0..240).map(|c| (c, f64::from(c) / 120.0)).collect();
+        assert_eq!(allowed_repeats(&steady, 0, 239, p), 0);
+        // One 50 ms stall spans up to 3 capture ticks without a new frame.
+        let mut stall = steady.clone();
+        for c in 100..240 {
+            *stall.get_mut(&c).unwrap() += 0.05;
+        }
+        assert_eq!(allowed_repeats(&stall, 0, 239, p), 3);
+        assert_eq!(allowed_repeats(&stall, 0, 99, p), 0);
+        assert_eq!(allowed_repeats(&stall, 5, 5, p), 0);
+        assert_eq!(allowed_repeats(&stall, 0, 239, 0.0), 0);
+    }
 
     #[test]
     fn exact_sequences() {

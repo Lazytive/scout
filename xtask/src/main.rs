@@ -195,6 +195,8 @@ fn e2e() -> Result<()> {
         "test",
         "--release",
         "--workspace",
+        // Report every failing test binary, not just the first.
+        "--no-fail-fast",
         "--",
         "--ignored",
         "--nocapture",

@@ -4,10 +4,16 @@ OS integration and the **only** crate allowed `unsafe` (AGENTS.md rule 3; enforc
 `cargo xtask layers`). Each `unsafe` block has a `// SAFETY:` comment.
 
 Windows (Win32/DXGI via the `windows` crate):
-- `list_gpus`: DXGI adapters (name, PCI vendor/device, LUID, VRAM, software flag).
-- `find_windows` / `window_info`: visible top-level windows, pid, client size, minimised.
-  Titles are personal data: callers must not log them.
-- `list_monitors`: HMONITOR, position/size, primary flag.
+- `list_gpus`: DXGI adapters (name, PCI vendor/device, LUID, VRAM, software flag, driver
+  version), deduplicated by LUID. Virtual display drivers (Parsec, Virtual Desktop) make
+  DXGI list the real GPU again under a *different* LUID; that copy has no outputs.
+- `find_windows` / `window_info`: visible top-level windows, pid, client size and screen
+  position, minimised, the monitor it is on. `WindowInfo::covers(monitor)` tells
+  borderless/exclusive fullscreen. Titles are personal data: callers must not log them.
+- `list_monitors`: HMONITOR, position/size, primary flag, the adapter LUID that drives it
+  (DXGI outputs), Windows HDR on/off (`IDXGIOutput6` colour space), SDR white level
+  (DisplayConfig, "SDR content brightness") and peak luminance.
+- `exclusive_fullscreen_active`: the shell's "D3D full screen" notification state.
 - `enable_dpi_awareness`: per-monitor-v2, so sizes are physical pixels.
 - `list_processes`: pid, parent pid, executable name (Toolhelp snapshot).
 - `audio_sessions`: processes with an audio session on any active output device (WASAPI
