@@ -5,6 +5,16 @@ reason)`.
 
 ## Unreleased
 
+- M6.4 — `klip-engine`: `Engine` (settings, `klip-watch` game watcher, recorder start/stop
+  per game with profiles and per-game clip folders, Always/Games/Off buffer modes, retry,
+  recovery of leftover recordings, hotkeys from settings with per-binding errors, job
+  threads, strict `settings.set`), `events` (bounded fan-out), `config` (settings →
+  `RecorderConfig`; the CLI's encoder/audio/portal helpers moved here). New commands in
+  `klip-control`. `klip-platform`: monitor refresh rate, `process_usage`. `klip-cli
+  daemon`. Tests: engine commands/settings (no recording), e2e `m6_daemon.rs`
+  (detected → hotkey clip continuous in its game folder → stops after exit; idle CPU
+  0.00 %). (Claude Opus 5.5: one engine for the app, the CLI and the tests)
+
 - M6.3 — New crate `klip-engine` with `games`: game detection from process/window
   snapshots (user list, store library folders, helper/launcher denylist, never list,
   window size, foreground first; window-less mode for Wayland incl. Proton paths), safe

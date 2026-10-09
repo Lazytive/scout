@@ -152,6 +152,20 @@ pub struct MonitorInfo {
     pub sdr_white_nits: Option<f32>,
     /// Peak luminance the display reports, in nits.
     pub max_nits: Option<f32>,
+    /// Current refresh rate in Hz, when the OS reports one.
+    pub refresh_hz: Option<u32>,
+}
+
+/// CPU time and memory of a process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProcessUsage {
+    /// User + kernel CPU time since the process started, nanoseconds.
+    pub cpu_ns: u64,
+    /// Resident memory (Windows: working set), bytes.
+    pub resident_bytes: u64,
+    /// Memory only this process holds (Windows: private commit; Linux: resident minus
+    /// shared), bytes.
+    pub private_bytes: u64,
 }
 
 /// What an audio capture records.
@@ -393,6 +407,23 @@ pub fn process_path(pid: u32) -> Result<std::path::PathBuf, PlatformError> {
     }
 }
 
+/// CPU time and memory of a process (for Klip's own processes: idle cost, benchmarks).
+pub fn process_usage(pid: u32) -> Result<ProcessUsage, PlatformError> {
+    #[cfg(windows)]
+    {
+        windows_impl::process_usage(pid)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux_impl::process_usage(pid)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let _ = pid;
+        Err(PlatformError::Unsupported)
+    }
+}
+
 /// Press and release a shortcut-spec trigger (e.g. `ALT+F10`) as if typed, system-wide.
 /// For tests and automation (Windows; elsewhere unsupported). The modifiers reach the
 /// focused app, so tests use bare keys no keyboard has (F13–F24).
@@ -514,6 +545,7 @@ mod tests {
             hdr: false,
             sdr_white_nits: None,
             max_nits: None,
+            refresh_hz: None,
         }
     }
 

@@ -83,3 +83,28 @@ fn own_process_path_and_windows() {
     assert!(process_path(u32::MAX - 3).is_err());
     assert!(list_windows().is_ok());
 }
+
+#[test]
+fn own_cpu_and_memory() {
+    let a = crate::process_usage(std::process::id()).unwrap();
+    // Burn some CPU.
+    let t = std::time::Instant::now();
+    let mut x = 0u64;
+    while t.elapsed() < Duration::from_millis(50) {
+        x = std::hint::black_box(x.wrapping_add(1));
+    }
+    let b = crate::process_usage(std::process::id()).unwrap();
+    assert!(b.cpu_ns > a.cpu_ns, "{a:?} {b:?}");
+    assert!(b.resident_bytes > 1 << 20 && b.private_bytes > 0, "{b:?}");
+    let refresh: Vec<Option<u32>> = crate::list_monitors()
+        .unwrap()
+        .iter()
+        .map(|m| m.refresh_hz)
+        .collect();
+    eprintln!("monitor refresh rates: {refresh:?}");
+    assert!(
+        refresh
+            .iter()
+            .all(|r| r.is_none_or(|hz| (20..=1000).contains(&hz)))
+    );
+}

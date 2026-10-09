@@ -21,8 +21,9 @@ use windows::Win32::Graphics::Dxgi::{
     IDXGIFactory1, IDXGIOutput6,
 };
 use windows::Win32::Graphics::Gdi::{
-    ClientToScreen, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST,
-    MONITORINFO, MONITORINFOEXW, MonitorFromWindow,
+    ClientToScreen, DEVMODEW, ENUM_CURRENT_SETTINGS, EnumDisplayMonitors, EnumDisplaySettingsW,
+    GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST, MONITORINFO, MONITORINFOEXW,
+    MonitorFromWindow,
 };
 use windows::Win32::Media::Audio::{
     AudioSessionStateActive, AudioSessionStateExpired, DEVICE_STATE_ACTIVE, IAudioSessionControl2,
@@ -46,7 +47,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClientRect, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
     IsIconic, IsWindow, IsWindowVisible, MONITORINFOF_PRIMARY,
 };
-use windows::core::{BOOL, Interface, PWSTR};
+use windows::core::{BOOL, Interface, PCWSTR, PWSTR};
 
 use crate::{
     AudioSession, GpuAdapter, GpuVendor, MonitorInfo, PlatformError, ProcessInfo, WindowInfo,
@@ -218,6 +219,23 @@ pub(crate) fn list_monitors() -> Result<Vec<MonitorInfo>, PlatformError> {
         let handle = hmon.0 as usize as u64;
         let device_name = wide_to_string(&info.szDevice);
         let output = outputs.get(&handle);
+        let mut mode = DEVMODEW {
+            dmSize: u16::try_from(size_of::<DEVMODEW>()).unwrap_or(0),
+            ..Default::default()
+        };
+        // SAFETY: `szDevice` is a NUL-terminated device name owned by `info`; `mode` is a
+        // DEVMODEW with dmSize set.
+        let refresh = unsafe {
+            EnumDisplaySettingsW(
+                PCWSTR(info.szDevice.as_ptr()),
+                ENUM_CURRENT_SETTINGS,
+                &raw mut mode,
+            )
+        }
+        .as_bool()
+        // 0 and 1 mean "the hardware default".
+        .then_some(mode.dmDisplayFrequency)
+        .filter(|hz| *hz > 1);
         out.push(MonitorInfo {
             handle,
             x: r.left,
@@ -229,6 +247,7 @@ pub(crate) fn list_monitors() -> Result<Vec<MonitorInfo>, PlatformError> {
             hdr: output.is_some_and(|o| o.hdr),
             sdr_white_nits: white.get(&device_name).copied(),
             max_nits: output.and_then(|o| (o.max_nits > 0.0).then_some(o.max_nits)),
+            refresh_hz: refresh,
             device_name,
         });
     }
@@ -426,6 +445,56 @@ pub(crate) fn process_path(pid: u32) -> Result<std::path::PathBuf, PlatformError
     Ok(std::path::PathBuf::from(String::from_utf16_lossy(
         buf.get(..n).unwrap_or(&[]),
     )))
+}
+
+pub(crate) fn process_usage(pid: u32) -> Result<crate::ProcessUsage, PlatformError> {
+    use windows::Win32::Foundation::FILETIME;
+    use windows::Win32::System::ProcessStatus::{
+        GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
+    };
+    use windows::Win32::System::Threading::GetProcessTimes;
+
+    // SAFETY: plain call; the handle is closed below. Limited information is enough for
+    // times and memory counters (Windows 8.1+).
+    let h = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.map_err(os)?;
+    let (mut created, mut exited, mut kernel, mut user) = (
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+    );
+    // SAFETY: four valid FILETIME out pointers.
+    let times = unsafe {
+        GetProcessTimes(
+            h,
+            &raw mut created,
+            &raw mut exited,
+            &raw mut kernel,
+            &raw mut user,
+        )
+    };
+    let mut mem = PROCESS_MEMORY_COUNTERS_EX {
+        cb: u32::try_from(size_of::<PROCESS_MEMORY_COUNTERS_EX>()).unwrap_or(0),
+        ..Default::default()
+    };
+    // SAFETY: `mem` is a PROCESS_MEMORY_COUNTERS_EX with `cb` set to its size, passed as
+    // the base struct pointer the API takes.
+    let memory = unsafe {
+        GetProcessMemoryInfo(h, (&raw mut mem).cast::<PROCESS_MEMORY_COUNTERS>(), mem.cb)
+    };
+    // SAFETY: `h` came from OpenProcess and is closed exactly once.
+    let _ = unsafe { CloseHandle(h) };
+    times.map_err(os)?;
+    memory.map_err(os)?;
+    let ticks = |t: FILETIME| (u64::from(t.dwHighDateTime) << 32) | u64::from(t.dwLowDateTime);
+    Ok(crate::ProcessUsage {
+        // FILETIME counts 100 ns.
+        cpu_ns: ticks(kernel)
+            .saturating_add(ticks(user))
+            .saturating_mul(100),
+        resident_bytes: u64::try_from(mem.WorkingSetSize).unwrap_or(u64::MAX),
+        private_bytes: u64::try_from(mem.PrivateUsage).unwrap_or(u64::MAX),
+    })
 }
 
 /// Uninitialises COM on drop if this thread's `CoInitializeEx` succeeded.

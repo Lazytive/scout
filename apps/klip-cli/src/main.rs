@@ -5,17 +5,18 @@
 //! - `klip-cli clip --last 30s` asks the running recorder to save a clip. Bind it to a
 //!   desktop shortcut as a hotkey fallback.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand, ValueEnum};
-use klip_capture::apps::{self, SystemPlan};
+use klip_capture::apps;
 use klip_capture::audio::{AudioConfig, AudioInput, AudioSource};
 use klip_capture::{EncodeConfig, VideoConfig, VideoTarget};
 use klip_control::{Client, ClientError, Server, commands};
+use klip_engine::config;
 use klip_media::{Codec, NANOS_PER_MILLI, Nanos};
 use klip_recorder::{Recorder, RecorderConfig, SessionConfig, estimate_buffer_bytes};
 use serde_json::json;
@@ -34,6 +35,17 @@ struct Cli {
 enum Cmd {
     /// Run the replay buffer until stopped (Ctrl+C or `klip-cli stop`).
     Record(Box<RecordArgs>),
+    /// Run Klip's engine without a window (ADR 0014): watches for games, buffers while
+    /// one runs, binds the hotkeys from the settings, serves the control channel, and
+    /// prints every event as a JSON line. Stops with Ctrl+C or `klip-cli stop`.
+    Daemon {
+        /// Settings file (default: the app's, `<config dir>/Klip/settings.json`).
+        #[arg(long, value_name = "FILE")]
+        settings: Option<PathBuf>,
+        /// How often to look for games.
+        #[arg(long, default_value = "2s", value_parser = parse_dur)]
+        poll: Nanos,
+    },
     /// Save the last part of the replay buffer of the running recorder.
     Clip {
         /// Clip length, e.g. 30s, 2m.
@@ -269,112 +281,6 @@ fn connect(cli: &Cli, timeout: Duration) -> Result<Client> {
     }
 }
 
-fn gpu_vendors() -> Vec<klip_platform::GpuVendor> {
-    match klip_platform::list_gpus() {
-        Ok(g) => g
-            .into_iter()
-            .filter(|a| !a.software)
-            .map(|a| a.vendor)
-            .collect(),
-        Err(e) => {
-            tracing::warn!(error = %e, "could not list GPUs");
-            Vec::new()
-        }
-    }
-}
-
-/// Where probe results are remembered between runs.
-fn encoder_cache_path() -> Option<PathBuf> {
-    dirs::cache_dir().map(|d| d.join("Klip").join("encoders.json"))
-}
-
-/// The probe cache for this machine's current setup (empty if none or outdated).
-fn load_encoder_cache() -> (klip_probe::ProbeCache, Option<PathBuf>) {
-    let adapters: Vec<(u32, u32, Option<u64>)> = klip_platform::list_gpus()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|g| !g.software)
-        .map(|g| (g.vendor_id, g.device_id, g.driver_version))
-        .collect();
-    let fp = klip_probe::fingerprint(&adapters, &klip_probe::installed_encoders());
-    let path = encoder_cache_path();
-    let cache = match &path {
-        Some(p) => klip_probe::ProbeCache::load(p, &fp),
-        None => klip_probe::ProbeCache::new(&fp),
-    };
-    (cache, path)
-}
-
-fn save_encoder_cache(cache: &klip_probe::ProbeCache, path: Option<&Path>) {
-    if let Some(p) = path
-        && let Err(e) = cache.save(p)
-    {
-        tracing::warn!(error = %e, "could not save the encoder cache");
-    }
-}
-
-/// Vendor of the GPU that shows `target` (encoding there avoids copies between GPUs).
-fn target_gpu(target: VideoTarget) -> Option<klip_platform::GpuVendor> {
-    let monitors = klip_platform::list_monitors().ok()?;
-    let handle = match target {
-        VideoTarget::PrimaryMonitor => monitors.iter().find(|m| m.primary)?.handle,
-        VideoTarget::Monitor(h) => h,
-        VideoTarget::Window(h) => klip_platform::window_info(h).ok()?.monitor,
-        VideoTarget::Portal => return None,
-    };
-    let luid = monitors.iter().find(|m| m.handle == handle)?.adapter_luid?;
-    klip_platform::list_gpus()
-        .ok()?
-        .into_iter()
-        .find(|g| g.luid == luid)
-        .map(|g| g.vendor)
-}
-
-/// Probes run in a child copy of this binary, so a misbehaving driver can't take the
-/// recorder down and in-process state can't skew the result.
-fn prober() -> klip_probe::Prober {
-    match std::env::current_exe() {
-        Ok(exe) => klip_probe::Prober::Isolated(exe),
-        Err(_) => klip_probe::Prober::InProcess,
-    }
-}
-
-/// Encoders to try, best first. An explicitly requested encoder is used alone.
-fn pick_encoders(
-    codec: Codec,
-    requested: Option<&str>,
-    prefer: Option<klip_platform::GpuVendor>,
-    cache: &mut klip_probe::ProbeCache,
-) -> Result<Vec<klip_probe::EncoderChoice>> {
-    let vendors = gpu_vendors();
-    match requested {
-        Some(name) => klip_probe::candidates(codec, &vendors, prefer)
-            .into_iter()
-            .find(|c| c.element == name)
-            .map(|c| vec![c])
-            .ok_or_else(|| {
-                anyhow!(
-                    "{name} is not an installed, allowed {} encoder",
-                    codec.name()
-                )
-            }),
-        None => {
-            let list = klip_probe::ranked(
-                codec,
-                &vendors,
-                prefer,
-                cache,
-                &prober(),
-                Duration::from_secs(10),
-            );
-            if list.is_empty() {
-                bail!("no working {} encoder found", codec.name());
-            }
-            Ok(list)
-        }
-    }
-}
-
 fn pick_target(args: &RecordArgs) -> Result<VideoTarget> {
     // Linux can only capture through the portal (Wayland gives apps no other way).
     let explicit =
@@ -403,58 +309,25 @@ fn pick_target(args: &RecordArgs) -> Result<VideoTarget> {
     Ok(VideoTarget::PrimaryMonitor)
 }
 
-/// Largest restore token accepted from the token file (portals use UUID-sized tokens).
-const MAX_PORTAL_TOKEN: u64 = 1024;
-
 fn portal_token_path(args: &RecordArgs) -> Option<PathBuf> {
-    args.portal_token.clone().or_else(|| {
-        dirs::state_dir()
-            .or_else(dirs::data_local_dir)
-            .map(|d| d.join("Klip").join("screencast-token"))
-    })
-}
-
-/// The stored restore token, if the file holds a plausible one (it is user-writable, so
-/// treat it as hostile: size-capped, printable ASCII only).
-fn read_portal_token(path: &Path) -> Option<String> {
-    let meta = std::fs::metadata(path).ok()?;
-    if meta.len() > MAX_PORTAL_TOKEN {
-        return None;
-    }
-    let token = std::fs::read_to_string(path).ok()?.trim().to_string();
-    let ok = !token.is_empty() && token.bytes().all(|b| b.is_ascii_graphic());
-    ok.then_some(token)
-}
-
-/// Write `token` atomically (temp file + rename).
-fn write_portal_token(path: &Path, token: &str) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, token)?;
-    std::fs::rename(&tmp, path)
+    args.portal_token.clone().or_else(config::portal_token_path)
 }
 
 /// Open the screen-cast session: restores the stored choice, or shows the desktop's dialog.
 fn open_portal(args: &RecordArgs) -> Result<klip_capture::PortalSession> {
     let path = portal_token_path(args);
-    let restore_token = path.as_deref().and_then(read_portal_token);
-    if restore_token.is_none() {
+    if path
+        .as_deref()
+        .and_then(config::read_portal_token)
+        .is_none()
+    {
         eprintln!("Pick the screen or window to record in your desktop's sharing dialog.");
     }
-    let cast = klip_platform::ScreenCast::start(&klip_platform::ScreenCastRequest {
-        source: args.portal.unwrap_or(PortalArg::Any).into(),
-        show_cursor: !args.no_cursor,
-        restore_token,
-    })
-    .context("screen-cast portal")?;
-    if let (Some(p), Some(t)) = (path.as_deref(), cast.restore_token())
-        && let Err(e) = write_portal_token(p, t)
-    {
-        tracing::warn!(error = %e, "could not store the screen-cast restore token");
-    }
-    Ok(klip_capture::PortalSession(Arc::new(cast)))
+    Ok(config::open_portal(
+        args.portal.unwrap_or(PortalArg::Any).into(),
+        !args.no_cursor,
+        path.as_deref(),
+    )?)
 }
 
 /// Run `job` on its own thread unless the previous run of the same shortcut is still busy
@@ -587,40 +460,6 @@ fn excluded_apps(args: &RecordArgs) -> Vec<String> {
     v
 }
 
-/// System audio without the excluded apps (see `klip_capture::apps::plan_system`).
-fn system_source(excluded: &[String]) -> AudioSource {
-    let whole = AudioSource::System { device: None };
-    if excluded.is_empty() || !klip_capture::audio::process_loopback_supported() {
-        return whole;
-    }
-    let procs = match klip_platform::list_processes() {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!(error = %e, "process list unavailable; recording all system audio");
-            return whole;
-        }
-    };
-    let sessions = klip_platform::audio_sessions().unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "audio sessions unavailable");
-        Vec::new()
-    });
-    match apps::plan_system(&procs, &sessions, excluded) {
-        SystemPlan::Whole => whole,
-        SystemPlan::Except { pid, exe } => {
-            eprintln!("Leaving {exe} out of system audio.");
-            AudioSource::SystemExcept { pid }
-        }
-        SystemPlan::Apps { pids, excluded } => {
-            eprintln!(
-                "{} are playing; recording the other {} apps with audio one by one (apps that start later are not included).",
-                excluded.join(", "),
-                pids.len()
-            );
-            AudioSource::Apps { pids }
-        }
-    }
-}
-
 /// The audio inputs for a recording, or `None` for silence.
 fn pick_audio(args: &RecordArgs, target: VideoTarget) -> Result<Option<AudioConfig>> {
     let mode = args.audio.unwrap_or(match target {
@@ -640,7 +479,7 @@ fn pick_audio(args: &RecordArgs, target: VideoTarget) -> Result<Option<AudioConf
         bail!("system audio already includes every app; use --audio game or apps with --app");
     }
     let mut inputs = Vec::new();
-    let system = || system_source(&excluded_apps(args));
+    let system = || config::system_source(&excluded_apps(args));
     match (mode, target) {
         (AudioMode::None | AudioMode::Apps, _) => {}
         (AudioMode::Game, _) if args.game.is_some() => {
@@ -738,14 +577,14 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
     }
     let (max_w, max_h) = parse_size(&args.max_size)?;
     let target = pick_target(args)?;
-    let (mut cache, cache_path) = load_encoder_cache();
-    let mut encoders = pick_encoders(
+    let (mut cache, cache_path) = config::load_encoder_cache();
+    let mut encoders = config::pick_encoders(
         codec,
         args.encoder.as_deref(),
-        target_gpu(target),
+        config::target_gpu(target),
         &mut cache,
     )?;
-    save_encoder_cache(&cache, cache_path.as_deref());
+    config::save_encoder_cache(&cache, cache_path.as_deref());
     let encoder = encoders.remove(0);
     let clip_dir = match &args.out {
         Some(p) => p.clone(),
@@ -813,7 +652,7 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             }
         }
     }
-    save_encoder_cache(&cache, cache_path.as_deref());
+    config::save_encoder_cache(&cache, cache_path.as_deref());
     let recorder = Arc::new(recorder);
     let server = Server::start(recorder.clone(), Some(&discovery)).context("control channel")?;
     let _hotkeys = bind_hotkeys(recorder.clone(), args)?;
@@ -883,6 +722,42 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
     Ok(())
 }
 
+fn daemon(cli: &Cli, settings: Option<PathBuf>, poll: Nanos) -> Result<()> {
+    let discovery = discovery_path(cli)?;
+    if let Ok(mut c) = Client::connect(&discovery, Duration::from_millis(500))
+        && c.call(commands::PING, json!(null)).is_ok()
+    {
+        bail!("a Klip recorder is already running");
+    }
+    let path = settings
+        .or_else(klip_engine::default_settings_path)
+        .ok_or_else(|| anyhow!("no config folder; pass --settings"))?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(klip_engine::events::QUEUE);
+    let mut opts = klip_engine::EngineOptions::new(path);
+    opts.discovery = Some(discovery);
+    opts.events = Some(tx);
+    opts.poll = to_duration(poll).max(Duration::from_millis(100));
+    let engine = klip_engine::Engine::start(opts).context("starting the engine")?;
+    let printer = std::thread::spawn(move || {
+        for e in rx {
+            println!("{}", e.to_json());
+        }
+    });
+    let interrupted = Arc::new(AtomicBool::new(false));
+    {
+        let flag = interrupted.clone();
+        ctrlc::set_handler(move || flag.store(true, Ordering::Relaxed))
+            .context("Ctrl+C handler")?;
+    }
+    while !interrupted.load(Ordering::Relaxed) && !engine.exit_requested() {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    engine.shutdown();
+    let _ = printer.join();
+    eprintln!("Stopped.");
+    Ok(())
+}
+
 fn run() -> Result<()> {
     let cli = Cli::parse();
     match &cli.cmd {
@@ -896,6 +771,15 @@ fn run() -> Result<()> {
                 tracing::warn!(error = %e, "could not register the app id with the portals");
             }
             record(&cli, args)
+        }
+        Cmd::Daemon { settings, poll } => {
+            klip_platform::enable_dpi_awareness();
+            if cfg!(target_os = "linux")
+                && let Err(e) = klip_platform::register_app_id(klip_platform::APP_ID)
+            {
+                tracing::warn!(error = %e, "could not register the app id with the portals");
+            }
+            daemon(&cli, settings.clone(), *poll)
         }
         Cmd::Clip { last, timeout } => {
             let mut c = connect(&cli, to_duration(*timeout))?;
@@ -962,19 +846,19 @@ fn run() -> Result<()> {
                     g.luid
                 );
             }
-            let prefer = target_gpu(VideoTarget::PrimaryMonitor);
+            let prefer = config::target_gpu(VideoTarget::PrimaryMonitor);
             let results = klip_probe::probe_all(
                 codec,
-                &gpu_vendors(),
+                &config::gpu_vendors(),
                 prefer,
-                &prober(),
+                &config::prober(),
                 Duration::from_secs(10),
             );
             if results.is_empty() {
                 println!("No allowed {} encoders are installed.", codec.name());
             }
             // A full probe refreshes the remembered results.
-            let (mut cache, cache_path) = load_encoder_cache();
+            let (mut cache, cache_path) = config::load_encoder_cache();
             for r in &results {
                 cache.record(r);
                 println!(
@@ -993,7 +877,7 @@ fn run() -> Result<()> {
                         .unwrap_or_default()
                 );
             }
-            save_encoder_cache(&cache, cache_path.as_deref());
+            config::save_encoder_cache(&cache, cache_path.as_deref());
             Ok(())
         }
         Cmd::Monitors => {

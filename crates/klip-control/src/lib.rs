@@ -36,6 +36,18 @@ pub mod commands {
     pub const SESSION_TOGGLE: &str = "session.toggle";
     /// Mark this moment in the recording and in clips that cover it.
     pub const BOOKMARK_ADD: &str = "bookmark.add";
+    /// Engine state: followed game, replay buffer, hotkeys, last error (ADR 0014).
+    pub const ENGINE_STATUS: &str = "engine.status";
+    /// Quit the app / daemon.
+    pub const APP_QUIT: &str = "app.quit";
+    /// All settings: `{"settings":{…}}`.
+    pub const SETTINGS_GET: &str = "settings.get";
+    /// Change settings. Args: a JSON merge patch; strict (ADR 0014).
+    pub const SETTINGS_SET: &str = "settings.set";
+    /// Games running now (detection) and the one being followed.
+    pub const GAMES_LIST: &str = "games.list";
+    /// Open the overlay's quick menu (what its hotkey does).
+    pub const OVERLAY_MENU: &str = "overlay.menu";
 }
 
 /// Longest accepted line (bytes, including the newline).

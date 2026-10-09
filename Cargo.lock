@@ -1593,6 +1593,7 @@ dependencies = [
  "dirs",
  "klip-capture",
  "klip-control",
+ "klip-engine",
  "klip-media",
  "klip-platform",
  "klip-probe",
@@ -1621,9 +1622,18 @@ dependencies = [
 name = "klip-engine"
 version = "0.0.1"
 dependencies = [
+ "dirs",
+ "klip-capture",
+ "klip-control",
+ "klip-media",
  "klip-platform",
+ "klip-probe",
+ "klip-recorder",
  "klip-settings",
  "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
  "tracing",
 ]
 

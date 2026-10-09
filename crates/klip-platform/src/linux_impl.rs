@@ -215,6 +215,38 @@ pub fn process_path(pid: u32) -> Result<std::path::PathBuf, PlatformError> {
     Ok(exe)
 }
 
+/// CPU time (utime + stime) and memory (statm) of a process.
+pub fn process_usage(pid: u32) -> Result<crate::ProcessUsage, PlatformError> {
+    let base = std::path::PathBuf::from(format!("/proc/{pid}"));
+    let err = || PlatformError::Os(format!("process {pid} is gone"));
+    let stat = read_small(&base.join("stat"), MAX_SMALL_FILE).ok_or_else(err)?;
+    // Fields after the command (which may contain spaces) start after the last ')'.
+    let after = stat.rsplit_once(')').map(|(_, r)| r).ok_or_else(err)?;
+    let fields: Vec<&str> = after.split_whitespace().collect();
+    // utime and stime are fields 14 and 15 of the full line, 12 and 13 after ')'.
+    let num = |i: usize| {
+        fields
+            .get(i)
+            .and_then(|f| f.parse::<u64>().ok())
+            .unwrap_or(0)
+    };
+    let ticks = num(11).saturating_add(num(12));
+    let hz = rustix::param::clock_ticks_per_second().max(1);
+    let statm = read_small(&base.join("statm"), MAX_SMALL_FILE).ok_or_else(err)?;
+    let pages: Vec<u64> = statm
+        .split_whitespace()
+        .map(|f| f.parse::<u64>().unwrap_or(0))
+        .collect();
+    let page = u64::try_from(rustix::param::page_size()).unwrap_or(4096);
+    let resident = pages.get(1).copied().unwrap_or(0).saturating_mul(page);
+    let shared = pages.get(2).copied().unwrap_or(0).saturating_mul(page);
+    Ok(crate::ProcessUsage {
+        cpu_ns: ticks.saturating_mul(1_000_000_000) / hz,
+        resident_bytes: resident,
+        private_bytes: resident.saturating_sub(shared),
+    })
+}
+
 pub fn list_processes() -> Result<Vec<ProcessInfo>, PlatformError> {
     let dir = fs::read_dir("/proc").map_err(|e| PlatformError::Os(e.to_string()))?;
     let mut out = Vec::new();

@@ -13,6 +13,7 @@ clap.workspace = true
 ctrlc = "3.5"
 dirs.workspace = true
 klip-capture.workspace = true
+klip-engine.workspace = true
 klip-control.workspace = true
 klip-media.workspace = true
 klip-platform.workspace = true

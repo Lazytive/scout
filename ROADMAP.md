@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (end of M5).
+Last updated: 2026-10-09 (M6 in progress: M6.1–M6.4).
 
 | | Milestone | State |
 |---|---|---|
@@ -10,7 +10,7 @@ Last updated: 2026-10-09 (end of M5).
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
-| M6 | Desktop app shell (Tauri) | |
+| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon` done (M6.1–M6.4); app window, storage, overlay, themes, bench next |
 | M7 | Library | |
 | M8 | Editor, Normal mode + export presets | |
 | M9 | Editor, Advanced mode | |
@@ -140,7 +140,31 @@ fps, game audio AAC), `cargo xtask e2e` on 2026-10-09, another game using the GP
   rollover to a new file when the video description changes, queue overflow, recovery
   of leftover recordings (incl. empty and garbage sidecars).
 
+### Engine and game detection (M6.4)
+
+Same machine, `cargo xtask e2e` / `m6_daemon.rs` on 2026-10-09 (GPU mostly idle), the
+test game on the user's game list, settings: Custom 1280x720 at 60 fps, 20 Mbit/s,
+game audio, buffer 30 s, clip hotkey F24 (10 s):
+- Detection poll (process + window snapshot + rules): median 3.6 ms, max 4.7 ms (one
+  poll every 2 s). A user-listed game was noticed 0.8 s after its window appeared; the
+  buffer stopped 2.0 s after the game exited.
+- The hotkey (pressed with `SendInput`) saved a 10.03 s clip into `clips/Klip Test Game/`
+  in 88 ms (82 ms of it waiting for audio): 600 frames, none repeated, unreadable or out
+  of order; H.264 + the game's audio track.
+- Idle cost of the engine with no game: 0.00 % of one core over 6 s, 22 MB private
+  memory (57 MB resident). After a game it stays at 0.26 % CPU but **106 MB private**
+  (111 MB resident): GPU driver, Media Foundation and GStreamer libraries stay loaded
+  once a recorder ran. Running the recorder in a child process would give that back;
+  not done yet.
+
 ## Approximate / not done yet
+
+- **App shell (M6)**: no window, tray or overlay yet; `klip-cli daemon` runs the engine
+  headless. Settings changes to quality/audio/folders apply when the next game starts
+  (the running buffer isn't restarted). Voice apps that start after the game aren't
+  added to the running recording. Game detection is checked on synthetic snapshots and
+  the test game; real store installs are on the human checklist. Linux engine paths
+  (portal per game start, process-only detection, Proton paths) are untested.
 
 - **Full-session recording on Linux** is untested (same code; the gates and e2e run
   there next time). Windows hotkeys for recording/bookmark come with the app (M6); until

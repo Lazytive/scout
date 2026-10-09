@@ -16,6 +16,7 @@ klip-cli record [--buffer 120s] [--fps 60] [--bitrate 20000] [--max-size 1920x10
                 [--hotkey [KEYS]] [--hotkey-length 30s]   # Windows: RegisterHotKey; Linux: portal
                 [--session] [--session-dir DIR]          # full-session recording
                 [--record-hotkey [KEYS]] [--bookmark-hotkey [KEYS]]
+klip-cli daemon [--settings FILE] [--poll 2s]   # the app's engine without a window
 klip-cli clip [--last 30s]        # save from the running recorder; prints JSON
 klip-cli session start|stop|toggle   # full-session recording in the running recorder
 klip-cli bookmark                 # mark this moment (recording + clips that cover it)
@@ -32,6 +33,14 @@ loopback); recording a monitor records system audio **without music players**. `
 adds an app such as `Discord.exe` on its own track; `--mic` adds the default microphone.
 With more than one input the clip's first audio track is the mix (what players play),
 followed by each input (for editors) unless `--no-separate-tracks`.
+
+`daemon` (ADR 0014) runs Klip's engine without a window: it reads the app's settings
+file (or `--settings`), buffers while a detected game runs (per-game clip folders,
+per-game profiles), binds the hotkeys from the settings (Windows: RegisterHotKey; Linux:
+the portal), serves the control channel, and prints every engine event as a JSON line
+(`ready`, `game_started`, `recorder_started`, `clip_saved`, …). `klip-cli clip`,
+`status`, `session`, `bookmark` and `stop` talk to it like to `record`. e2e:
+`tests/m6_daemon.rs`.
 
 `record` prints one JSON line `{"event":"ready",...}` to stdout, logs to stderr, and
 serves the control channel (discovery file in `%LOCALAPPDATA%\Klip\control.json`, or
