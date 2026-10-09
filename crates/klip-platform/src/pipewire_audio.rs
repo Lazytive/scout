@@ -443,7 +443,11 @@ fn session(
         })
         .process({
             let state = state.clone();
-            move |stream, _| on_process(stream, fmt, &state)
+            // App streams linked straight to us arrive one graph cycle before the output's
+            // mix carries them (measured −10.5 to −10.75 ms at a 512-frame quantum against
+            // the sink monitor); stamp them one buffer later so all sources agree.
+            let one_cycle_early = linker.is_some();
+            move |stream, _| on_process(stream, fmt, &state, one_cycle_early)
         })
         .register()
         .map_err(pw_err)?;
@@ -491,7 +495,12 @@ fn session(
 }
 
 /// One buffer from PipeWire: stamp it and hand it on.
-fn on_process(stream: &pw::stream::Stream, fmt: Format, state: &RefCell<Shared>) {
+fn on_process(
+    stream: &pw::stream::Stream,
+    fmt: Format,
+    state: &RefCell<Shared>,
+    one_cycle_early: bool,
+) {
     let Some(mut buffer) = stream.dequeue_buffer() else {
         return;
     };
@@ -515,7 +524,10 @@ fn on_process(stream: &pw::stream::Stream, fmt: Format, state: &RefCell<Shared>)
     if frames == 0 {
         return;
     }
-    let start = capture_time(stream);
+    let mut start = capture_time(stream);
+    if one_cycle_early {
+        start = start.saturating_add(fmt.frames_ns(u32::try_from(frames).unwrap_or(0)));
+    }
     let mut s = state.borrow_mut();
     let s = &mut *s;
     s.samples.clear();

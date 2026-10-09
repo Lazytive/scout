@@ -8,7 +8,7 @@ Last updated: 2026-10-09 (end of M3).
 | M1 | Recorder CLI (Windows, NVENC) | **done**: acceptance passes |
 | M2 | Audio (game/per-app/mic tracks, A/V sync ≤ 1 frame) | **done**: acceptance passes |
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
-| M4 | Linux (portal + PipeWire, VA-API) | **in progress**: video capture + encode pass; audio, hotkey next |
+| M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | |
 | M6 | Desktop app shell (Tauri) | |
 | M7 | Library | |
@@ -104,10 +104,16 @@ green (built in a Fedora 44 distrobox).
 - Audio (PipeWire): per-app capture by linking the app's streams: a 1 kHz tone into a
   private null sink → included 0.354 RMS (full level), excluded 0.011, sink monitor 0.354.
   AAC: `fdkaacenc` 2048-sample delay and `avenc_aac` 1024, compensated to < 0.01 ms.
-- A/V (`m2_audio.rs`, system audio, idle desktop): 30/30 beeps, A/V −5.1 ms (range
-  −5.2..−4.8), video +6.2 ms after the GPU finished each frame (after subtracting KWin's
-  measured 24 ms screencast latency, ADR 0012). Mic + Game + Mix track layout and
-  system-minus-excluded-app pass.
+- `cargo xtask e2e` green on Linux (146 s, 2026-10-09; Firefox paused): M1 clip 30.2 s,
+  60.02 fps, no unreadable/repeated/reordered frames, save 30 ms; all four encoders
+  round-trip; encoder fallback starts in 214 ms; per-app capture: tone included 0.354
+  RMS, excluded 0.000, sink monitor 0.354; Mix + Game + Microphone tracks.
+- A/V (`m2_audio.rs`, idle desktop, video stamped on arrival minus KWin's measured 24 ms
+  screencast latency, ADR 0012): game audio (`--game`, per-app) in four runs: A/V
+  +0.07, −8.84, −11.91 ms (each run's beeps within ±0.9 ms), system audio −5.1 ms. The
+  spread between runs (video +1 to +12 ms after the GPU) is KWin's scheduling; all
+  within one 60 fps frame. Per-app streams are one graph cycle early and are shifted by
+  one buffer; the lag estimator then measures ±0.13 ms.
 - Hotkey (GlobalShortcuts portal, KDE): Alt+F10 bound after one confirmation dialog; a
   press saved a valid 5.3 s clip in 4 ms (manual run; key presses can't be automated
   on Wayland without extra permissions).
@@ -193,6 +199,25 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    desktop frames while tabbed out are expected).
 4. **AMD or Intel PC** (a friend's): `klip-cli probe` and a short recording; send the
    output of `klip-cli probe` and `klip-cli status`. AMF/QSV settings are untested.
+
+## Manual checks for the human (M4, Linux)
+
+1. **Stop sharing from the desktop**: while `klip-cli record` runs, stop the screen share
+   from KDE's tray icon; `klip-cli status` must show `last_error` "screen sharing was
+   stopped from the desktop" (only the desktop can end the session, so no automatic test).
+2. **A real game on Linux**: `klip-cli record --game <its executable> --hotkey`, play,
+   press the hotkey; the clip should have the game's sound only (Discord etc. left out)
+   and look in sync. Steam games run under Proton show up as e.g. `GameName.exe` under
+   `wine64-preloader`/`proton`: if `--game` can't find it, send `klip-cli audio-apps`.
+3. **GNOME (Wayland)**, e.g. a live USB or a friend's PC: record and save a clip. Video
+   timing there is uncompensated (0 ms) until measured; the hotkey portal on GNOME shows
+   its own dialog.
+4. **X11 session**: Bazzite's KDE is Wayland-only; on an X11 desktop the portal may not
+   offer screen casting, and Klip has no X11 fallback yet (`ximagesrc`), so recording is
+   expected to fail with a portal error there.
+5. **HDR desktop**: both monitors here run KDE in HDR mode and clips looked normal in the
+   tests (the screencast is SDR); an HDR *game* on Linux (e.g. with gamescope/Proton HDR)
+   is unchecked.
 
 ## Known bugs
 

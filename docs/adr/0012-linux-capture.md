@@ -74,7 +74,9 @@ after the game finished them (system memory; +32.7 ms with DMA-BUF), steady with
 delay is in the compositor. Decision: portal frames are stamped **on arrival minus a
 compositor latency**: 24 ms on KDE (so video lands at about +4 ms after the GPU, like
 Windows), 0 on unmeasured desktops, `KLIP_VIDEO_LATENCY_MS` overrides. Result on an
-otherwise idle desktop: A/V −5.1 ms (range −5.2..−4.8 ms), video +6.2 ms after the GPU.
+otherwise idle desktop: A/V −5.1 ms (system audio), and with per-app game audio +0.07,
+−8.84 and −11.91 ms in three runs (each within ±0.9 ms); video lands +1 to +12 ms after
+the GPU depending on the run (KWin's scheduling).
 With another app busy on the other monitor (Firefox playing video) the screencast
 latency rose by ~13 ms, so the compensation is approximate under load (ROADMAP).
 

@@ -84,6 +84,8 @@ and only the mix is enabled.
   to its own unconnected capture stream; PipeWire mixes the links. Packets are stamped
   with the graph cycle's time minus the stream delay (`pw_stream_get_time_n`,
   CLOCK_MONOTONIC = GStreamer's system clock), with the same silence/overlap timeline
-  as WASAPI (`timeline.rs`). An app's stream reaches Klip one graph cycle before the
-  output's mix (−10 ms measured at a 512-frame quantum), so the lag estimator runs on
-  Linux too, with a 0 default and a search range down to −50 ms.
+  as WASAPI (`timeline.rs`, which also fills gaps when audio resumes after generated
+  silence). An app's stream reaches Klip one graph cycle before the output's mix
+  (−10.5 to −10.75 ms at a 512-frame quantum), so per-app packets are stamped one buffer
+  later; the lag estimator still runs (0 default, search range down to −50 ms) and then
+  measures ±0.13 ms.

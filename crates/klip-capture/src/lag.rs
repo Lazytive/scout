@@ -10,8 +10,9 @@
 //! equally well at every period of the tone.
 //!
 //! Linux (PipeWire): an app's stream, linked straight to Klip's capture, arrives one graph
-//! cycle *before* the output's mix carries it (measured −10 ms with a 512-frame quantum),
-//! so the lag is negative there; the same estimator measures it.
+//! cycle *before* the output's mix carries it (measured −10.5 to −10.75 ms with a
+//! 512-frame quantum). The capture already stamps such streams one buffer later; the
+//! estimator corrects what remains (either sign).
 
 use std::collections::VecDeque;
 
@@ -36,7 +37,7 @@ const MIN_SCORE: f64 = 0.6;
 const HISTORY: usize = 5;
 
 /// Lag assumed until the first measurement: Windows, the mean of the measured 13–19 ms;
-/// Linux, none (measured −10 ms with a 512-frame quantum; varies with the quantum).
+/// Linux, none (the capture shifts app streams by the one graph cycle they are early).
 pub const DEFAULT_LAG_NS: i64 = if cfg!(windows) { 16_000_000 } else { 0 };
 
 /// One stream's envelope on a grid of `ENV_STEP_NS`, placed by capture time.

@@ -5,6 +5,11 @@ reason)`.
 
 ## Unreleased
 
+- M4.4/M4.6 — Per-app PipeWire packets stamped one buffer later (they arrive one graph
+  cycle before the output's mix); per-game A/V now +0.07 to −11.9 ms. M3 window/DXGI/HDR
+  tests are Windows-only; `cargo xtask e2e` green on Linux. Linux manual checklist in
+  ROADMAP. (Claude Opus 5.5: M4)
+
 - Fix — audio timeline: a packet that resumes after generated silence but starts later
   than it (PipeWire after a quantum/driver change: 41.6 ms) left a gap; the gap is now
   filled with silence (jumps over 10 s are flagged as discontinuities instead). Found as

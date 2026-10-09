@@ -7,6 +7,9 @@
 //! its rule is unit-tested (`klip_recorder::supervisor`) and on the human checklist.
 //! Run via `cargo xtask e2e`.
 
+// Windows only: window/monitor/DXGI switching and Windows HDR mode (WGC, DXGI). On
+// Linux the portal decides what is captured; HDR desktops there are on the M4.6 list.
+#![cfg(windows)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
