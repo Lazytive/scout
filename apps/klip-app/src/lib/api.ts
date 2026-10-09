@@ -53,6 +53,17 @@ export async function call<T = unknown>(cmd: string, args?: unknown): Promise<T>
   return (await getBackend()).call(cmd, args) as Promise<T>;
 }
 
+/** Match the native title bar to the theme (no-op outside the app). */
+export async function setWindowTheme(scheme: 'light' | 'dark'): Promise<void> {
+  if (!inTauri) return;
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().setTheme(scheme);
+  } catch {
+    // The window keeps the OS theme; nothing else depends on it.
+  }
+}
+
 /** Subscribe to engine events; returns the unsubscribe function. */
 export async function onEvent(cb: (e: KlipEvent) => void): Promise<() => void> {
   return (await getBackend()).listen(cb);

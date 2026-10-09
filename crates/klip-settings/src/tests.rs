@@ -171,6 +171,10 @@ fn patches_are_strict() {
     assert_eq!(s.recording.buffer_secs, 300);
     assert_eq!(s.overlay.mode, OverlayMode::Off);
     assert_eq!(s.audio, cur.audio);
+    let g = cur
+        .apply_patch(&json!({"appearance": {"theme": "graphite"}}))
+        .unwrap();
+    assert_eq!(g.appearance.theme, Theme::Graphite);
 
     let err = |patch: Value| match cur.apply_patch(&patch) {
         Err(SettingsError::Invalid(i)) => i,

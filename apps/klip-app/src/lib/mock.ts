@@ -58,6 +58,8 @@ export function mockBackend() {
     });
   }, 1500);
 
+  const settings = { appearance: { theme: 'dark' as string }, overlay: { mode: 'minimal' } };
+
   const need = () => {
     if (!status.recording) throw new CommandError('not_ready', 'no game is running');
   };
@@ -73,6 +75,14 @@ export function mockBackend() {
             status.recorder.bytes = (status.recorder.buffered_ms / 1000) * 2_600_000;
           }
           return structuredClone(status);
+        }
+        case 'settings.get':
+          return { settings: structuredClone(settings) };
+        case 'settings.set': {
+          const theme = (args as { appearance?: { theme?: string } } | null)?.appearance?.theme;
+          if (theme) settings.appearance.theme = theme;
+          emit({ event: 'settings_changed', settings: structuredClone(settings) });
+          return { settings: structuredClone(settings) };
         }
         case 'storage.status':
           return {

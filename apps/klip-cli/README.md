@@ -22,6 +22,7 @@ klip-cli session start|stop|toggle   # full-session recording in the running rec
 klip-cli bookmark                 # mark this moment (recording + clips that cover it)
 klip-cli finalize FILE            # finish a recording a killed recorder left
 klip-cli status | stop
+klip-cli call COMMAND [JSON]       # any command, e.g. call settings.set '{"overlay":{"sound":false}}'
 klip-cli probe [--codec h264]     # GPUs + every allowed encoder, tested
 klip-cli monitors | windows TEXT
 klip-cli audio-devices            # inputs (for --mic) and outputs, with endpoint ids

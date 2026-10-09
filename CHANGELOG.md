@@ -5,6 +5,14 @@ reason)`.
 
 ## Unreleased
 
+- M6.7 — Themes: Dark (FilmCraft greys, default), Graphite (Photocraft greys, new in
+  `klip-settings`), Light, OLED black, follow system; colour tokens swapped at run time,
+  native title bar follows, header theme menu, live on `settings_changed`. vitest
+  contrast suite (WCAG AA for every text pair, 3:1 for outlines/focus/state colours, all
+  themes); primary blue darkened to #1f6fe0 and outlines lightened so Dark passes.
+  `klip-cli call COMMAND [JSON]` runs any command. (Claude Opus 5.5: M6; look requested
+  by the maintainer)
+
 - M6.6 — Desktop app `apps/klip-app` (Tauri 2 + Svelte 5 + TS): engine bridge (`klip`
   command, `klip://event`), tray with runtime-drawn state icons and menu, single
   instance, close to tray, clean shutdown, test overrides (`KLIP_SETTINGS`,

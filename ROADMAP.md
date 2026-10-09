@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (M6 in progress: M6.1–M6.6).
+Last updated: 2026-10-09 (M6 in progress: M6.1–M6.7).
 
 | | Milestone | State |
 |---|---|---|
@@ -10,7 +10,7 @@ Last updated: 2026-10-09 (M6 in progress: M6.1–M6.6).
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
-| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap, Tauri app shell done (M6.1–M6.6); themes, settings UI + first run, overlay, bench next |
+| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap, Tauri app shell, themes done (M6.1–M6.7); settings UI + first run, overlay, bench next |
 | M7 | Library | |
 | M8 | Editor, Normal mode + export presets | |
 | M9 | Editor, Advanced mode | |
@@ -297,7 +297,8 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    (it uses your real settings: default hotkeys Alt+F10 etc., buffers detected games).
    Tray icon grey while waiting, blue while a game is buffered, red dot while recording;
    left click opens the window, closing it keeps Klip in the tray, Quit in the tray menu
-   ends it. Does the look match Photocraft / FilmCraft closely enough?
+   ends it. Does the look match Photocraft / FilmCraft closely enough? The sun button
+   switches Dark / Graphite / Light / OLED / follow system.
 
 1. Storage cap: in a test clip folder, set `storage.cap_gb` low (e.g. 1) with a few
    GB of clips, star one old clip, save a new clip: the oldest unstarred clips appear

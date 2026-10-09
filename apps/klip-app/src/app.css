@@ -1,7 +1,8 @@
 /* Theme tokens: every colour, radius and size the UI uses comes from here (ADR 0004).
    The look follows the user's Photocraft / FilmCraft apps: a pro dark UI with docked
    panels on near-black gutters, tab strips, dense text, a blue accent and monospace
-   blue readouts. Dark is the default; Light, OLED and follow-system arrive with M6.7. */
+   blue readouts. These are Dark (FilmCraft-like), the first-paint default;
+   src/lib/themes.ts has every theme and swaps the colour tokens at run time. */
 :root {
   color-scheme: dark;
   --gutter: #0c0c0c;
@@ -12,13 +13,13 @@
   --viewer: #0e0e0e;
   --input: #0e0e0e;
   --border: #2e2e2e;
-  --border-strong: #4a4a4a;
+  --border-strong: #767676;
   --hover: rgb(255 255 255 / 7%);
   --text: #d2d2d2;
   --text-strong: #f2f2f2;
   --text-muted: #929292;
-  --accent: #3490f7;
-  --accent-strong: #1f6fe0;
+  --accent: #1f6fe0;
+  --accent-strong: #1a5fc4;
   --accent-text: #5c9fff;
   --on-accent: #ffffff;
   --good: #3fbf7f;

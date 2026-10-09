@@ -9,8 +9,14 @@ shows it and passes the window's actions to it.
 The UI follows the maintainer's Photocraft / FilmCraft apps (storytold): a pro dark UI
 with a workspace header (underlined text tabs), docked panels with tab strips on
 near-black gutters, dense 13 px text, a blue accent, monospace blue readouts, pill
-buttons and a status bar. Every colour and size is a token in `src/app.css`; themes
-(M6.7) swap the tokens.
+buttons and a status bar. Every colour and size is a token in `src/app.css`.
+
+Themes (`src/lib/themes.ts`, M6.7): **Dark** (default, FilmCraft greys), **Graphite**
+(Photocraft greys), **Light**, **OLED black**, and **Follow system** (Light or Dark from
+the OS, live). The sun button in the header (as in Photocraft) picks one; it is saved as
+`appearance.theme` and applied at once, also when another client changes the setting
+(`settings_changed`). The native title bar follows (`setTheme`). `app.css` carries Dark
+for the first paint; the overlay (M6.9) will use the same tokens.
 
 ## Pieces
 
@@ -53,11 +59,17 @@ and take their hotkeys.
 
 ## Tests
 
-- vitest: `src/lib/format.test.ts` (display helpers, which events show in Activity).
+- vitest: `src/lib/format.test.ts` (display helpers, which events show in Activity);
+  `src/lib/themes.test.ts`: every text/background pair the UI uses reads at WCAG AA
+  (4.5:1) and every outline/focus/state colour stands out at 3:1, in all four themes
+  (88 checks; it caught Light's warning orange on the status bar at 4.3:1); `app.css`
+  matches Dark; setting → theme mapping.
 - Rust: tray icon pixels per state, tray state from events.
 - Driven on 2026-10-09 (Windows, test settings, test game on monitor 2): the app found
   the test game, buffered it (nvd3d11h264enc 1280x540@60), saved a 10.8 s clip and
   started a recording through the control channel, and the window showed each step;
   `klip-cli stop` quit the app (exit 0) and the recording was finalised (27.6 s MP4).
+  M6.7: `klip-cli call settings.set '{"appearance":{"theme":"light"}}'` switched the
+  running window (and its title bar) to Light; all themes checked in the browser too.
 
 Layer: app.

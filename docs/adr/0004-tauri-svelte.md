@@ -15,6 +15,9 @@ Look (M6.6): the maintainer asked for the UI of their Photocraft / FilmCraft app
 (storytold; Adobe-style pro dark UI): workspace header with underlined tabs, docked
 panels with tab strips on near-black gutters, dense text, blue accent, monospace blue
 readouts, pill buttons, status bar. All of it comes from tokens in `src/app.css`.
+Built-in themes (M6.7): Dark (FilmCraft greys, default), Graphite (Photocraft greys),
+Light, OLED black, follow system; colour tokens only, swapped at run time, every text
+pair tested for WCAG AA contrast.
 
 ## Consequences
 Front-end packages go through the npm licence audit in `cargo xtask audit`; lint/tests

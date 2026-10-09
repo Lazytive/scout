@@ -57,6 +57,14 @@ enum Cmd {
     },
     /// Show the running recorder's status.
     Status,
+    /// Run any command on the running recorder or app, e.g.
+    /// `call settings.set '{"appearance":{"theme":"light"}}'`; prints the JSON result.
+    Call {
+        /// Command id (see `klip_control::commands`).
+        command: String,
+        /// Arguments as JSON (default: null).
+        args: Option<String>,
+    },
     /// Stop the running recorder.
     Stop,
     /// Start or stop a full-session recording in the running recorder.
@@ -786,6 +794,15 @@ fn run() -> Result<()> {
             let last_ms = last / NANOS_PER_MILLI;
             let r = c.call(commands::CLIP_SAVE, json!({ "last_ms": last_ms }))?;
             println!("{r}");
+            Ok(())
+        }
+        Cmd::Call { command, args } => {
+            let args: serde_json::Value = match args {
+                Some(a) => serde_json::from_str(a).context("args must be JSON")?,
+                None => serde_json::Value::Null,
+            };
+            let r = connect(&cli, Duration::from_secs(5))?.call(command, args)?;
+            println!("{}", serde_json::to_string_pretty(&r)?);
             Ok(())
         }
         Cmd::Status => {

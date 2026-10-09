@@ -1,8 +1,9 @@
 // App state: the engine's status (refreshed on events and every few seconds while the
 // window is open) and a short activity log.
 
-import { call, onEvent } from './api';
+import { call, onEvent, setWindowTheme } from './api';
 import { describeEvent, type Tone } from './format';
+import { applyTheme, resolve, type ThemeSetting } from './themes';
 import type { KlipEvent, Status, StorageStatus } from './types';
 
 export interface Activity {
@@ -17,6 +18,9 @@ const MAX_ACTIVITY = 50;
 export const app = $state({
   status: null as Status | null,
   storage: null as StorageStatus | null,
+  /** The engine's settings (`settings.get`), kept fresh from `settings_changed`. */
+  settings: null as Record<string, unknown> | null,
+  themeSetting: 'dark' as ThemeSetting,
   activity: [] as Activity[],
   /** The last command error, shown until the next command. */
   error: null as string | null,
@@ -38,6 +42,40 @@ export async function refresh(): Promise<void> {
   } catch (e) {
     app.error = e instanceof Error ? e.message : String(e);
   }
+}
+
+const lightQuery =
+  typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: light)') : null;
+
+/** Apply the theme the settings ask for (System follows the OS). */
+function showTheme() {
+  const theme = resolve(app.themeSetting, lightQuery?.matches ?? false);
+  applyTheme(theme);
+  void setWindowTheme(theme.scheme);
+}
+
+function useSettings(s: unknown) {
+  if (!s || typeof s !== 'object') return;
+  app.settings = s as Record<string, unknown>;
+  const appearance = app.settings.appearance as { theme?: ThemeSetting } | undefined;
+  app.themeSetting = appearance?.theme ?? 'dark';
+  showTheme();
+}
+
+export async function refreshSettings(): Promise<void> {
+  try {
+    const r = await call<{ settings: unknown }>('settings.get');
+    useSettings(r.settings);
+  } catch (e) {
+    app.error = e instanceof Error ? e.message : String(e);
+  }
+}
+
+/** Change the theme (applied at once, saved in the settings). */
+export async function setTheme(id: ThemeSetting): Promise<void> {
+  app.themeSetting = id;
+  showTheme();
+  await run('settings.set', { appearance: { theme: id } });
 }
 
 export async function refreshStorage(): Promise<void> {
@@ -66,12 +104,15 @@ export async function run(cmd: string, args?: unknown): Promise<void> {
 export async function connect(): Promise<() => void> {
   const unlisten = await onEvent((e) => {
     log(e);
+    if (e.event === 'settings_changed') useSettings(e.settings);
     void refresh();
     if (e.event === 'clip_saved' || e.event === 'storage_cleaned' || e.event === 'settings_changed') {
       void refreshStorage();
     }
   });
-  await Promise.all([refresh(), refreshStorage()]);
+  const onScheme = () => showTheme();
+  lightQuery?.addEventListener('change', onScheme);
+  await Promise.all([refreshSettings(), refresh(), refreshStorage()]);
   let ticks = 0;
   const timer = setInterval(() => {
     if (document.visibilityState !== 'visible') return;
@@ -82,5 +123,6 @@ export async function connect(): Promise<() => void> {
   return () => {
     unlisten();
     clearInterval(timer);
+    lightQuery?.removeEventListener('change', onScheme);
   };
 }

@@ -3,6 +3,7 @@
 
   import Home from './Home.svelte';
   import { formatDuration } from './lib/format';
+  import ThemeMenu from './lib/ThemeMenu.svelte';
   import { app, connect } from './lib/store.svelte';
 
   type Page = 'home' | 'library' | 'settings';
@@ -60,7 +61,9 @@
       {#if st?.recording}<span class="dot" aria-hidden="true"></span>{/if}
       {title}
     </div>
-    <div class="right"></div>
+    <div class="right">
+      <ThemeMenu />
+    </div>
   </header>
 
   <main>
@@ -91,6 +94,10 @@
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     padding: 0 var(--space-3);
+  }
+  .right {
+    display: flex;
+    justify-content: flex-end;
   }
   .left {
     display: flex;

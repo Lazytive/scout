@@ -23,6 +23,7 @@ Klip's settings (ADR 0014). Pure: no OS calls besides reading and writing the fi
   (profiles are keyed by `game_key(exe)`, the lower-case file name).
 - `preset`: `Low` 720p30 8 Mbit/s, `Balanced` 1080p60 20 Mbit/s, `High` up to 1440p at
   the monitor's refresh clamped to 60–144 fps, 40 Mbit/s, `Custom`; presets use H.264.
+- `appearance.theme`: `system`, `dark` (default), `graphite`, `light`, `oled`.
 - `hotkey`: `Hotkey`/`Key`, parsed from `Ctrl+Alt+Shift+Win+Key` or the shortcuts-spec
   trigger format (`CTRL+ALT+SHIFT+LOGO+keysym`), case-insensitive, with aliases;
   `Display` gives the stored form, `to_trigger()` what `klip_platform::GlobalShortcuts`

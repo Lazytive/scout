@@ -398,8 +398,11 @@ impl Default for StorageSettings {
 pub enum Theme {
     /// Follow the OS light/dark setting.
     System,
+    /// Near-black panels (like FilmCraft).
     #[default]
     Dark,
+    /// Mid-grey panels (like Photocraft).
+    Graphite,
     Light,
     /// Pure black backgrounds.
     Oled,
