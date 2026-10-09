@@ -5,6 +5,17 @@ reason)`.
 
 ## Unreleased
 
+- Fix — audio timeline: a packet that resumes after generated silence but starts later
+  than it (PipeWire after a quantum/driver change: 41.6 ms) left a gap; the gap is now
+  filled with silence (jumps over 10 s are flagged as discontinuities instead). Found as
+  a flaky `audio_capture_is_continuous_and_qpc_stamped`; regression tests in
+  `timeline.rs`. (Claude Opus 5.5: never lose audio continuity)
+
+- M4.5 — Hotkey on Wayland: `klip_platform::GlobalShortcuts` (GlobalShortcuts portal,
+  own thread), `register_app_id` (host-app registry + hidden desktop entry, working id
+  `dev.klip.Klip`); CLI `record --hotkey [KEYS] --hotkey-length`; verified by hand on KDE
+  (Alt+F10 → clip). (Claude Opus 5.5: M4)
+
 - M4.4 — Linux audio (ADR 0008): `AudioCapture` over PipeWire (output monitor, input,
   per-app streams linked by Klip with include/exclude, process ids from
   `pipewire.sec.pid`), `audio_sessions`, shared silence timeline (`timeline.rs`);

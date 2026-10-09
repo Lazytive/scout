@@ -173,6 +173,13 @@ struct RecordArgs {
     /// (default: the Klip folder in the XDG state dir).
     #[arg(long, value_name = "FILE")]
     portal_token: Option<PathBuf>,
+    /// Save a clip with a system-wide shortcut (Linux: the desktop's GlobalShortcuts
+    /// portal, which asks you to confirm the keys the first time). Optional suggested keys.
+    #[arg(long, num_args = 0..=1, default_missing_value = "ALT+F10", value_name = "KEYS")]
+    hotkey: Option<String>,
+    /// Length of clips saved with --hotkey.
+    #[arg(long, default_value = "30s", value_parser = parse_dur)]
+    hotkey_length: Nanos,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -419,6 +426,59 @@ fn open_portal(args: &RecordArgs) -> Result<klip_capture::PortalSession> {
     Ok(klip_capture::PortalSession(Arc::new(cast)))
 }
 
+/// Bind the clip hotkey: each press saves the last `length` and prints a JSON line.
+fn bind_hotkey(
+    recorder: Arc<Recorder>,
+    keys: &str,
+    length: Nanos,
+) -> Result<klip_platform::GlobalShortcuts> {
+    let busy = Arc::new(AtomicBool::new(false));
+    let on_press = move |id: &str| {
+        if id != commands::CLIP_SAVE || busy.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        // Saving waits for audio and writes a file; keep the portal thread free.
+        let (recorder, busy) = (recorder.clone(), busy.clone());
+        let spawned = std::thread::Builder::new()
+            .name("klip-hotkey-save".into())
+            .spawn(move || {
+                match recorder.save_clip(length) {
+                    Ok(c) => println!(
+                        "{}",
+                        json!({
+                            "event": "clip",
+                            "path": c.path.to_string_lossy(),
+                            "duration_ms": c.duration / NANOS_PER_MILLI,
+                            "save_ms": c.save_ms,
+                        })
+                    ),
+                    Err(e) => eprintln!("Saving a clip failed: {e}"),
+                }
+                busy.store(false, Ordering::Release);
+            });
+        if spawned.is_err() {
+            eprintln!("Saving a clip failed: no thread");
+        }
+    };
+    let shortcuts = klip_platform::GlobalShortcuts::bind(
+        &[klip_platform::ShortcutSpec {
+            id: commands::CLIP_SAVE.into(),
+            description: "Save a clip of the last moments".into(),
+            preferred_trigger: Some(keys.to_string()),
+        }],
+        Box::new(on_press),
+    )
+    .context("global shortcut")?;
+    for s in shortcuts.bound() {
+        if s.trigger.is_empty() {
+            eprintln!("The clip shortcut has no keys yet; set them in the desktop's settings.");
+        } else {
+            eprintln!("Clip shortcut: {}", s.trigger);
+        }
+    }
+    Ok(shortcuts)
+}
+
 fn excluded_apps(args: &RecordArgs) -> Vec<String> {
     let mut v: Vec<String> = if args.no_default_excludes {
         Vec::new()
@@ -648,6 +708,10 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
     save_encoder_cache(&cache, cache_path.as_deref());
     let recorder = Arc::new(recorder);
     let server = Server::start(recorder.clone(), Some(&discovery)).context("control channel")?;
+    let _hotkey = match &args.hotkey {
+        Some(keys) => Some(bind_hotkey(recorder.clone(), keys, args.hotkey_length)?),
+        None => None,
+    };
     let status = recorder.status();
     println!(
         "{}",
@@ -707,6 +771,13 @@ fn run() -> Result<()> {
     match &cli.cmd {
         Cmd::Record(args) => {
             klip_platform::enable_dpi_awareness();
+            // Linux: name ourselves to the portals first (they remember screen-cast and
+            // shortcut choices per app id; registering after another portal call fails).
+            if cfg!(target_os = "linux")
+                && let Err(e) = klip_platform::register_app_id(klip_platform::APP_ID)
+            {
+                tracing::warn!(error = %e, "could not register the app id with the portals");
+            }
             record(&cli, args)
         }
         Cmd::Clip { last, timeout } => {

@@ -13,6 +13,7 @@ klip-cli record [--buffer 120s] [--fps 60] [--bitrate 20000] [--max-size 1920x10
                 [--audio-bitrate 160] [--no-separate-tracks]
                 [--portal monitor|window|any] [--portal-token FILE]   # Linux
                 [--game EXE]           # Linux: the game's program, for the Game track
+                [--hotkey [KEYS]] [--hotkey-length 30s]   # Linux: GlobalShortcuts portal
 klip-cli clip [--last 30s]        # save from the running recorder; prints JSON
 klip-cli status | stop
 klip-cli probe [--codec h264]     # GPUs + every allowed encoder, tested
@@ -38,6 +39,10 @@ desktop's dialog; the restore token in `$XDG_STATE_HOME/Klip/screencast-token` (
 stream (`portal`: node, kind, logical position and size). The portal doesn't say which app
 is on the captured screen, so audio defaults to system audio; `--game EXE` records that
 program's audio as the Game track instead (as window capture does on Windows).
+`--hotkey` binds `clip.save` through the desktop's GlobalShortcuts portal (suggested keys
+`ALT+F10`; the desktop confirms them once); each press saves `--hotkey-length` and prints
+`{"event":"clip",...}`. Without the portal, bind `klip-cli clip` in the desktop's
+shortcut settings instead.
 
 Default clip folder: `Videos\Klip`. Default byte cap: estimated from buffer length and
 bitrate (120 s at 20 Mbit/s ≈ 454 MB).

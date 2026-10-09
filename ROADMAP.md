@@ -108,6 +108,9 @@ green (built in a Fedora 44 distrobox).
   −5.2..−4.8), video +6.2 ms after the GPU finished each frame (after subtracting KWin's
   measured 24 ms screencast latency, ADR 0012). Mic + Game + Mix track layout and
   system-minus-excluded-app pass.
+- Hotkey (GlobalShortcuts portal, KDE): Alt+F10 bound after one confirmation dialog; a
+  press saved a valid 5.3 s clip in 4 ms (manual run; key presses can't be automated
+  on Wayland without extra permissions).
 
 ## Approximate / not done yet
 
@@ -153,7 +156,8 @@ green (built in a Fedora 44 distrobox).
 - If the captured window closes, the recorder keeps the buffer (clips still save) but
   doesn't recover capture; restart/re-target logic comes with game detection (M6).
 - **Linux** (M4, ADR 0012): video through the screen-cast portal and PipeWire audio work
-  on KDE Wayland with NVENC; not yet: global hotkey (M4.5), X11 and GNOME (M4.6), VA-API
+  on KDE Wayland with NVENC; the hotkey works through the GlobalShortcuts portal; not
+  yet: X11 and GNOME (M4.6), VA-API
   on real AMD/Intel hardware. **Video timing relies on a compositor latency measured on
   one machine** (KDE: 24 ms); it grows ~13 ms when another app keeps KWin busy, and other
   desktops are uncompensated until measured. Per-app audio needs PipeWire link

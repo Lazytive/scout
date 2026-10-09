@@ -64,6 +64,13 @@ Linux (`linux_impl.rs`, `screencast.rs`; ADR 0012):
 - `audio_sessions`: processes with a playback stream, active when one is running (two
   registry round trips; nodes bound for their state).
 - `timeline.rs`: the silence/overlap timeline shared with WASAPI.
+- `GlobalShortcuts` (`shortcuts.rs`): the GlobalShortcuts portal (KDE asks the user to
+  confirm the keys once); activations go to a callback on the portal thread.
+  `register_app_id(APP_ID)` names the host app to the portals (needed for shortcuts; the
+  portals also key screen-cast restore tokens by it) and first writes a hidden desktop
+  entry (`NoDisplay=true`, `Exec` = this executable) to `$XDG_DATA_HOME/applications`,
+  because the portal only accepts ids with a desktop entry whose program exists.
+  `APP_ID = dev.klip.Klip` is a working id that changes with the final name.
 - Monitors and windows return `Unsupported` (Wayland has no window list).
 
 Only documented OS APIs are used (WGC is the OS capture API). Nothing here touches

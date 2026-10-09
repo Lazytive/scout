@@ -36,6 +36,8 @@ fn portal_session() -> klip_capture::PortalSession {
                 .join("klip-e2e")
                 .join(format!("portal-{output}.token"))
         });
+    // Same app id as the CLI: the portal keeps restore tokens per app.
+    let _ = klip_platform::register_app_id(klip_platform::APP_ID);
     let token = std::fs::read_to_string(&path)
         .ok()
         .map(|t| t.trim().to_string());
