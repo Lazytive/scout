@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (M6 in progress: M6.1–M6.9).
+Last updated: 2026-10-09 (M6 in progress: M6.1–M6.10).
 
 | | Milestone | State |
 |---|---|---|
@@ -10,7 +10,7 @@ Last updated: 2026-10-09 (M6 in progress: M6.1–M6.9).
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
-| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap, Tauri app shell, themes, Settings + first-run setup, overlay done (M6.1–M6.9); bench and docs next |
+| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap, Tauri app shell, themes, Settings + first-run setup, overlay, benchmark done (M6.1–M6.10); docs next |
 | M7 | Library | |
 | M8 | Editor, Normal mode + export presets | |
 | M9 | Editor, Advanced mode | |
@@ -156,6 +156,34 @@ game audio, buffer 30 s, clip hotkey F24 (10 s):
   (111 MB resident): GPU driver, Media Foundation and GStreamer libraries stay loaded
   once a recorder ran. Running the recorder in a child process would give that back;
   not done yet.
+
+### What Klip costs a game (M6.10, `cargo xtask bench`)
+
+Same machine (i7-14700KF, RTX 4080 SUPER, driver 32.0.16.1742), GPU otherwise idle,
+2026-10-09. Scene: the test game at 1920x1080 in an off-screen window, a shader load
+calibrated to ~240 fps uncapped. Klip: the engine (`klip-cli daemon`) on Balanced
+(nvd3d11h264enc 1080p60 20 Mbit/s, game audio, 2 min buffer). Each scenario is one long
+game run with the replay buffer switched off and on (8 and 4 interleaved pairs, each
+"on" stretch against the "off" stretch just before it), because GPU boost and background
+use drift by several percent between separate runs.
+- **Capped at 144 fps (frame cap / vsync, the usual case): no cost.** 144.0 fps with
+  and without Klip; frame-time p99 7.58 → 7.66 ms.
+- **Uncapped, GPU-bound (worst case): 2.9 % ± 1.0 % (95 %) fewer frames** (median 3.4 %,
+  238.6 → 231.8 fps; p99 4.78 → 4.83 ms). Earlier runs of intermediate code measured
+  8–10 % (with a frame-skipping experiment since removed, and possibly more background GPU
+  use): the number moves with what else uses the GPU; treat ~3 % as this machine's value,
+  not a guarantee. The brief's "mid-range GPU" is not tested.
+- Engine while buffering: 6.0 % of one CPU core (0.2 % of 28), 173 MB resident, 245 MB
+  private (includes the replay buffer).
+- 30 s clip saves: 100–107 ms (each includes ~80–90 ms waiting for audio to catch up).
+- Idle, no game: 0.00 % CPU, 89 MB private. **After a game: 0.16 % CPU but 379 MB
+  private** (285 MB resident): encoder, decoder (thumbnails) and GPU driver memory stay
+  with the process once used. Running capture/encode and thumbnails in a child process
+  would give it back; not done.
+- Capture asks Windows for at most 2x the recording rate (`MinUpdateInterval`, Windows 11
+  24H2+): no measurable change in this scene, but it spares the compositor half the
+  copies at 240 Hz. Finding along the way: GStreamer's WGC source and Klip's own capture
+  cost about the same here, and HDR (FP16) capture costs no more than 8-bit.
 
 ## Approximate / not done yet
 

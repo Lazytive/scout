@@ -14,6 +14,8 @@ struct U {
     // patch output values (already in the swapchain's encoding), 8 slots
     p0: vec4<f32>,
     p1: vec4<f32>,
+    // x: extra loop steps per pixel (--gpu-load)
+    load: vec4<u32>,
 };
 
 @group(0) @binding(0) var<uniform> u: U;
@@ -63,8 +65,24 @@ fn patch_value(i: u32) -> f32 {
     return u.p1[i - 4u];
 }
 
+// GPU work that the compiler can't drop (its result feeds a branch that never fires).
+fn burn(pos: vec4<f32>, n: u32) -> f32 {
+    var a = pos.x * 0.001 + pos.y * 0.0007;
+    for (var i = 0u; i < n; i = i + 1u) {
+        a = fract(sin(a * 12.9898 + f32(i)) * 43758.5453);
+    }
+    return a;
+}
+
 @fragment
 fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+    if (u.load.x > 0u && burn(pos, u.load.x) > 2.0) {
+        return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+    }
+    return shade(pos);
+}
+
+fn shade(pos: vec4<f32>) -> vec4<f32> {
     let w = u.misc.y;
     let h = u.misc.z;
     let px = floor(pos.x);

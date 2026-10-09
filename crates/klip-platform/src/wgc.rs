@@ -91,6 +91,12 @@ pub struct GpuCaptureConfig {
     /// The target's monitor runs in Windows HDR mode: capture in FP16 (scRGB) and
     /// tone-map to SDR (see [`HdrDisplay`]). `None`: 8-bit capture, no conversion.
     pub hdr: Option<HdrDisplay>,
+    /// The recording's frame rate (0: unknown). Windows is asked for at most twice as
+    /// many frames (`MinUpdateInterval`, Windows 11 24H2+): frames arrive on composition
+    /// ticks (e.g. 6.9 ms at 144 Hz), so a cap at exactly this rate would leave some
+    /// recording slots empty; twice keeps every slot filled at 60–240 Hz and spares the
+    /// desktop compositor the extra copies at high refresh rates.
+    pub fps: u32,
 }
 
 /// What the tone mapping needs to know about an HDR display.
@@ -917,6 +923,10 @@ impl GpuCapture {
         let _ = session.SetIsCursorCaptureEnabled(cfg.show_cursor);
         // Windows 11 only; the yellow border stays on Windows 10.
         let _ = session.SetIsBorderRequired(false);
+        if let Some(ticks) = 10_000_000_i64.checked_div(i64::from(cfg.fps.saturating_mul(2))) {
+            // Fewer frames than the desktop composes means less work for DWM and us.
+            let _ = session.SetMinUpdateInterval(windows::Foundation::TimeSpan { Duration: ticks });
+        }
         session.StartCapture().map_err(os)?;
         Ok(GpuCapture {
             shared,

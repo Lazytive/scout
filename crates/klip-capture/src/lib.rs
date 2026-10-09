@@ -1250,6 +1250,7 @@ impl CaptureSession {
                 width: out_w,
                 height: out_h,
                 hdr,
+                fps: video.fps,
             },
             feed,
         )?;

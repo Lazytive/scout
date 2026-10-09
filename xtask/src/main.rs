@@ -4,6 +4,7 @@
 //!   tests, cargo deny, layers, audit
 //! - `layers`: dependency direction + `unsafe` only in klip-platform
 //! - `audit`: licence/asset audit
+//! - `bench`: what Klip costs a game (needs an idle GPU)
 //! - `e2e`: hardware acceptance tests (`#[ignore]`d tests except `diag_*` diagnostics,
 //!   release build, one at a time)
 //!
@@ -212,8 +213,38 @@ fn e2e() -> Result<()> {
         // Diagnostics print measurements and may need manual setup; run them by name.
         "--skip",
         "diag_",
+        // The benchmark has its own command (it needs an idle GPU).
+        "--skip",
+        "bench_",
     ]);
     run_step("hardware acceptance tests", c)
+}
+
+/// What Klip costs a game (M6.10): see `apps/klip-cli/tests/bench.rs`.
+fn bench() -> Result<()> {
+    let mut c = cargo();
+    c.args([
+        "build",
+        "--release",
+        "-p",
+        "klip-testgame",
+        "-p",
+        "klip-cli",
+    ]);
+    run_step("build test game + cli", c)?;
+    let mut c = cargo();
+    c.args([
+        "test",
+        "--release",
+        "-p",
+        "klip-cli",
+        "--test",
+        "bench",
+        "--",
+        "--ignored",
+        "--nocapture",
+    ]);
+    run_step("benchmark", c)
 }
 
 fn run() -> Result<()> {
@@ -224,8 +255,9 @@ fn run() -> Result<()> {
         "layers" => layers(),
         "audit" => audit::run(&root()),
         "e2e" => e2e(),
+        "bench" => bench(),
         _ => {
-            eprintln!("usage: cargo xtask <ci|layers|audit|e2e>");
+            eprintln!("usage: cargo xtask <ci|layers|audit|e2e|bench>");
             bail!("unknown task {task:?}")
         }
     }

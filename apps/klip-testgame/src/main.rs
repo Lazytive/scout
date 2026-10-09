@@ -99,6 +99,14 @@ struct Args {
     /// window stays but shows no new frames, like a game hanging or a capture stall.
     #[arg(long, value_parser = parse_span)]
     freeze: Option<(Duration, Duration)>,
+    /// Render as fast as the GPU allows (benchmarks: whatever Klip takes shows up as lost
+    /// frames); `--fps` then only sets the animation rate.
+    #[arg(long)]
+    uncapped: bool,
+    /// Extra shader work per pixel (a loop of N steps), so the scene costs GPU time like
+    /// a game (benchmarks). 0: none.
+    #[arg(long, default_value_t = 0)]
+    gpu_load: u32,
 }
 
 fn parse_span(s: &str) -> Result<(Duration, Duration), String> {
@@ -135,6 +143,8 @@ struct Uniforms {
     row: [f32; 4],
     p0: [f32; 4],
     p1: [f32; 4],
+    /// x: extra shader loop steps per pixel (`--gpu-load`).
+    load: [u32; 4],
 }
 
 /// How the picture is encoded: patch values and the HDR switch for the shader.
@@ -326,7 +336,7 @@ impl Gfx {
         }
     }
 
-    fn render(&mut self, counter: u32, fps: u32) -> Result<()> {
+    fn render(&mut self, counter: u32, fps: u32, gpu_load: u32) -> Result<()> {
         let flash = counter.is_multiple_of(fps);
         let (extra, row, p0, p1) = self.look.uniforms();
         let u = Uniforms {
@@ -335,6 +345,7 @@ impl Gfx {
             p0,
             p1,
             bits: [barcode::encode(counter), u32::from(flash), counter, CELLS],
+            load: [gpu_load, 0, 0, 0],
             band: [LAYOUT.x0, LAYOUT.y0, LAYOUT.x1, LAYOUT.y1],
             misc: [
                 LAYOUT.margin,
@@ -551,7 +562,7 @@ impl App {
         let Some(gfx) = &mut self.gfx else {
             return Ok(());
         };
-        gfx.render(counter, self.args.fps)?;
+        gfx.render(counter, self.args.fps, self.args.gpu_load)?;
         let t = self.start.elapsed();
         if let Some(log) = &mut self.log {
             writeln!(log, "{counter},{}", t.as_nanos())?;
@@ -636,7 +647,7 @@ impl ApplicationHandler for App {
         // Pace frames here instead of via request_redraw (WM_PAINT is low priority and
         // made the game miss its rate): sleep most of the gap, spin the rest, render.
         let now = Instant::now();
-        if now < self.next_frame {
+        if !self.args.uncapped && now < self.next_frame {
             let gap = self.next_frame - now;
             if gap > Duration::from_millis(2) {
                 std::thread::sleep(gap - Duration::from_millis(2));

@@ -94,12 +94,17 @@ impl Drop for KillOnDrop {
 /// The test game, placed on a secondary monitor when there is one, so test runs don't
 /// cover the main screen (someone may be using it). Windows: `KLIP_E2E_MONITOR=<index>`
 /// picks a monitor by its `klip-cli monitors` index; `KLIP_E2E_MONITOR=primary` keeps
-/// Windows' default placement. Linux: the game goes borderless fullscreen on
+/// Windows' default placement; `KLIP_E2E_MONITOR=offscreen` puts the window beyond all
+/// monitors (window capture still works; nothing shows on anyone's screen). Linux: the game goes borderless fullscreen on
 /// [`linux_output`] (Wayland lets no app place a window).
 pub fn game() -> Command {
     let mut c = Command::new(game_exe());
     if cfg!(target_os = "linux") {
         c.arg("--monitor").arg(linux_output());
+        return c;
+    }
+    if std::env::var("KLIP_E2E_MONITOR").as_deref() == Ok("offscreen") {
+        c.arg("--position").arg("12000,200");
         return c;
     }
     let monitors = klip_platform::list_monitors().unwrap_or_default();

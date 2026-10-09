@@ -37,3 +37,8 @@ Measured with the logs: cpal's predicted playback time matches the loopback tap 
 1.1 ms.
 
 HDR output is not implemented yet (M3). Dev tool: `arithmetic_side_effects` allowed.
+
+Benchmark scene (`cargo xtask bench`): `--uncapped` renders as fast as the GPU allows
+(`--fps` then only sets the animation rate) and `--gpu-load N` adds a per-pixel shader
+loop of N steps (its result feeds a branch that never fires, so it can't be optimised
+away and the picture is unchanged); the bench calibrates N for ~240 fps at 1920x1080.

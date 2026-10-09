@@ -44,6 +44,8 @@ Windows (Win32/DXGI via the `windows` crate):
   event-driven, every packet stamped with WASAPI's QPC capture time. Silence is generated
   while a stream delivers nothing; a failed or lost device becomes silence + a notice and
   is retried every 2 s. Packets that overlap generated silence are trimmed.
+- `GpuCapture` asks Windows for at most twice the recording's frame rate
+  (`GraphicsCaptureSession::MinUpdateInterval`, Windows 11 24H2+; ignored before).
 - `GpuCapture` (`wgc.rs`, ADR 0010): Klip's own Windows.Graphics.Capture source for a
   window (client area) or monitor. D3D11 device on a chosen adapter, shared with
   GStreamer (`gst_d3d11.rs`: `GstD3D11Device` wrap, `GstContext`, D3D11 buffer pool,

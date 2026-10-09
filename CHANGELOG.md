@@ -5,6 +5,14 @@ reason)`.
 
 ## Unreleased
 
+- M6.10 — `cargo xtask bench` (`apps/klip-cli/tests/bench.rs`): GPU-load calibration,
+  uncapped and 144-fps-capped scenarios, interleaved Klip off/on pairs with a 95 %
+  interval, engine CPU/RAM, 30 s save latency, idle cost; JSON in `target/bench/`.
+  Test game: `--uncapped`, `--gpu-load N`. WGC capture asks for at most 2x the recording
+  rate (`MinUpdateInterval`). e2e: `KLIP_E2E_MONITOR=offscreen`. Measured: no cost at
+  144 fps capped, 2.9 % ± 1.0 % uncapped, 6 % of one core, 379 MB private after a game.
+  (Claude Opus 5.5: M6 performance budget)
+
 - M6.9 — Overlay: separate transparent, always-on-top, click-through window that is
   never activated (`klip-platform`: `make_overlay`, `show_no_activate`, `hide_window`,
   `focus_window`, `window_visible`), on the game's monitor corner; Minimal card with

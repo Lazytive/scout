@@ -35,6 +35,11 @@ adds an app such as `Discord.exe` on its own track; `--mic` adds the default mic
 With more than one input the clip's first audio track is the mix (what players play),
 followed by each input (for editors) unless `--no-separate-tracks`.
 
+`tests/bench.rs` is the benchmark behind `cargo xtask bench` (see ROADMAP for the
+method and numbers). e2e tests place the test game on a secondary monitor;
+`KLIP_E2E_MONITOR=offscreen` puts it beyond all monitors instead (window capture still
+works there).
+
 `daemon` (ADR 0014) runs Klip's engine without a window: it reads the app's settings
 file (or `--settings`), buffers while a detected game runs (per-game clip folders,
 per-game profiles), binds the hotkeys from the settings (Windows: RegisterHotKey; Linux:
