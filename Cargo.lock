@@ -1618,6 +1618,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "klip-engine"
+version = "0.0.1"
+dependencies = [
+ "klip-platform",
+ "klip-settings",
+ "serde",
+ "tracing",
+]
+
+[[package]]
 name = "klip-media"
 version = "0.0.1"
 dependencies = [

@@ -21,6 +21,7 @@ pub const ENGINE: &[&str] = &[
     "klip-probe",
     "klip-capture",
     "klip-recorder",
+    "klip-engine",
 ];
 /// Applications and tools: may depend on anything below them.
 pub const APPS: &[&str] = &["klip-cli", "klip-testgame", "xtask"];

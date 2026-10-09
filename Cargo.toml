@@ -20,6 +20,7 @@ klip-probe = { path = "crates/klip-probe" }
 klip-capture = { path = "crates/klip-capture" }
 klip-recorder = { path = "crates/klip-recorder" }
 klip-settings = { path = "crates/klip-settings" }
+klip-engine = { path = "crates/klip-engine" }
 
 anyhow = "1"
 bytemuck = { version = "1.25", features = ["derive"] }

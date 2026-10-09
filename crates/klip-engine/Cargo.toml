@@ -1,0 +1,19 @@
+[package]
+name = "klip-engine"
+description = "Klip's engine: settings, game detection, recorder lifecycle, hotkeys, events, commands"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+klip-platform.workspace = true
+klip-settings.workspace = true
+serde.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

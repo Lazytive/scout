@@ -5,6 +5,12 @@ reason)`.
 
 ## Unreleased
 
+- M6.3 — New crate `klip-engine` with `games`: game detection from process/window
+  snapshots (user list, store library folders, helper/launcher denylist, never list,
+  window size, foreground first; window-less mode for Wayland incl. Proton paths), safe
+  per-game folder names. One poll measured at 3.6 ms median. (Claude Opus 5.5: buffer
+  only while a game runs)
+
 - M6.2 — `klip-platform`: Windows global hotkeys (`RegisterHotKey` on its own message
   thread behind `GlobalShortcuts`; per-shortcut `error` for taken/unknown keys),
   shortcuts-spec trigger → virtual-key map, `press_keys` (SendInput, for tests),
