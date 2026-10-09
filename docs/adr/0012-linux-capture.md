@@ -63,6 +63,21 @@ ScreenCast v5.
   implicit sync, so a frame can be read before the compositor finished it. System memory
   stays the default until explicit sync (PipeWire `SyncTimeline` meta) is handled.
 
+## Frame timing (measured)
+KWin's monitor screencast re-renders the scene into the stream buffer when a repaint is
+scheduled and stamps it with the output's *previous* presentation time
+(`renderLoop()->lastPresentationTimestamp()`, read from KWin 6.7's source), so the PTS
+says nothing about when the content was drawn. With the test game (`m2_audio.rs` stamp
+latency; GPU-finished frame log as reference), frames reach Klip **+27.6 to +27.9 ms**
+after the game finished them (system memory; +32.7 ms with DMA-BUF), steady within a run
+(beep errors spread < 1 ms); a `queue` right after `pipewiresrc` changes nothing, so the
+delay is in the compositor. Decision: portal frames are stamped **on arrival minus a
+compositor latency**: 24 ms on KDE (so video lands at about +4 ms after the GPU, like
+Windows), 0 on unmeasured desktops, `KLIP_VIDEO_LATENCY_MS` overrides. Result on an
+otherwise idle desktop: A/V −5.1 ms (range −5.2..−4.8 ms), video +6.2 ms after the GPU.
+With another app busy on the other monitor (Firefox playing video) the screencast
+latency rose by ~13 ms, so the compensation is approximate under load (ROADMAP).
+
 ## Consequences
 - The first recording on a machine shows the desktop's dialog; tests keep their own token
   (`~/.local/state/klip-e2e/portal-<monitor>.token`) and fail early with instructions if
@@ -70,6 +85,7 @@ ScreenCast v5.
 - Monitors and windows can't be listed or targeted by handle on Wayland; `--window-*` and
   `--monitor` are Windows options. The portal's stream info (position, logical size) is
   reported in the `record` ready line.
-- Stopping the share from the desktop (KDE's tray) currently stalls the stream rather
-  than erroring; watching the portal session's `Closed` signal is a follow-up.
+- Stopping the share from the desktop (KDE's tray) ends the portal session; its
+  `Closed` signal becomes a capture error (`watch_portal`). Not testable automatically
+  (only the desktop can close it): human checklist.
 - VA-API paths are untested here (no AMD/Intel GPU); HDR desktops: see ROADMAP.

@@ -12,6 +12,7 @@ klip-cli record [--buffer 120s] [--fps 60] [--bitrate 20000] [--max-size 1920x10
                 [--exclude-app EXE]... [--no-default-excludes]
                 [--audio-bitrate 160] [--no-separate-tracks]
                 [--portal monitor|window|any] [--portal-token FILE]   # Linux
+                [--game EXE]           # Linux: the game's program, for the Game track
 klip-cli clip [--last 30s]        # save from the running recorder; prints JSON
 klip-cli status | stop
 klip-cli probe [--codec h264]     # GPUs + every allowed encoder, tested
@@ -34,7 +35,9 @@ Linux (ADR 0012): `record` captures through the desktop's screen-cast portal (th
 way on Wayland; `--window-*`/`--monitor` are Windows options). The first run shows the
 desktop's dialog; the restore token in `$XDG_STATE_HOME/Klip/screencast-token` (or
 `--portal-token`) makes later runs start without asking. The ready line reports the
-stream (`portal`: node, kind, logical position and size).
+stream (`portal`: node, kind, logical position and size). The portal doesn't say which app
+is on the captured screen, so audio defaults to system audio; `--game EXE` records that
+program's audio as the Game track instead (as window capture does on Windows).
 
 Default clip folder: `Videos\Klip`. Default byte cap: estimated from buffer length and
 bitrate (120 s at 20 Mbit/s ≈ 454 MB).

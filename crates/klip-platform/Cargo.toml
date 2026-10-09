@@ -12,6 +12,10 @@ thiserror.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.13", default-features = false, features = ["async-io", "screencast", "global_shortcuts"] }
+# 0.3.50: `pw_stream_get_time_n` (stream times with the delay filled in).
+pipewire = { version = "0.10", features = ["v0_3_50"] }
+futures-channel = "0.3"
+futures-util = { version = "0.3", default-features = false }
 pollster.workspace = true
 rustix = { version = "1", features = ["time"] }
 tracing.workspace = true

@@ -53,8 +53,18 @@ Linux (`linux_impl.rs`, `screencast.rs`; ADR 0012):
   restore token in and out; streams (PipeWire node, monitor/window, logical position and
   size) and the PipeWire remote fd. Dropping it closes the session. A cancelled dialog
   is `PlatformError::Cancelled`; portal replies are handled inside `catch_unwind`.
-- Monitors, windows, audio sessions and `AudioCapture` return `Unsupported` for now
-  (Wayland has no window list; audio is M4.4).
+- `ScreenCast::is_closed`: a thread owning the portal session waits for the desktop's
+  `Closed` signal (the user stopped sharing) or for the `ScreenCast` to be dropped (then
+  it closes the session).
+- `AudioCapture` (`pipewire_audio.rs`, ADR 0008): PipeWire capture on its own thread and
+  main loop: output monitor, input device, or apps' playback streams linked by Klip
+  (include a process tree / everything except it; process ids from the client's
+  `pipewire.sec.pid`, set by the daemon). Stamped with the graph cycle time minus the
+  stream delay (CLOCK_MONOTONIC); silence while nothing plays; reconnects every 2 s.
+- `audio_sessions`: processes with a playback stream, active when one is running (two
+  registry round trips; nodes bound for their state).
+- `timeline.rs`: the silence/overlap timeline shared with WASAPI.
+- Monitors and windows return `Unsupported` (Wayland has no window list).
 
 Only documented OS APIs are used (WGC is the OS capture API). Nothing here touches
 another process's memory or rendering (rule 1).

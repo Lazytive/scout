@@ -8,6 +8,10 @@
 //! written), and [`LagEstimator`] finds the lag by cross-correlating the loudness
 //! envelopes of the two streams. Envelopes, not raw samples: a pure tone correlates
 //! equally well at every period of the tone.
+//!
+//! Linux (PipeWire): an app's stream, linked straight to Klip's capture, arrives one graph
+//! cycle *before* the output's mix carries it (measured −10 ms with a 512-frame quantum),
+//! so the lag is negative there; the same estimator measures it.
 
 use std::collections::VecDeque;
 
@@ -20,8 +24,9 @@ const DECIMATE: usize = 6;
 const KEEP: usize = 3 * ENV_RATE as usize;
 /// Correlation window.
 const WINDOW: usize = 3 * ENV_RATE as usize / 2;
-/// Lags searched: the process stream between 10 ms early and 60 ms late.
-const MIN_LAG: i64 = -10 * ENV_RATE / 1000;
+/// Lags searched: the process stream between 50 ms early (Linux: up to two 1024-frame
+/// graph cycles) and 60 ms late.
+const MIN_LAG: i64 = -50 * ENV_RATE / 1000;
 const MAX_LAG: i64 = 60 * ENV_RATE / 1000;
 /// How often a new estimate is attempted.
 const EVERY_NS: i64 = 2_000_000_000;
@@ -30,8 +35,9 @@ const MIN_SCORE: f64 = 0.6;
 /// Estimates kept for the median.
 const HISTORY: usize = 5;
 
-/// Lag assumed until the first measurement (mean of the measured 13–19 ms).
-pub const DEFAULT_LAG_NS: i64 = 16_000_000;
+/// Lag assumed until the first measurement: Windows, the mean of the measured 13–19 ms;
+/// Linux, none (measured −10 ms with a 512-frame quantum; varies with the quantum).
+pub const DEFAULT_LAG_NS: i64 = if cfg!(windows) { 16_000_000 } else { 0 };
 
 /// One stream's envelope on a grid of `ENV_STEP_NS`, placed by capture time.
 #[derive(Debug, Default)]
@@ -269,6 +275,20 @@ mod tests {
                     e.lag()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn finds_streams_that_are_early() {
+        // Linux: an app's stream reaches Klip one graph cycle before the output's mix.
+        for delay in [-10_666_667, -21_333_333, -42_666_667] {
+            let e = run(&signal(12, false), &vec![0.0; 12 * 48_000], delay);
+            assert!(e.measurements() >= 3, "{delay}: {e:?}");
+            assert!(
+                (e.lag() - delay).abs() <= 1_000_000,
+                "{delay}: got {}",
+                e.lag()
+            );
         }
     }
 

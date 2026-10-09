@@ -135,9 +135,15 @@ struct RecordArgs {
     /// Desktop Duplication (monitors only).
     #[arg(long, value_enum, default_value_t = CaptureApiArg::Auto)]
     capture_api: CaptureApiArg,
-    /// Game/system audio (default: game when recording a window, else system).
+    /// Game/system audio (default: game when recording a window or with --game, else
+    /// system).
     #[arg(long, value_enum)]
     audio: Option<AudioMode>,
+    /// The game's executable (e.g. `hl2_linux`): its audio is the Game track. Needed on
+    /// Linux, where the portal doesn't say which app is on the captured screen; on Windows
+    /// the captured window's process is used.
+    #[arg(long, value_name = "EXE")]
+    game: Option<String>,
     /// Also record a microphone: the default input, or a device id from
     /// `klip-cli audio-devices`.
     #[arg(long, num_args = 0..=1, default_missing_value = "default", value_name = "DEVICE")]
@@ -463,11 +469,15 @@ fn system_source(excluded: &[String]) -> AudioSource {
 /// The audio inputs for a recording, or `None` for silence.
 fn pick_audio(args: &RecordArgs, target: VideoTarget) -> Result<Option<AudioConfig>> {
     let mode = args.audio.unwrap_or(match target {
+        _ if args.game.is_some() => AudioMode::Game,
         VideoTarget::Window(_) => AudioMode::Game,
         VideoTarget::Monitor(_) | VideoTarget::PrimaryMonitor | VideoTarget::Portal => {
             AudioMode::System
         }
     });
+    if args.game.is_some() && mode != AudioMode::Game {
+        bail!("--game names the Game track's program; it needs --audio game");
+    }
     if mode == AudioMode::Apps && args.app.is_empty() {
         bail!("--audio apps needs at least one --app");
     }
@@ -478,6 +488,22 @@ fn pick_audio(args: &RecordArgs, target: VideoTarget) -> Result<Option<AudioConf
     let system = || system_source(&excluded_apps(args));
     match (mode, target) {
         (AudioMode::None | AudioMode::Apps, _) => {}
+        (AudioMode::Game, _) if args.game.is_some() => {
+            if !klip_capture::audio::process_loopback_supported() {
+                bail!("recording one program's audio needs Windows 10 version 2004 or newer");
+            }
+            let exe = args.game.clone().unwrap_or_default();
+            let roots = apps::app_roots(&klip_platform::list_processes()?, &[exe]);
+            let pid = match roots.as_slice() {
+                [(pid, _)] => *pid,
+                [] => bail!("the --game program is not running"),
+                _ => bail!("several processes match --game; name one executable"),
+            };
+            inputs.push(AudioInput {
+                label: "Game".into(),
+                source: AudioSource::Process { pid },
+            });
+        }
         (AudioMode::Game, VideoTarget::Window(h)) => {
             let pid = klip_platform::window_info(h)?.pid;
             let source = if klip_capture::audio::process_loopback_supported() && pid != 0 {

@@ -19,14 +19,24 @@ pub struct Beeper {
     _stream: cpal::Stream,
     log: Arc<Mutex<Vec<(u32, u64)>>>,
     tap: Option<tap::Tap>,
+    #[cfg(not(target_os = "linux"))]
     anchor: Arc<OnceLock<(u128, u128)>>,
+    /// (performance clock ns, game ns) of one moment (Linux; cpal's clock there starts at
+    /// the stream).
+    #[cfg(target_os = "linux")]
+    clock_anchor: (u128, u128),
     pub rate: u32,
     pub underruns: Arc<AtomicU64>,
 }
 
 impl Beeper {
-    /// (QPC-based ns, game ns) of the same moment: maps game time to the system clock.
+    /// (performance-clock ns, game ns) of the same moment: maps game time to the clock
+    /// capture timestamps use (QPC on Windows, where cpal's clock is QPC too;
+    /// CLOCK_MONOTONIC on Linux).
     pub fn anchor(&self) -> Option<(u128, u128)> {
+        #[cfg(target_os = "linux")]
+        return Some(self.clock_anchor);
+        #[cfg(not(target_os = "linux"))]
         self.anchor.get().copied()
     }
 
@@ -134,6 +144,26 @@ pub fn start(game_start: Instant, measure: bool) -> Result<Beeper> {
         .context("audio output stream")?;
     // Same moment on both clocks (both are QPC on Windows; read back to back).
     let _ = anchor.set((stream.now().as_nanos(), game_start.elapsed().as_nanos()));
+    #[cfg(target_os = "linux")]
+    let clock_anchor = {
+        let mono = klip_platform::qpc_now_ns();
+        let game = game_start.elapsed().as_nanos();
+        (u128::try_from(mono).unwrap_or(0), game)
+    };
+    #[cfg(target_os = "linux")]
+    let tap = match events {
+        Some(ev) => {
+            let zero = i128::try_from(clock_anchor.0).unwrap_or(0)
+                - i128::try_from(clock_anchor.1).unwrap_or(0);
+            Some(tap::start_pipewire(
+                rate,
+                i64::try_from(zero).unwrap_or(0),
+                ev,
+            )?)
+        }
+        None => None,
+    };
+    #[cfg(not(target_os = "linux"))]
     let tap = match events {
         Some(ev) => Some(tap::start(&device, anchor.clone(), ev)?),
         None => None,
@@ -143,7 +173,10 @@ pub fn start(game_start: Instant, measure: bool) -> Result<Beeper> {
         _stream: stream,
         log,
         tap,
+        #[cfg(not(target_os = "linux"))]
         anchor,
+        #[cfg(target_os = "linux")]
+        clock_anchor,
         rate,
         underruns,
     })

@@ -77,4 +77,13 @@ and only the mix is enabled.
 - Two music players playing at once makes system audio miss apps that start later; game
   audio (the default for games) has no such limit.
 - Recorder CPU with game audio + timing reference + 60 fps NVENC: ~6 % of one core.
-- Linux (M4) needs the same: PipeWire node timestamps, per-app streams.
+- Linux (M4): `klip_platform::AudioCapture` over PipeWire (`pipewire_audio.rs`, `pipewire`
+  crate): output = the sink's monitor (`stream.capture.sink`), mic = a capture stream,
+  per-app = Klip links the apps' playback streams (`Stream/Output/Audio` nodes whose
+  client's `pipewire.sec.pid` is in the process tree, or every other one for "except")
+  to its own unconnected capture stream; PipeWire mixes the links. Packets are stamped
+  with the graph cycle's time minus the stream delay (`pw_stream_get_time_n`,
+  CLOCK_MONOTONIC = GStreamer's system clock), with the same silence/overlap timeline
+  as WASAPI (`timeline.rs`). An app's stream reaches Klip one graph cycle before the
+  output's mix (−10 ms measured at a 512-frame quantum), so the lag estimator runs on
+  Linux too, with a 0 default and a search range down to −50 ms.

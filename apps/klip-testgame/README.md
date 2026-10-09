@@ -26,7 +26,9 @@ klip-testgame [--width 1280] [--height 720] [--fps 120]
 (or `secondary`: a monitor not at the desktop origin) makes it borderless fullscreen on
 that monitor; on Wayland, where apps can't place windows, that is how tests keep it off
 the main screen. The ready line lists `monitors` (name, position, size, scale) and
-`monitor_name`.
+`monitor_name`. On Linux the `--tap-log` reference comes from Klip's PipeWire capture of
+the default sink's monitor (ALSA through cpal can't capture an output, and cpal's ALSA
+clock starts at the stream), and the ready line's `anchor` is CLOCK_MONOTONIC.
 
 Frame pacing is done by the game (vsync off: Immediate/Mailbox), sleeping then spinning
 to each deadline. Measured: 120.0 fps, frame interval p99 8.7 ms at 1280x720. After the

@@ -16,6 +16,8 @@
 
 #![allow(unsafe_code)]
 
+use crate::timeline::{Format, RETRY_NS, deliver, fill_silence};
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -47,22 +49,12 @@ use windows::Win32::System::Threading::{CreateEventW, SetEvent, WaitForSingleObj
 use windows::Win32::System::Variant::VT_BLOB;
 use windows::core::{HRESULT, HSTRING, IUnknown, Interface, Ref, implement};
 
-use crate::{AudioCaptureSink, AudioPacket, CaptureEndpoint, PlatformError};
+use crate::{AudioCaptureSink, CaptureEndpoint, PlatformError};
 
 /// WASAPI buffer length (100 ns units): 200 ms.
 const BUFFER_HNS: i64 = 2_000_000;
 /// Longest wait for data before checking for stop / silence.
 const WAIT_MS: u32 = 10;
-/// Generate silence once nothing has arrived for this long…
-const SILENCE_AFTER_NS: i64 = 60_000_000;
-/// …up to this long before now, leaving room for late packets.
-const SILENCE_MARGIN_NS: i64 = 40_000_000;
-/// Silence comes in packets of at most this length.
-const SILENCE_PACKET_NS: i64 = 10_000_000;
-/// How often a failed device is retried.
-const RETRY_NS: i64 = 2_000_000_000;
-/// Overlap with already delivered audio that gets trimmed.
-const OVERLAP_NS: i64 = 1_000_000;
 /// IEEE float sample format tag.
 const WAVE_FORMAT_IEEE_FLOAT: u16 = 3;
 /// Windows 10 version 2004, the first with process loopback.
@@ -99,29 +91,7 @@ pub(crate) fn process_loopback_supported() -> bool {
     status.is_ok() && (info.dwMajorVersion > 10 || info.dwBuildNumber >= PROCESS_LOOPBACK_BUILD)
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Format {
-    rate: u32,
-    channels: u16,
-}
-
 impl Format {
-    fn frames_ns(self, frames: u32) -> i64 {
-        i64::from(frames)
-            .saturating_mul(1_000_000_000)
-            .checked_div(i64::from(self.rate))
-            .unwrap_or(0)
-    }
-
-    fn ns_frames(self, ns: i64) -> u32 {
-        let f = ns
-            .max(0)
-            .saturating_mul(i64::from(self.rate))
-            .checked_div(1_000_000_000)
-            .unwrap_or(0);
-        u32::try_from(f).unwrap_or(u32::MAX)
-    }
-
     fn wave_format(self) -> WAVEFORMATEX {
         let block = self.channels.saturating_mul(4);
         WAVEFORMATEX {
@@ -238,67 +208,6 @@ fn run(
             None => std::thread::sleep(std::time::Duration::from_millis(u64::from(WAIT_MS))),
         }
     }
-}
-
-/// Hand a packet to the sink, trimming any part that overlaps audio already delivered
-/// (silence generated while the stream was quiet).
-fn deliver(
-    fmt: Format,
-    next: &mut Option<i64>,
-    start: i64,
-    frames: u32,
-    samples: Option<&[f32]>,
-    discontinuity: bool,
-    sink: &mut dyn AudioCaptureSink,
-) {
-    let skip = match *next {
-        Some(n) if start < n.saturating_sub(OVERLAP_NS) => {
-            fmt.ns_frames(n.saturating_sub(start)).min(frames)
-        }
-        _ => 0,
-    };
-    let keep = frames.saturating_sub(skip);
-    if keep == 0 {
-        return;
-    }
-    let start = start.saturating_add(fmt.frames_ns(skip));
-    let data = samples.and_then(|s| {
-        let from = usize::try_from(skip)
-            .ok()?
-            .checked_mul(usize::from(fmt.channels))?;
-        s.get(from..)
-    });
-    sink.packet(AudioPacket {
-        qpc_ns: start,
-        frames: keep,
-        data,
-        discontinuity,
-    });
-    *next = Some(start.saturating_add(fmt.frames_ns(keep)));
-}
-
-/// Keep the stream continuous while nothing arrives.
-fn fill_silence(fmt: Format, next: &mut Option<i64>, sink: &mut dyn AudioCaptureSink) {
-    let Some(mut t) = *next else { return };
-    let now = qpc_now_ns();
-    if now.saturating_sub(t) < SILENCE_AFTER_NS {
-        return;
-    }
-    let until = now.saturating_sub(SILENCE_MARGIN_NS);
-    while t < until {
-        let frames = fmt.ns_frames(until.saturating_sub(t).min(SILENCE_PACKET_NS));
-        if frames == 0 {
-            break;
-        }
-        sink.packet(AudioPacket {
-            qpc_ns: t,
-            frames,
-            data: None,
-            discontinuity: false,
-        });
-        t = t.saturating_add(fmt.frames_ns(frames));
-    }
-    *next = Some(t);
 }
 
 /// Signals an event when process-loopback activation finishes.

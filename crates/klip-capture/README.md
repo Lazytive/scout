@@ -63,8 +63,13 @@ klip_platform::ScreenCast (portal session; shared as PortalSession by every pipe
 - `VideoTarget::Portal` + `VideoConfig::portal`. The output size comes from the stream's
   first caps: a probe on `pipewiresrc` sizes the chain's capsfilters
   (`EncodeChain::set_size`) as they pass; `start` waits up to 5 s for them.
-- `KLIP_PORTAL_CAPS` overrides the source caps (diagnosis; e.g. DMA-BUF, see ADR 0012);
-  `KLIP_CAPTURE_STAMPS=arrival` stamps frames on arrival instead of the compositor's time.
+- Frames are stamped on arrival minus the compositor's latency (24 ms on KDE, measured;
+  0 elsewhere; `KLIP_VIDEO_LATENCY_MS` overrides): KWin's own stamp is the previous
+  refresh's presentation time (ADR 0012). `KLIP_CAPTURE_STAMPS=source` keeps
+  `pipewiresrc`'s stamps (A/B runs).
+- The desktop ending the screen-cast session (the user stopped sharing) becomes a capture
+  error (`watch_portal`).
+- `KLIP_PORTAL_CAPS` overrides the source caps (diagnosis; e.g. DMA-BUF, see ADR 0012).
 
 ## Audio (`audio`, `lag`, `apps`)
 
@@ -75,7 +80,9 @@ klip_platform::AudioCapture (WASAPI thread, QPC-stamped packets)
 one input:     → AAC chain → appsink
 several:       → tee → queue → audiomixer → AAC chain → appsink   (track "Mix")
                     └→ queue → AAC chain → appsink                (each input, optional)
-AAC chain:     audioconvert → S16LE → queue → mfaacenc bitrate → aacparse → raw AAC
+AAC chain:     audioconvert → S16LE → queue → AAC encoder bitrate → aacparse → raw AAC
+               (mfaacenc; Linux fdkaacenc, else avenc_aac with F32; `aac_encoder_delay`
+               shifts packets back by each encoder's measured delay, ADR 0005)
 ```
 
 - `AudioSource`: `System` (output loopback), `SystemExcept` / `Process` (process loopback,

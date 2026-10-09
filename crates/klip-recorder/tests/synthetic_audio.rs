@@ -1,7 +1,7 @@
 //! Synthetic audio through the real AAC chain: PCM with beeps at known times → appsrc →
-//! `build_aac_chain` (mfaacenc) → packets → MP4 → ffmpeg decode → onset detection. Checks
+//! `build_aac_chain` (the platform's AAC encoder) → packets → MP4 → ffmpeg decode → onset detection. Checks
 //! that each beep lands where its input timestamp says (encoder delay compensated) and
-//! measures encode speed. Skips when mfaacenc or ffmpeg isn't available.
+//! measures encode speed. Skips when no AAC encoder or ffmpeg is available.
 
 // Test code: panicking helpers are allowed (AGENTS.md rule 3 applies outside tests).
 #![allow(
@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
-use klip_capture::audio::{self, AAC_ENCODER_DELAY, CHANNELS, SAMPLE_RATE};
+use klip_capture::audio::{self, CHANNELS, SAMPLE_RATE};
 use klip_capture::{CaptureSession, CaptureStats, PacketSink, Timing};
 use klip_media::{NANOS_PER_SEC, Nanos, Packet, TrackInfo};
 use klip_mp4::{Mp4Options, Mp4Track, save_mp4_atomic};
@@ -50,10 +50,16 @@ const BEEPS_S: [f64; 5] = [0.5, 1.7037, 2.9, 4.1111, 5.3];
 #[test]
 fn aac_chain_keeps_beeps_on_time() {
     klip_capture::klip_probe::init().unwrap();
-    if gst::ElementFactory::find("mfaacenc").is_none() || !oracle::available("ffmpeg") {
-        eprintln!("skipped: needs mfaacenc (Windows) and ffmpeg");
+    let Some(encoder) = audio::aac_encoder() else {
+        eprintln!("skipped: no AAC encoder");
+        return;
+    };
+    if !oracle::available("ffmpeg") {
+        eprintln!("skipped: needs ffmpeg");
         return;
     }
+    let delay = audio::aac_encoder_delay(encoder);
+    println!("encoder {encoder}, compensated delay {delay} ns");
     let pipeline = gst::Pipeline::new();
     let caps = gst::Caps::builder("audio/x-raw")
         .field("format", "S16LE")
@@ -77,7 +83,7 @@ fn aac_chain_keeps_beeps_on_time() {
         0,
         sink.clone(),
         stats.clone(),
-        Timing::Shift(-AAC_ENCODER_DELAY),
+        Timing::Shift(-delay),
     );
     let session = CaptureSession::run(pipeline, sink.clone(), stats, (0, 0), None).unwrap();
 
@@ -166,7 +172,7 @@ fn aac_chain_keeps_beeps_on_time() {
     println!(
         "beep errors ms {errors_ms:.3?}; mean {mean:+.3} ms = {:+.1} samples left after compensating {} ns",
         mean * 48.0,
-        AAC_ENCODER_DELAY
+        delay
     );
     for e in &errors_ms {
         assert!(

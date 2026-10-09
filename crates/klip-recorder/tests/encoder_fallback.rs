@@ -19,6 +19,39 @@ use klip_capture::{EncodeConfig, VideoConfig, VideoTarget};
 use klip_media::{Codec, NANOS_PER_SEC};
 use klip_recorder::{Recorder, RecorderConfig};
 
+/// Linux: a screen-cast session restored from the e2e token (the CLI tests' monitor; see
+/// `apps/klip-cli/tests/common`), so this runs without the desktop's dialog once that
+/// token exists.
+fn portal_session() -> klip_capture::PortalSession {
+    let path = std::env::var_os("KLIP_E2E_PORTAL_TOKEN")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            let state = std::env::var_os("XDG_STATE_HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| {
+                    std::path::PathBuf::from(std::env::var_os("HOME").unwrap()).join(".local/state")
+                });
+            let output = std::env::var("KLIP_E2E_OUTPUT").unwrap_or_else(|_| "secondary".into());
+            state
+                .join("klip-e2e")
+                .join(format!("portal-{output}.token"))
+        });
+    let token = std::fs::read_to_string(&path)
+        .ok()
+        .map(|t| t.trim().to_string());
+    let cast = klip_platform::ScreenCast::start(&klip_platform::ScreenCastRequest {
+        source: klip_platform::ScreenCastSource::Monitor,
+        show_cursor: false,
+        restore_token: token,
+    })
+    .unwrap();
+    if let Some(t) = cast.restore_token() {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, t).unwrap();
+    }
+    klip_capture::PortalSession(std::sync::Arc::new(cast))
+}
+
 #[test]
 #[ignore = "hardware: needs a display and a GPU/OS H.264 encoder; run via `cargo xtask e2e`"]
 fn falls_back_to_the_next_encoder() {
@@ -46,20 +79,25 @@ fn falls_back_to_the_next_encoder() {
         gpu: None,
         device_index: 0,
     };
+    let (target, portal) = if cfg!(target_os = "linux") {
+        (VideoTarget::Portal, Some(portal_session()))
+    } else {
+        (VideoTarget::PrimaryMonitor, None)
+    };
     let dir = tempfile::tempdir().unwrap();
     let cfg = RecorderConfig {
         buffer: 10 * NANOS_PER_SEC,
         max_buffer_bytes: 64 * 1024 * 1024,
         clip_dir: dir.path().to_path_buf(),
         video: VideoConfig {
-            target: VideoTarget::PrimaryMonitor,
+            target,
             fps: 30,
             max_width: 1280,
             max_height: 720,
             show_cursor: false,
             api: Default::default(),
             output: None,
-            portal: None,
+            portal,
         },
         encode: EncodeConfig {
             encoder: broken,

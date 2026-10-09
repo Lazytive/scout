@@ -10,7 +10,11 @@
 mod gst_d3d11;
 #[cfg(target_os = "linux")]
 mod linux_impl;
+#[cfg(target_os = "linux")]
+mod pipewire_audio;
 mod screencast;
+#[cfg(any(windows, target_os = "linux"))]
+mod timeline;
 #[cfg(windows)]
 mod wasapi;
 #[cfg(windows)]
@@ -176,6 +180,8 @@ pub trait AudioCaptureSink: Send {
 pub struct AudioCapture {
     #[cfg(windows)]
     handle: wasapi::Handle,
+    #[cfg(target_os = "linux")]
+    handle: pipewire_audio::Handle,
 }
 
 impl std::fmt::Debug for AudioCapture {
@@ -199,7 +205,13 @@ impl AudioCapture {
                 handle: wasapi::start(endpoint, rate, channels, sink)?,
             })
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
+        {
+            Ok(AudioCapture {
+                handle: pipewire_audio::start(endpoint, rate, channels, sink)?,
+            })
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = (endpoint, rate, channels, sink);
             Err(PlatformError::Unsupported)
@@ -212,7 +224,7 @@ impl AudioCapture {
     }
 
     fn shutdown(&mut self) {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         self.handle.shutdown();
     }
 }
@@ -241,13 +253,18 @@ pub fn qpc_now_ns() -> i64 {
     }
 }
 
-/// Whether per-process audio capture is available (Windows 10 2004+).
+/// Whether per-process audio capture is available (Windows 10 2004+; Linux: PipeWire links
+/// app streams).
 pub fn process_loopback_supported() -> bool {
     #[cfg(windows)]
     {
         wasapi::process_loopback_supported()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        true
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         false
     }
@@ -293,7 +310,11 @@ pub fn audio_sessions() -> Result<Vec<AudioSession>, PlatformError> {
     {
         windows_impl::audio_sessions()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        pipewire_audio::audio_sessions()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         Err(PlatformError::Unsupported)
     }
@@ -496,7 +517,7 @@ mod tests {
         assert!(audio_sessions().unwrap().iter().all(|s| s.pid != 0));
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     #[test]
     fn audio_capture_is_continuous_and_qpc_stamped() {
         use std::sync::{Arc, Mutex};

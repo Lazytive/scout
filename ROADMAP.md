@@ -101,6 +101,13 @@ green (built in a Fedora 44 distrobox).
   fps, every barcode readable, no repeats or reordering, frame interval p99 17.2 ms; save
   4 ms.
 - Recorder CPU 4K stream → 1080p60: 31 % of one core, RSS 457 MB (no audio).
+- Audio (PipeWire): per-app capture by linking the app's streams: a 1 kHz tone into a
+  private null sink → included 0.354 RMS (full level), excluded 0.011, sink monitor 0.354.
+  AAC: `fdkaacenc` 2048-sample delay and `avenc_aac` 1024, compensated to < 0.01 ms.
+- A/V (`m2_audio.rs`, system audio, idle desktop): 30/30 beeps, A/V −5.1 ms (range
+  −5.2..−4.8), video +6.2 ms after the GPU finished each frame (after subtracting KWin's
+  measured 24 ms screencast latency, ADR 0012). Mic + Game + Mix track layout and
+  system-minus-excluded-app pass.
 
 ## Approximate / not done yet
 
@@ -145,12 +152,14 @@ green (built in a Fedora 44 distrobox).
   one AAC track).
 - If the captured window closes, the recorder keeps the buffer (clips still save) but
   doesn't recover capture; restart/re-target logic comes with game detection (M6).
-- **Linux** (M4, ADR 0012): video through the screen-cast portal works on KDE Wayland
-  with NVENC; not yet: audio (M4.4), global hotkey (M4.5), X11 and GNOME (M4.6), VA-API
-  on real AMD/Intel hardware. Capture copies frames through system memory (31 % of one
+- **Linux** (M4, ADR 0012): video through the screen-cast portal and PipeWire audio work
+  on KDE Wayland with NVENC; not yet: global hotkey (M4.5), X11 and GNOME (M4.6), VA-API
+  on real AMD/Intel hardware. **Video timing relies on a compositor latency measured on
+  one machine** (KDE: 24 ms); it grows ~13 ms when another app keeps KWin busy, and other
+  desktops are uncompensated until measured. Per-app audio needs PipeWire link
+  permission and a shared PID namespace (fine natively; Flatpak needs checking in M13). Capture copies frames through system memory (31 % of one
   core at 4K → 1080p60); DMA-BUF is faster but shows stale frames on NVIDIA until
-  explicit sync is handled. Stopping the share from the desktop stalls the stream
-  instead of reporting an error. Windows/monitors can't be targeted by handle (Wayland).
+  explicit sync is handled. Windows/monitors can't be targeted by handle (Wayland).
 
 ## Manual checks for the human (M2)
 

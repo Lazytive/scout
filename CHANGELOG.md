@@ -5,6 +5,17 @@ reason)`.
 
 ## Unreleased
 
+- M4.4 — Linux audio (ADR 0008): `AudioCapture` over PipeWire (output monitor, input,
+  per-app streams linked by Klip with include/exclude, process ids from
+  `pipewire.sec.pid`), `audio_sessions`, shared silence timeline (`timeline.rs`);
+  AAC via `fdkaacenc`/`avenc_aac` with measured encoder delays; lag estimator handles
+  early streams (Linux) with a 0 default; CLI `--game EXE`; test game tap on Linux via
+  Klip's PipeWire capture. (Claude Opus 5.5: M4)
+- M4.3 — Portal timing and lifecycle (ADR 0012): frames stamped on arrival minus a
+  measured compositor latency (KDE 24 ms), A/V −5.1 ms; the desktop ending the
+  screen-cast session is reported as a capture error (portal session owned by its own
+  thread); `encoder_fallback` runs on Linux. (Claude Opus 5.5: M4)
+
 - M4.3 — Linux video capture (ADR 0012): `klip_platform::ScreenCast` (xdg-desktop-portal
   ScreenCast via `ashpd`, persist "until revoked", restore token), `VideoTarget::Portal`
   + shared `PortalSession`, `pipewiresrc` → `videorate` → encode chain sized from the

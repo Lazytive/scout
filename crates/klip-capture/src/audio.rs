@@ -11,7 +11,8 @@
 //!   one input:   → AAC chain → appsink (track N)                              │
 //!   several:     → tee ─→ queue → audiomixer → AAC chain → appsink ("Mix", N) │
 //!                      └→ queue → AAC chain → appsink (N+1+i, if separate)    │
-//! AAC chain: audioconvert → S16LE → queue → mfaacenc → aacparse → raw AAC
+//! AAC chain: audioconvert → S16LE → queue → AAC encoder → aacparse → raw AAC
+//! (`mfaacenc` on Windows; `fdkaacenc`, else `avenc_aac` on Linux; ADR 0005)
 //! ```
 //!
 //! Per-process loopback stamps its packets 13–19 ms late (a different amount per session),
@@ -85,12 +86,37 @@ pub const DEFAULT_BITRATE: u32 = 160_000;
 /// Bitrates `mfaacenc` accepts for 48 kHz stereo.
 pub const BITRATES: [u32; 6] = [96_000, 128_000, 160_000, 192_000, 256_000, 320_000];
 
-/// How much later than its input timestamps the AAC encoder's decoded output plays;
-/// packets are shifted back by this. Media Foundation's encoder already aligns its
-/// output: `klip-recorder/tests/synthetic_audio.rs` measured beeps within 0.01 ms of
-/// their input time after encode → MP4 → ffmpeg decode, so this is 0. Kept as a hook for
-/// the Linux encoders (M4).
-pub const AAC_ENCODER_DELAY: Nanos = 0;
+/// AAC encoders in order of preference: the OS's (Media Foundation) on Windows; on Linux
+/// FDK AAC (in Flatpak runtimes and Fedora), else FFmpeg's native encoder (LGPL).
+#[cfg(windows)]
+const AAC_ENCODERS: &[&str] = &["mfaacenc"];
+#[cfg(not(windows))]
+const AAC_ENCODERS: &[&str] = &["fdkaacenc", "avenc_aac"];
+
+/// The AAC encoder element this machine uses (requires GStreamer to be initialised).
+/// `KLIP_AAC_ENCODER` picks another one from the list (measurements).
+pub fn aac_encoder() -> Option<&'static str> {
+    let wanted = std::env::var("KLIP_AAC_ENCODER").ok();
+    AAC_ENCODERS
+        .iter()
+        .copied()
+        .filter(|e| wanted.as_deref().is_none_or(|w| w == *e))
+        .find(|e| gst::ElementFactory::find(e).is_some())
+}
+
+/// How much later than its input timestamps `encoder`'s decoded output plays; packets are
+/// shifted back by this. Measured with `klip-recorder/tests/synthetic_audio.rs` (beeps
+/// at known times → encode → MP4 → ffmpeg decode): Media Foundation already aligns its
+/// output (beeps within 0.01 ms, so 0); FDK AAC (GStreamer 1.28.7, Fedora 44) plays
+/// exactly 2048 samples late (42.667 ms at 48 kHz, all beeps), FFmpeg's `avenc_aac`
+/// 1024 samples (21.333 ms).
+pub fn aac_encoder_delay(encoder: &str) -> Nanos {
+    match encoder {
+        "fdkaacenc" => 42_666_667,
+        "avenc_aac" => 21_333_333,
+        _ => 0,
+    }
+}
 
 /// Latency an `appsrc` input reports: packets reach it a few ms after capture, generated
 /// silence up to ~60 ms after (see `klip_platform` WASAPI capture). The mixer waits this
@@ -236,8 +262,9 @@ fn queue() -> Result<gst::Element, CaptureError> {
     Ok(q)
 }
 
-/// Build `audioconvert → S16LE 48 kHz stereo → queue → mfaacenc → aacparse → raw AAC →
-/// appsink` in `bin`. Returns the first element (link raw audio to it) and the appsink.
+/// Build `audioconvert → S16LE 48 kHz stereo → queue → AAC encoder ([`aac_encoder`]) →
+/// aacparse → raw AAC → appsink` in `bin`. Returns the first element (link raw audio to
+/// it) and the appsink.
 pub fn build_aac_chain(
     bin: &gst::Pipeline,
     bitrate: u32,
@@ -247,11 +274,18 @@ pub fn build_aac_chain(
             "audio bitrate must be one of {BITRATES:?}"
         )));
     }
+    let name =
+        aac_encoder().ok_or_else(|| CaptureError::MissingElement("an AAC encoder".into()))?;
     let convert = make("audioconvert")?;
+    // Media Foundation and FDK take S16; FFmpeg's encoder takes float.
+    let format = match name {
+        "avenc_aac" => "format=F32LE,layout=interleaved",
+        _ => "format=S16LE,layout=interleaved",
+    };
     let raw = capsfilter(&format!(
-        "audio/x-raw,format=S16LE,layout=interleaved,rate={SAMPLE_RATE},channels={CHANNELS}"
+        "audio/x-raw,{format},rate={SAMPLE_RATE},channels={CHANNELS}"
     ))?;
-    let encoder = make("mfaacenc")?;
+    let encoder = make(name)?;
     props::require(&encoder, "bitrate", &bitrate.to_string()).map_err(CaptureError::Config)?;
     let parser = make("aacparse")?;
     let out = capsfilter("audio/mpeg,mpegversion=4,stream-format=raw")?;
@@ -504,7 +538,12 @@ impl AudioSession {
         };
         let pipeline = gst::Pipeline::with_name("klip-audio");
         let stats = Arc::new(CaptureStats::default());
-        let timing = Timing::Shift(AAC_ENCODER_DELAY.saturating_neg());
+        let timing = Timing::Shift(
+            aac_encoder()
+                .map(aac_encoder_delay)
+                .unwrap_or(0)
+                .saturating_neg(),
+        );
         let attach = |appsink: &gst_app::AppSink, k: usize| -> Result<(), CaptureError> {
             let track = first_track
                 .checked_add(k)

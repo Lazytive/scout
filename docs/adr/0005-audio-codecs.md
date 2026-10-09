@@ -21,6 +21,20 @@ editors (Premiere, Resolve, CapCut). Rule 6 asks us to record codec choices.
 M2 has to measure encode latency/CPU of `mfaacenc` and check A/V sync. If an editor rejects
 multi-track AAC, add an export option that mixes down to one track.
 
+## Measured (M4, Linux)
+Bazzite 44 / Fedora 44 GStreamer 1.28.7, same synthetic beep test
+(`klip-recorder/tests/synthetic_audio.rs`, which now uses the platform's encoder):
+- `fdkaacenc` (Fedora's `fdk-aac-free`, FDK AAC licence, dynamically loaded through the
+  GStreamer plugin; Flathub runtimes ship it too): output plays exactly **2048 samples**
+  late (42.667 ms); compensated (`aac_encoder_delay`), beeps land within 0.01 ms.
+  253x real time.
+- `avenc_aac` (FFmpeg's native encoder, used when FDK is absent): **1024 samples** late
+  (21.333 ms); compensated, within 0.01 ms; 141x real time. Takes interleaved F32. The
+  FFmpeg build on a user's system may be GPL-enabled; Klip only links GStreamer (LGPL)
+  and never ships FFmpeg, so the licence check for bundles stays with the Flatpak
+  runtime's LGPL build (M13).
+- `KLIP_AAC_ENCODER=<element>` picks one for measurements.
+
 ## Measured (M2)
 
 Windows 11 26200, i7-14700KF, GStreamer 1.28.6 `mfaacenc`, 48 kHz stereo, 160 kbit/s:

@@ -88,6 +88,19 @@ impl ScreenCast {
         self.restore_token.as_deref()
     }
 
+    /// The desktop ended the session (the user stopped sharing); its streams deliver no
+    /// more frames.
+    pub fn is_closed(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            self.inner.closed.load(std::sync::atomic::Ordering::Relaxed)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
+    }
+
     /// The PipeWire remote the streams are on. Valid while `self` lives; consumers such as
     /// `pipewiresrc` duplicate it.
     pub fn pipewire_fd(&self) -> i32 {
@@ -106,6 +119,8 @@ impl ScreenCast {
 mod linux {
     use std::os::fd::{AsRawFd, OwnedFd};
     use std::panic::{AssertUnwindSafe, catch_unwind};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use ashpd::desktop::PersistMode;
     use ashpd::desktop::screencast::{
@@ -113,15 +128,19 @@ mod linux {
         StartCastOptions,
     };
     use ashpd::desktop::{CreateSessionOptions, ResponseError};
+    use futures_util::StreamExt;
+    use futures_util::future::{Either, select};
 
     use super::{ScreenCastRequest, ScreenCastSource, ScreenCastStream};
     use crate::PlatformError;
 
+    /// The open session. Its portal objects live on their own thread, which waits for the
+    /// desktop to close the session or for this to be dropped (then it closes it).
     pub(super) struct Session {
-        session: Option<ashpd::desktop::Session<Screencast>>,
-        // Keeps the D-Bus connection (and so the session) alive.
-        _proxy: Screencast,
         fd: OwnedFd,
+        /// Set when the portal reports the session closed.
+        pub(super) closed: Arc<AtomicBool>,
+        stop: Option<futures_channel::oneshot::Sender<()>>,
     }
 
     impl Session {
@@ -132,14 +151,10 @@ mod linux {
 
     impl Drop for Session {
         fn drop(&mut self) {
-            if let Some(session) = self.session.take() {
-                // Closing is a quick D-Bus call; ending the connection would close the
-                // session too, so a failure here is harmless.
-                let _ = catch_unwind(AssertUnwindSafe(|| {
-                    if let Err(e) = pollster::block_on(session.close()) {
-                        tracing::debug!(error = %e, "closing the screen-cast session failed");
-                    }
-                }));
+            // The portal thread closes the session and ends; not waited for, so a slow
+            // bus never blocks the caller.
+            if let Some(stop) = self.stop.take() {
+                let _ = stop.send(());
             }
         }
     }
@@ -159,9 +174,17 @@ mod linux {
         }
     }
 
+    type Opened = (Vec<ScreenCastStream>, Option<String>, OwnedFd);
     type Started = (Session, Vec<ScreenCastStream>, Option<String>);
 
-    async fn run(request: &ScreenCastRequest) -> Result<Started, PlatformError> {
+    /// Open the session, report it on `tx`, then hold it until the desktop closes it
+    /// (`closed`) or `stop` fires.
+    async fn serve(
+        request: &ScreenCastRequest,
+        tx: &std::sync::mpsc::Sender<Result<Opened, PlatformError>>,
+        stop: futures_channel::oneshot::Receiver<()>,
+        closed: &AtomicBool,
+    ) -> Result<(), PlatformError> {
         let proxy = Screencast::new().await.map_err(os)?;
         let sources = match request.source {
             ScreenCastSource::Monitor => SourceType::Monitor.into(),
@@ -169,9 +192,7 @@ mod linux {
             ScreenCastSource::Any => SourceType::Monitor | SourceType::Window,
         };
         let available = proxy.available_cursor_modes().await.map_err(os)?;
-        let cursor = if !request.show_cursor {
-            CursorMode::Hidden
-        } else if available.contains(CursorMode::Embedded) {
+        let cursor = if request.show_cursor && available.contains(CursorMode::Embedded) {
             CursorMode::Embedded
         } else {
             CursorMode::Hidden
@@ -218,24 +239,71 @@ mod linux {
             .open_pipe_wire_remote(&session, OpenPipeWireRemoteOptions::default())
             .await
             .map_err(os)?;
-        Ok((
-            Session {
-                session: Some(session),
-                _proxy: proxy,
-                fd,
-            },
-            streams,
-            token,
-        ))
+        let signals = session.receive_closed().await;
+        if tx.send(Ok((streams, token, fd))).is_err() {
+            let _ = session.close().await;
+            return Ok(());
+        }
+        match signals {
+            Ok(signals) => {
+                let mut signals = std::pin::pin!(signals);
+                let next = signals.next();
+                match select(std::pin::pin!(next), stop).await {
+                    // Closed by the desktop, or the bus connection ended.
+                    Either::Left(_) => {
+                        closed.store(true, Ordering::Relaxed);
+                        return Ok(());
+                    }
+                    Either::Right(_) => {}
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "cannot watch the screen-cast session");
+                let _ = stop.await;
+            }
+        }
+        if let Err(e) = session.close().await {
+            tracing::debug!(error = %e, "closing the screen-cast session failed");
+        }
+        Ok(())
     }
 
     pub(super) fn start(request: &ScreenCastRequest) -> Result<Started, PlatformError> {
-        // The portal crate asserts on malformed replies; a hostile or buggy portal must
-        // not take the app down.
-        catch_unwind(AssertUnwindSafe(|| pollster::block_on(run(request)))).unwrap_or_else(|_| {
-            Err(PlatformError::Os(
-                "screen-cast portal: unexpected reply".into(),
-            ))
-        })
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (stop_tx, stop_rx) = futures_channel::oneshot::channel::<()>();
+        let closed = Arc::new(AtomicBool::new(false));
+        let flag = closed.clone();
+        let request = request.clone();
+        std::thread::Builder::new()
+            .name("klip-screencast".into())
+            .spawn(move || {
+                // The portal crate asserts on malformed replies; a hostile or buggy portal
+                // must not take the app down.
+                let res = catch_unwind(AssertUnwindSafe(|| {
+                    pollster::block_on(serve(&request, &tx, stop_rx, &flag))
+                }));
+                let err = match res {
+                    Ok(Ok(())) => return,
+                    Ok(Err(e)) => e,
+                    Err(_) => PlatformError::Os("screen-cast portal: unexpected reply".into()),
+                };
+                // After a successful open the receiver may be gone; then this is a no-op.
+                let _ = tx.send(Err(err));
+            })
+            .map_err(|e| PlatformError::Os(format!("screen-cast thread: {e}")))?;
+        // Waits for the user's answer in the dialog (no time limit: it is their choice).
+        match rx.recv() {
+            Ok(Ok((streams, token, fd))) => Ok((
+                Session {
+                    fd,
+                    closed,
+                    stop: Some(stop_tx),
+                },
+                streams,
+                token,
+            )),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(PlatformError::Os("screen-cast portal thread ended".into())),
+        }
     }
 }

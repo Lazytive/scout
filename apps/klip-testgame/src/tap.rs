@@ -7,10 +7,9 @@
 
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
-use anyhow::{Context, Result, bail};
-use cpal::traits::{DeviceTrait, StreamTrait};
+use anyhow::{Context, Result};
 use klip_testkit::audio::beep_sample;
 
 /// Template length: two periods of the 1 kHz beep.
@@ -28,17 +27,93 @@ pub enum Event {
     Audio(i128, Vec<f32>),
 }
 
+/// Detected beeps: (index, game ns).
+type BeepLog = Arc<Mutex<Vec<(u32, u64)>>>;
+
 pub struct Tap {
-    _stream: cpal::Stream,
-    pub log: Arc<Mutex<Vec<(u32, u64)>>>,
+    _source: Source,
+    pub log: BeepLog,
+}
+
+/// What captures the output for the tap.
+enum Source {
+    #[cfg(not(target_os = "linux"))]
+    Cpal { _stream: cpal::Stream },
+    /// Linux: ALSA (cpal) can't capture an output, and its clock starts at the stream,
+    /// so the default sink's monitor comes from Klip's PipeWire capture instead, stamped
+    /// on CLOCK_MONOTONIC.
+    #[cfg(target_os = "linux")]
+    PipeWire {
+        _capture: klip_platform::AudioCapture,
+    },
+}
+
+/// Runs the beep detector on `rx` and returns the log it fills.
+fn detect(rate: u32, rx: Receiver<Event>) -> Result<BeepLog> {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let out = log.clone();
+    std::thread::Builder::new()
+        .name("beep-tap".into())
+        .spawn(move || {
+            let mut d = Detector::new(rate);
+            while let Ok(ev) = rx.recv() {
+                for found in d.feed(ev) {
+                    out.lock().unwrap_or_else(|e| e.into_inner()).push(found);
+                }
+            }
+        })
+        .context("tap thread")?;
+    Ok(log)
+}
+
+/// Linux tap: the default sink's monitor through `klip_platform::AudioCapture`.
+/// `mono_at_zero` is CLOCK_MONOTONIC at game time zero.
+#[cfg(target_os = "linux")]
+pub fn start_pipewire(
+    rate: u32,
+    mono_at_zero: i64,
+    events: (Sender<Event>, Receiver<Event>),
+) -> Result<Tap> {
+    struct Sink {
+        tx: Sender<Event>,
+        mono_at_zero: i64,
+    }
+    impl klip_platform::AudioCaptureSink for Sink {
+        fn packet(&mut self, p: klip_platform::AudioPacket<'_>) {
+            let t = i128::from(p.qpc_ns) - i128::from(self.mono_at_zero);
+            let mono: Vec<f32> = match p.data {
+                Some(d) => d.chunks(2).map(|f| f.iter().sum::<f32>() / 2.0).collect(),
+                None => vec![0.0; p.frames as usize],
+            };
+            let _ = self.tx.send(Event::Audio(t, mono));
+        }
+        fn notice(&mut self, message: String) {
+            eprintln!("tap: {message}");
+        }
+    }
+    let (tx, rx) = events;
+    let capture = klip_platform::AudioCapture::start(
+        klip_platform::CaptureEndpoint::Loopback { device: None },
+        rate,
+        2,
+        Box::new(Sink { tx, mono_at_zero }),
+    )
+    .context("loopback capture")?;
+    Ok(Tap {
+        _source: Source::PipeWire { _capture: capture },
+        log: detect(rate, rx)?,
+    })
 }
 
 /// Start the loopback capture and the detector. `anchor` maps cpal instants to game time.
+#[cfg(not(target_os = "linux"))]
 pub fn start(
     device: &cpal::Device,
-    anchor: Arc<OnceLock<(u128, u128)>>,
+    anchor: Arc<std::sync::OnceLock<(u128, u128)>>,
     events: (Sender<Event>, Receiver<Event>),
 ) -> Result<Tap> {
+    use anyhow::bail;
+    use cpal::traits::{DeviceTrait, StreamTrait};
     let supported = device.default_output_config().context("loopback config")?;
     if supported.sample_format() != cpal::SampleFormat::F32 {
         bail!("loopback is not f32");
@@ -67,22 +142,9 @@ pub fn start(
         )
         .context("loopback stream")?;
     stream.play().context("start loopback")?;
-    let log = Arc::new(Mutex::new(Vec::new()));
-    let out = log.clone();
-    std::thread::Builder::new()
-        .name("beep-tap".into())
-        .spawn(move || {
-            let mut d = Detector::new(rate);
-            while let Ok(ev) = rx.recv() {
-                for found in d.feed(ev) {
-                    out.lock().unwrap_or_else(|e| e.into_inner()).push(found);
-                }
-            }
-        })
-        .context("tap thread")?;
     Ok(Tap {
-        _stream: stream,
-        log,
+        _source: Source::Cpal { _stream: stream },
+        log: detect(rate, rx)?,
     })
 }
 

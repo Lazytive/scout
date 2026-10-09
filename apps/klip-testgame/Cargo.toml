@@ -13,6 +13,7 @@ bytemuck.workspace = true
 clap.workspace = true
 cpal.workspace = true
 klip-media.workspace = true
+klip-platform.workspace = true
 klip-testkit.workspace = true
 pollster.workspace = true
 serde_json.workspace = true

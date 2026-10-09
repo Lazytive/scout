@@ -29,7 +29,10 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use common::{KillOnDrop, capture_api_args, cli, game, run_json, spawn_ready, stop_recorder};
+use common::{
+    KillOnDrop, capture_api_args, capture_args, check_portal_stream, cli, game, run_json,
+    spawn_ready, stop_recorder,
+};
 use klip_testkit::{audio, oracle, sync};
 use serde_json::Value;
 
@@ -75,7 +78,6 @@ fn record_game(clip_secs: u64, extra: &[&str]) -> Run {
     );
     let mut game = KillOnDrop(game);
     println!("game: {ready}");
-    let hwnd = ready["hwnd"].as_u64().unwrap();
     assert!(
         ready["beep_rate"].as_u64().is_some(),
         "game has no audio output"
@@ -90,7 +92,15 @@ fn record_game(clip_secs: u64, extra: &[&str]) -> Run {
                 "--fps",
                 &CAPTURE_FPS.to_string(),
             ])
-            .args(["--window-handle", &hwnd.to_string()])
+            .args(capture_args(&ready))
+            // The game's size (a no-op for its window; scales a monitor stream down).
+            .args(["--max-size", "1280x720"])
+            // Linux: the portal doesn't say whose screen it is; name the game for its audio.
+            .args(if cfg!(windows) || extra.contains(&"--audio") {
+                vec![]
+            } else {
+                vec!["--game", "klip-testgame"]
+            })
             .args(extra)
             .args(capture_api_args())
             .arg("--out")
@@ -99,6 +109,7 @@ fn record_game(clip_secs: u64, extra: &[&str]) -> Run {
     );
     let mut rec = KillOnDrop(rec);
     println!("recorder: {rec_ready}");
+    check_portal_stream(&rec_ready, &ready);
     std::thread::sleep(Duration::from_secs(clip_secs + 3));
     let saved = run_json(cli(&discovery).args(["clip", "--last", &format!("{clip_secs}s")]));
     let status = run_json(cli(&discovery).arg("status"));
@@ -143,7 +154,8 @@ fn game_audio_is_in_sync() {
     let save_ms = run.saved["save_ms"].as_f64().unwrap();
     assert!(save_ms < 1000.0, "save took {save_ms} ms");
 
-    // Container: H.264 video + one AAC track named Game, played by default.
+    // Container: H.264 video + one AAC track named Game (the captured window's process;
+    // on Linux the process named with --game), played by default.
     let streams = oracle::probe_streams(&run.clip).unwrap();
     assert_eq!(streams.len(), 2, "{streams:?}");
     let (v, a) = (&streams[0], &streams[1]);
@@ -324,7 +336,16 @@ fn excluded_app_is_left_out_of_system_audio() {
     // sounds on the machine may be, so only beep-shaped onsets at beep times count.
     let run = record_game(
         10,
-        &["--audio", "system", "--exclude-app", "klip-testgame.exe"],
+        &[
+            "--audio",
+            "system",
+            "--exclude-app",
+            if cfg!(windows) {
+                "klip-testgame.exe"
+            } else {
+                "klip-testgame"
+            },
+        ],
     );
     assert_eq!(run.status["audio"]["error"], Value::Null);
     let source = run.status["audio"]["inputs"][0]["source"].as_str().unwrap();

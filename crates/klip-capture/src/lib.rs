@@ -878,6 +878,34 @@ impl std::fmt::Debug for CaptureSession {
     }
 }
 
+/// Report it as a capture error when the desktop ends the screen-cast session (the user
+/// stopped sharing): the stream then just stops delivering frames.
+fn watch_portal(
+    portal: &PortalSession,
+    stop: &Arc<AtomicBool>,
+    sink: Arc<dyn PacketSink>,
+    stats: Arc<CaptureStats>,
+) {
+    let (portal, stop) = (portal.clone(), stop.clone());
+    let spawned = std::thread::Builder::new()
+        .name("klip-portal-watch".into())
+        .spawn(move || {
+            let _ = catch_unwind(AssertUnwindSafe(|| {
+                while !stop.load(Ordering::Relaxed) {
+                    if portal.0.is_closed() {
+                        stats.errors.fetch_add(1, Ordering::Relaxed);
+                        sink.on_error("screen sharing was stopped from the desktop".into());
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+            }));
+        });
+    if let Err(e) = spawned {
+        tracing::warn!(error = %e, "cannot watch the screen-cast session");
+    }
+}
+
 /// How long a screen-cast stream may take to deliver its first frame (the compositor sends
 /// one as soon as the stream connects).
 const PORTAL_FIRST_FRAME: std::time::Duration = std::time::Duration::from_secs(5);
@@ -896,7 +924,11 @@ const SOURCE_RATE_MAX: u32 = 1000;
 
 /// Stamp `src`'s buffers with their arrival time on `tb`'s timeline, and remember that time
 /// in a `ReferenceTimestampMeta` (rate conversion downstream rewrites the timestamps).
-fn restamp_on_arrival(src: &gst::Element, tb: &TimeBase) -> Result<(), CaptureError> {
+fn restamp_on_arrival(
+    src: &gst::Element,
+    tb: &TimeBase,
+    latency: Nanos,
+) -> Result<(), CaptureError> {
     let pad = src
         .static_pad("src")
         .ok_or_else(|| CaptureError::Gst("capture source has no src pad".into()))?;
@@ -907,7 +939,7 @@ fn restamp_on_arrival(src: &gst::Element, tb: &TimeBase) -> Result<(), CaptureEr
         if let Some(gst::PadProbeData::Buffer(buffer)) = info.data.as_mut() {
             let mut last = last.lock().unwrap_or_else(PoisonError::into_inner);
             // Strictly increasing even if two frames arrive within one clock tick.
-            let now = tb.now().max(last.saturating_add(1));
+            let now = tb.now().saturating_sub(latency).max(last.saturating_add(1));
             *last = now;
             let t = gst::ClockTime::from_nseconds(u64::try_from(now).unwrap_or(0));
             let b = buffer.make_mut();
@@ -920,14 +952,39 @@ fn restamp_on_arrival(src: &gst::Element, tb: &TimeBase) -> Result<(), CaptureEr
     Ok(())
 }
 
-/// Keep each frame's capture time from `src` (the compositor's time when the source stamps
-/// frames, else the arrival time on `tb`) in the arrival-time meta, strictly increasing,
-/// for [`snap_kept_frames`]. `KLIP_CAPTURE_STAMPS=arrival` stamps on arrival instead (A/B
-/// timing runs).
-fn keep_source_times(src: &gst::Element, tb: &TimeBase) -> Result<(), CaptureError> {
-    if std::env::var("KLIP_CAPTURE_STAMPS").is_ok_and(|v| v == "arrival") {
-        return restamp_on_arrival(src, tb);
+/// How long after a game finished a frame a screen-cast portal delivers it, subtracted
+/// from the arrival time. Measured with the test game (`m2_audio.rs` stamp latency, arrival
+/// stamps): KDE Plasma 6.7.5 Wayland, NVIDIA 615.71, 3840x2160 @ 165 Hz: +27.6 to +27.9 ms
+/// (system memory), +32.7 ms (DMA-BUF); 24 ms brings it to about +4 ms, like Windows.
+/// Other desktops are unmeasured (0). `KLIP_VIDEO_LATENCY_MS` overrides it.
+fn compositor_latency() -> Nanos {
+    if let Some(ms) = std::env::var("KLIP_VIDEO_LATENCY_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<i64>().ok())
+    {
+        return ms.clamp(0, 500).saturating_mul(1_000_000);
     }
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    if desktop.split(':').any(|d| d.eq_ignore_ascii_case("KDE")) {
+        24_000_000
+    } else {
+        0
+    }
+}
+
+/// Stamp portal frames: on arrival minus [`compositor_latency`] (the compositor's own stamp
+/// is the previous refresh's presentation time, not when the content was drawn; ADR 0012).
+/// `KLIP_CAPTURE_STAMPS=source` keeps `pipewiresrc`'s timestamps instead (A/B runs).
+fn stamp_portal_frames(src: &gst::Element, tb: &TimeBase) -> Result<(), CaptureError> {
+    if std::env::var("KLIP_CAPTURE_STAMPS").is_ok_and(|v| v == "source") {
+        return keep_source_times(src, tb);
+    }
+    restamp_on_arrival(src, tb, compositor_latency())
+}
+
+/// Keep each frame's timestamp from `src` (arrival time on `tb` if it has none) in the
+/// arrival-time meta, strictly increasing, for [`snap_kept_frames`].
+fn keep_source_times(src: &gst::Element, tb: &TimeBase) -> Result<(), CaptureError> {
     let pad = src
         .static_pad("src")
         .ok_or_else(|| CaptureError::Gst("capture source has no src pad".into()))?;
@@ -1265,7 +1322,7 @@ impl CaptureSession {
             }
         }
         if let Some(tb) = timebase {
-            restamp_on_arrival(&src, tb)?;
+            restamp_on_arrival(&src, tb, 0)?;
         }
         let source_rate = video
             .fps
@@ -1341,7 +1398,7 @@ impl CaptureSession {
         // the first frame), not only when the stream goes away.
         props::set_str(&src, "client-name", "Klip");
         if let Some(tb) = timebase {
-            keep_source_times(&src, tb)?;
+            stamp_portal_frames(&src, tb)?;
         }
         // System memory: every GPU path below can upload it, and the compositor finishes
         // each frame before handing it over. DMA-BUF (`KLIP_PORTAL_CAPS=
@@ -1354,7 +1411,16 @@ impl CaptureSession {
         // Never invent frames; keep the one nearest each output slot.
         props::set_str(&videorate, "drop-only", "true");
         let rate = capsfilter(&format!("video/x-raw(ANY),framerate={}/1", video.fps))?;
-        let head = [src.clone(), raw, videorate, rate.clone()];
+        let mut head = vec![src.clone(), raw];
+        if std::env::var("KLIP_PORTAL_QUEUE").is_ok() {
+            let q = make("queue")?;
+            props::set_str(&q, "max-size-buffers", "3");
+            props::set_str(&q, "max-size-bytes", "0");
+            props::set_str(&q, "max-size-time", "0");
+            props::set_str(&q, "leaky", "downstream");
+            head.push(q);
+        }
+        head.extend([videorate, rate.clone()]);
         pipeline.add_many(&head).map_err(gst_err)?;
         gst::Element::link_many(&head).map_err(gst_err)?;
         let pinned = match video.output {
@@ -1402,7 +1468,8 @@ impl CaptureSession {
             snap_kept_frames(&pad, video.fps, stats.clone());
         }
         chain.attach(0, sink.clone(), stats.clone(), Timing::AsIs);
-        let mut session = Self::run(pipeline, sink, stats, (w0, h0), timebase)?;
+        let mut session = Self::run(pipeline, sink.clone(), stats.clone(), (w0, h0), timebase)?;
+        watch_portal(&portal, &session.stop, sink, stats);
         session.portal = Some(portal);
         session.api = CaptureApi::Portal;
         let ((src_w, src_h), (out_w, out_h)) =
