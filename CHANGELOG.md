@@ -5,6 +5,13 @@ reason)`.
 
 ## Unreleased
 
+- M6.1 — ADR 0014 (app architecture: `klip-settings`, `klip-library`, `klip-engine`,
+  thin Tauri shell; settings file rules; presets; hotkeys via RegisterHotKey on Windows).
+  New pure crate `klip-settings`: settings schema v1, hostile-file loading with
+  field-by-field repair and `.bad` backups, strict merge-patch changes, per-game profiles,
+  quality presets, hotkey syntax (both formats). Unit + property tests. (Claude Opus 5.5:
+  M6 needs one settings model shared by the engine, CLI and UI)
+
 - M5.1–M5.6 — Full-session recording + bookmarks (ADR 0013). `klip-mp4`: shared `moov`
   code (`moov.rs`, chunk tables), `FragmentedWriter`, `scan_fragmented` (hostile-input
   scanner), `finalize` (in place, crash-safe order, repeatable), markers as `udta/chpl`
