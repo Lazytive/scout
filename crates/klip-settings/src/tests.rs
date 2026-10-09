@@ -53,7 +53,7 @@ fn a_wrong_field_is_repaired_alone() {
         !s.recording.show_cursor,
         "the good field next to it is kept"
     );
-    assert_eq!(s.appearance.theme, Theme::Dark);
+    assert_eq!(s.appearance.theme, Theme::System);
     assert_eq!(s.storage.cap_gb, 50);
     assert_eq!(s.audio, AudioSettings::default());
     assert_eq!(s.overlay.mode, OverlayMode::Full);

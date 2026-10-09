@@ -396,10 +396,10 @@ impl Default for StorageSettings {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
-    /// Follow the OS light/dark setting.
+    /// Follow the OS light/dark setting (Light or Dark).
+    #[default]
     System,
     /// Near-black panels (like FilmCraft).
-    #[default]
     Dark,
     /// Mid-grey panels (like Photocraft).
     Graphite,

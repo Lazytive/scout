@@ -24,10 +24,19 @@ describe.each(Object.values(themes))('$label theme', (theme) => {
 });
 
 describe('app.css', () => {
-  it('holds the Dark theme as its first-paint default', () => {
-    const css = readFileSync(new URL('../app.css', import.meta.url), 'utf8');
-    const root = css.slice(css.indexOf(':root {'), css.indexOf('}', css.indexOf(':root {')));
+  const css = readFileSync(new URL('../app.css', import.meta.url), 'utf8');
+  const block = (start: number) => css.slice(start, css.indexOf('}', start));
+  it('paints Dark first in dark mode', () => {
+    const root = block(css.indexOf(':root {'));
     for (const [k, v] of Object.entries(themes.dark.tokens)) {
+      expect(root, cssVar(k)).toContain(`${cssVar(k)}: ${v};`);
+    }
+  });
+  it('paints Light first in light mode', () => {
+    const media = css.indexOf('@media (prefers-color-scheme: light)');
+    expect(media).toBeGreaterThan(0);
+    const root = block(css.indexOf(':root {', media));
+    for (const [k, v] of Object.entries(themes.light.tokens)) {
       expect(root, cssVar(k)).toContain(`${cssVar(k)}: ${v};`);
     }
   });
@@ -39,7 +48,8 @@ describe('resolve', () => {
     expect(resolve('system', true).id).toBe('light');
     expect(resolve('system', false).id).toBe('dark');
     expect(resolve('bogus', true).id).toBe('dark');
-    expect(resolve(null, false).id).toBe('dark');
+    expect(resolve(null, true).id).toBe('light');
+    expect(resolve(undefined, false).id).toBe('dark');
   });
   it('names tokens as CSS variables', () => {
     expect(cssVar('textMuted')).toBe('--text-muted');

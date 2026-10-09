@@ -20,7 +20,7 @@ export const app = $state({
   storage: null as StorageStatus | null,
   /** The engine's settings (`settings.get`), kept fresh from `settings_changed`. */
   settings: null as Record<string, unknown> | null,
-  themeSetting: 'dark' as ThemeSetting,
+  themeSetting: 'system' as ThemeSetting,
   activity: [] as Activity[],
   /** The last command error, shown until the next command. */
   error: null as string | null,
@@ -58,7 +58,7 @@ function useSettings(s: unknown) {
   if (!s || typeof s !== 'object') return;
   app.settings = s as Record<string, unknown>;
   const appearance = app.settings.appearance as { theme?: ThemeSetting } | undefined;
-  app.themeSetting = appearance?.theme ?? 'dark';
+  app.themeSetting = appearance?.theme ?? 'system';
   showTheme();
 }
 

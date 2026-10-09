@@ -154,9 +154,12 @@ export function cssVar(token: string): string {
   return `--${token.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
 }
 
-/** The theme a setting means now. `system` follows the OS (light → Light, else Dark). */
+/** The theme a setting means now. `system` (also the default when unset) follows the OS:
+    light → Light, else Dark. */
 export function resolve(setting: string | null | undefined, prefersLight: boolean): Theme {
-  if (setting === 'system') return prefersLight ? themes.light : themes.dark;
+  if (setting === 'system' || setting === null || setting === undefined) {
+    return prefersLight ? themes.light : themes.dark;
+  }
   return themes[setting as ThemeId] ?? themes.dark;
 }
 

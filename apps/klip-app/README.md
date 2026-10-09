@@ -11,12 +11,13 @@ with a workspace header (underlined text tabs), docked panels with tab strips on
 near-black gutters, dense 13 px text, a blue accent, monospace blue readouts, pill
 buttons and a status bar. Every colour and size is a token in `src/app.css`.
 
-Themes (`src/lib/themes.ts`, M6.7): **Dark** (default, FilmCraft greys), **Graphite**
-(Photocraft greys), **Light**, **OLED black**, and **Follow system** (Light or Dark from
-the OS, live). The sun button in the header (as in Photocraft) picks one; it is saved as
+Themes (`src/lib/themes.ts`, M6.7): **Follow system** (the default: Light or Dark from
+the OS, live), **Dark** (FilmCraft greys), **Graphite** (Photocraft greys), **Light**,
+**OLED black**. The sun button in the header (as in Photocraft) picks one; it is saved as
 `appearance.theme` and applied at once, also when another client changes the setting
-(`settings_changed`). The native title bar follows (`setTheme`). `app.css` carries Dark
-for the first paint; the overlay (M6.9) will use the same tokens.
+(`settings_changed`). The native title bar follows (`setTheme`). `app.css` paints Dark,
+or Light when the OS is in light mode, before the settings arrive; the overlay (M6.9)
+will use the same tokens.
 
 ## Pieces
 

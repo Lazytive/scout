@@ -58,7 +58,7 @@ export function mockBackend() {
     });
   }, 1500);
 
-  const settings = { appearance: { theme: 'dark' as string }, overlay: { mode: 'minimal' } };
+  const settings = { appearance: { theme: 'system' as string }, overlay: { mode: 'minimal' } };
 
   const need = () => {
     if (!status.recording) throw new CommandError('not_ready', 'no game is running');

@@ -5,6 +5,10 @@ reason)`.
 
 ## Unreleased
 
+- M6.7 — Default theme is now "follow system" (maintainer's choice); `app.css` paints
+  Light first when the OS is in light mode (kept equal to Light by the theme tests).
+  (Claude Opus 5.5)
+
 - M6.7 — Themes: Dark (FilmCraft greys, default), Graphite (Photocraft greys, new in
   `klip-settings`), Light, OLED black, follow system; colour tokens swapped at run time,
   native title bar follows, header theme menu, live on `settings_changed`. vitest
