@@ -31,3 +31,11 @@ allow-wildcard-paths = true
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+
+[advisories]
+# Unmaintained, not vulnerable: a build-time proc macro that Tauri's Linux tray/GTK3
+# stack pulls in (tauri -> tray-icon -> libappindicator -> gtk 0.18 -> glib-macros).
+# Nothing to replace on our side until Tauri leaves gtk-rs 0.18. Re-check on Tauri bumps.
+ignore = [
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error via Tauri's GTK3 stack (build-time only)" },
+]

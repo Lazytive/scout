@@ -1,0 +1,158 @@
+/* Theme tokens: every colour, radius and size the UI uses comes from here (ADR 0004).
+   The look follows the user's Photocraft / FilmCraft apps: a pro dark UI with docked
+   panels on near-black gutters, tab strips, dense text, a blue accent and monospace
+   blue readouts. Dark is the default; Light, OLED and follow-system arrive with M6.7. */
+:root {
+  color-scheme: dark;
+  --gutter: #0c0c0c;
+  --chrome: #1d1d1d;
+  --statusbar: #111111;
+  --panel: #1d1d1d;
+  --panel-raised: #262626;
+  --viewer: #0e0e0e;
+  --input: #0e0e0e;
+  --border: #2e2e2e;
+  --border-strong: #4a4a4a;
+  --hover: rgb(255 255 255 / 7%);
+  --text: #d2d2d2;
+  --text-strong: #f2f2f2;
+  --text-muted: #929292;
+  --accent: #3490f7;
+  --accent-strong: #1f6fe0;
+  --accent-text: #5c9fff;
+  --on-accent: #ffffff;
+  --good: #3fbf7f;
+  --warn: #e8913a;
+  --bad: #f0555b;
+  --rec: #ff4b4b;
+  --focus: #5c9fff;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --font: 'Segoe UI Variable Text', 'Segoe UI', 'Inter', system-ui, -apple-system, 'Noto Sans',
+    'Cantarell', sans-serif;
+  --font-mono: 'Cascadia Mono', 'Consolas', 'JetBrains Mono', ui-monospace, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 20px;
+  --text-timecode: 28px;
+  --header-h: 40px;
+  --tabs-h: 32px;
+  --statusbar-h: 24px;
+  --motion: 120ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion: 0ms;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--gutter);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--text-md);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#app {
+  height: 100%;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+/* Pill buttons, as in Photocraft ("Auto", "Reset to defaults"). */
+button {
+  font: inherit;
+  color: var(--text-strong);
+  background: transparent;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 999px;
+  height: 28px;
+  padding: 0 var(--space-4);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition:
+    background var(--motion),
+    border-color var(--motion);
+}
+
+button:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--text-muted);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+/* Flat buttons: tabs, icon buttons, nav. */
+button.flat {
+  border: none;
+  border-radius: var(--radius-sm);
+  height: auto;
+  padding: var(--space-1) var(--space-2);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-strong);
+  background: var(--panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

@@ -5,6 +5,15 @@ reason)`.
 
 ## Unreleased
 
+- M6.6 — Desktop app `apps/klip-app` (Tauri 2 + Svelte 5 + TS): engine bridge (`klip`
+  command, `klip://event`), tray with runtime-drawn state icons and menu, single
+  instance, close to tray, clean shutdown, test overrides (`KLIP_SETTINGS`,
+  `KLIP_DISCOVERY`, `KLIP_WINDOW_POS`), Home workspace (Monitor, Info/Storage,
+  Activity/Hotkeys) in the Photocraft/FilmCraft look, mock engine for browser work, own
+  app icon. `cargo xtask ci`: eslint, svelte-check, vitest, front-end build, npm licence
+  audit, icons in the attribution check; deny ignores RUSTSEC-2024-0370 (Tauri's GTK3
+  stack, build-time). (Claude Opus 5.5: M6; look requested by the maintainer)
+
 - M6.5 — Storage management. New pure crate `klip-library` (clip-folder metadata with
   stars in `.klip/library.json`, scan, the cap policy). `klip-platform::move_to_trash`
   (`trash` crate, MIT). Engine: clean-up after saves / at start / on settings change,

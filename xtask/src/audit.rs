@@ -2,7 +2,8 @@
 //! - denied encoder names never appear in product source outside the policy file;
 //! - a bundled GStreamer plugin directory (once installers exist) has no GPL plugins;
 //! - every file under `assets/` is listed in ATTRIBUTION.md;
-//! - front-end npm licences (once `apps/klip-app` exists).
+//! - front-end npm licences (`apps/klip-app/package-lock.json`, see `npm.rs`);
+//! - app icons (`apps/klip-app/src-tauri/icons`) are listed in ATTRIBUTION.md like assets.
 
 use std::path::Path;
 
@@ -74,6 +75,24 @@ fn product_sources(root: &Path) -> Result<Vec<std::path::PathBuf>> {
     Ok(out)
 }
 
+/// Folders whose every file must be listed in ATTRIBUTION.md.
+const ASSET_DIRS: &[&str] = &["assets", "apps/klip-app/src-tauri/icons"];
+
+/// Whether `rel` (or a folder above it, written as `folder/`) is in ATTRIBUTION.md.
+fn listed(attribution: &str, rel: &str) -> bool {
+    if attribution.contains(rel) {
+        return true;
+    }
+    let mut p = rel;
+    while let Some((parent, _)) = p.rsplit_once('/') {
+        if attribution.contains(&format!("`{parent}/`")) {
+            return true;
+        }
+        p = parent;
+    }
+    false
+}
+
 pub fn run(root: &Path) -> Result<()> {
     let mut errs = Vec::new();
     let policy = std::fs::read_to_string(root.join(POLICY)).context(POLICY)?;
@@ -109,28 +128,33 @@ pub fn run(root: &Path) -> Result<()> {
         println!("audit: no GStreamer bundle yet ({BUNDLE_PLUGINS})");
     }
 
-    let assets = root.join("assets");
-    if assets.is_dir() {
-        let attribution =
-            std::fs::read_to_string(root.join("ATTRIBUTION.md")).context("ATTRIBUTION.md")?;
-        for f in crate::all_files(&assets)? {
+    let attribution =
+        std::fs::read_to_string(root.join("ATTRIBUTION.md")).context("ATTRIBUTION.md")?;
+    let mut checked = 0usize;
+    for dir in ASSET_DIRS {
+        let d = root.join(dir);
+        if !d.is_dir() {
+            continue;
+        }
+        for f in crate::all_files(&d)? {
             let rel = f
                 .strip_prefix(root)
                 .unwrap_or(&f)
                 .to_string_lossy()
                 .replace('\\', "/");
-            if !attribution.contains(&rel) {
+            checked += 1;
+            if !listed(&attribution, &rel) {
                 errs.push(format!("{rel}: not listed in ATTRIBUTION.md"));
             }
         }
-    } else {
-        println!("audit: no assets/ yet");
     }
+    println!("audit: {checked} asset files checked against ATTRIBUTION.md");
 
-    if root.join("apps/klip-app/package.json").exists() {
-        errs.push("apps/klip-app exists: add the npm licence audit to xtask (M6)".into());
+    if crate::npm::exists(root) {
+        let (shipped, dev) = crate::npm::audit(root, &mut errs)?;
+        println!("audit: npm licences: {shipped} shipped packages, {dev} dev packages");
     } else {
-        println!("audit: no front end yet (npm licence audit starts with apps/klip-app)");
+        println!("audit: no front end yet");
     }
 
     if errs.is_empty() {

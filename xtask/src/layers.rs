@@ -25,7 +25,7 @@ pub const ENGINE: &[&str] = &[
     "klip-engine",
 ];
 /// Applications and tools: may depend on anything below them.
-pub const APPS: &[&str] = &["klip-cli", "klip-testgame", "xtask"];
+pub const APPS: &[&str] = &["klip-cli", "klip-testgame", "klip-app", "xtask"];
 
 const UI_PREFIXES: &[&str] = &["tauri", "wry", "tao"];
 const NATIVE_PREFIXES: &[&str] = &["gstreamer", "windows", "glib", "ashpd", "pipewire"];

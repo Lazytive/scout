@@ -1,6 +1,7 @@
 //! `cargo xtask <task>`: Klip's quality gates.
 //!
-//! - `ci`: fmt, clippy `-D warnings`, tests, cargo deny, layers, audit
+//! - `ci`: front end (eslint, svelte-check, vitest, build), fmt, clippy `-D warnings`,
+//!   tests, cargo deny, layers, audit
 //! - `layers`: dependency direction + `unsafe` only in klip-platform
 //! - `audit`: licence/asset audit
 //! - `e2e`: hardware acceptance tests (`#[ignore]`d tests except `diag_*` diagnostics,
@@ -12,6 +13,7 @@
 
 mod audit;
 mod layers;
+mod npm;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -152,6 +154,9 @@ fn layers() -> Result<()> {
 
 fn ci() -> Result<()> {
     let t = Instant::now();
+    if npm::exists(&root()) {
+        npm::gates(&root())?;
+    }
     let mut c = cargo();
     c.args(["fmt", "--all", "--", "--check"]);
     run_step("fmt", c)?;

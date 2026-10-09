@@ -19,7 +19,9 @@ Read `AGENTS.md` first. Its hard rules override everything, including this file.
 | `cargo xtask layers` | Dependency-direction and `unsafe` placement check |
 | `cargo xtask audit` | Licence/asset audit (GStreamer plugin denylist, ATTRIBUTION.md) |
 | `cargo run -p klip-testgame -- --help` | Test game with barcoded frame counter |
-| `cargo run -p klip-cli -- --help` | Recorder CLI |
+| `cargo run -p klip-cli -- --help` | Recorder CLI (`daemon` runs the app's engine headless) |
+| `cd apps/klip-app && npm ci && npm run build` then `cargo run -p klip-app` | Desktop app (see its README for the `KLIP_SETTINGS`/`KLIP_DISCOVERY`/`KLIP_WINDOW_POS` test overrides) |
+| `npm run dev` in `apps/klip-app` | UI in a browser with a mock engine |
 
 ## Environment (Windows dev machine)
 

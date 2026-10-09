@@ -56,6 +56,14 @@ windows are hard to drive from tests.
   token file readable only by the user), so `klip-cli clip` works as a desktop-shortcut
   fallback; a setting turns it off.
 
+- **Tauri shell** (M6.6): one Tauri command, `klip(cmd, args)`, forwards to the engine's
+  command handler (the same as the control channel's), and engine events go to the
+  window as `klip://event`; the UI has no other back door. Single instance; closing the
+  window keeps Klip in the tray; quitting shuts the engine down first. The tray icon is
+  drawn at runtime (no asset). Test overrides by environment (`KLIP_SETTINGS`,
+  `KLIP_DISCOVERY`, `KLIP_WINDOW_POS`) keep test runs away from the user's settings,
+  hotkeys and focus.
+
 ## Consequences
 - Settings, game rules and storage policy are unit- and property-tested in pure crates;
   the engine is tested end to end through `klip-cli daemon` with the test game; the

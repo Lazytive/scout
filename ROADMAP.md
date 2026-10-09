@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (M6 in progress: M6.1–M6.5).
+Last updated: 2026-10-09 (M6 in progress: M6.1–M6.6).
 
 | | Milestone | State |
 |---|---|---|
@@ -10,7 +10,7 @@ Last updated: 2026-10-09 (M6 in progress: M6.1–M6.5).
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
-| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap done (M6.1–M6.5); app window, overlay, themes, bench next |
+| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap, Tauri app shell done (M6.1–M6.6); themes, settings UI + first run, overlay, bench next |
 | M7 | Library | |
 | M8 | Editor, Normal mode + export presets | |
 | M9 | Editor, Advanced mode | |
@@ -159,8 +159,10 @@ game audio, buffer 30 s, clip hotkey F24 (10 s):
 
 ## Approximate / not done yet
 
-- **App shell (M6)**: no window, tray or overlay yet; `klip-cli daemon` runs the engine
-  headless. Settings changes to quality/audio/folders apply when the next game starts
+- **App shell (M6)**: the app has the Home workspace and the tray; Library and Settings
+  pages, the first-run setup, themes and the overlay are not there yet (settings can be
+  changed with `settings.set` through the control channel). The window doesn't remember
+  its size and position. Settings changes to quality/audio/folders apply when the next game starts
   (the running buffer isn't restarted). Voice apps that start after the game aren't
   added to the running recording. Game detection is checked on synthetic snapshots and
   the test game; real store installs are on the human checklist. Linux engine paths
@@ -290,6 +292,12 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    file should play to the end with sound in sync.
 
 ## Manual checks for the human (M6, so far)
+
+0. The app: `cd apps/klip-app && npm ci && npm run build`, then `cargo run -p klip-app`
+   (it uses your real settings: default hotkeys Alt+F10 etc., buffers detected games).
+   Tray icon grey while waiting, blue while a game is buffered, red dot while recording;
+   left click opens the window, closing it keeps Klip in the tray, Quit in the tray menu
+   ends it. Does the look match Photocraft / FilmCraft closely enough?
 
 1. Storage cap: in a test clip folder, set `storage.cap_gb` low (e.g. 1) with a few
    GB of clips, star one old clip, save a new clip: the oldest unstarred clips appear

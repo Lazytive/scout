@@ -1,0 +1,59 @@
+// The one door to the engine: every action is a command (`klip_control::commands`), and
+// the engine's events arrive on `klip://event`. In a plain browser (`npm run dev`) a
+// mock backend stands in, so the UI can be worked on without the app.
+
+import type { KlipEvent } from './types';
+
+export class CommandError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+interface Backend {
+  call(cmd: string, args: unknown): Promise<unknown>;
+  listen(cb: (e: KlipEvent) => void): Promise<() => void>;
+}
+
+const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+async function tauriBackend(): Promise<Backend> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const { listen } = await import('@tauri-apps/api/event');
+  return {
+    async call(cmd, args) {
+      try {
+        return await invoke('klip', { cmd, args: args ?? null });
+      } catch (e) {
+        const err = (e ?? {}) as { code?: string; message?: string };
+        throw new CommandError(err.code ?? 'failed', err.message ?? String(e));
+      }
+    },
+    listen: (cb) => listen<KlipEvent>('klip://event', (e) => cb(e.payload)),
+  };
+}
+
+let backend: Promise<Backend> | null = null;
+
+function getBackend(): Promise<Backend> {
+  if (!backend) {
+    backend =
+      inTauri || !import.meta.env.DEV
+        ? tauriBackend()
+        : import('./mock').then((m) => m.mockBackend());
+  }
+  return backend;
+}
+
+/** Run a command; rejects with a `CommandError` (`code`, `message`). */
+export async function call<T = unknown>(cmd: string, args?: unknown): Promise<T> {
+  return (await getBackend()).call(cmd, args) as Promise<T>;
+}
+
+/** Subscribe to engine events; returns the unsubscribe function. */
+export async function onEvent(cb: (e: KlipEvent) => void): Promise<() => void> {
+  return (await getBackend()).listen(cb);
+}

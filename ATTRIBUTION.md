@@ -6,8 +6,10 @@ each file under `assets/` has an entry.
 
 | Path | Source | Author | Licence |
 |---|---|---|---|
+| `apps/klip-app/src-tauri/icons/` | `app-icon.svg` drawn for Klip; the other sizes generated from it with `tauri icon` | Klip contributors | MIT OR Apache-2.0 |
 
-(No bundled assets yet.)
+The tray icons are drawn at runtime (`apps/klip-app/src-tauri/src/tray.rs`); the UI uses
+the system fonts (no bundled font files).
 
 ## Runtime libraries
 
