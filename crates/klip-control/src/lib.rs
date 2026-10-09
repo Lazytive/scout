@@ -1,0 +1,148 @@
+//! "Everything is a command": command ids, the JSON-lines protocol, and a loopback
+//! control channel with token auth (ADR 0006).
+//!
+//! Wire format, one JSON object per line:
+//! - first line from the client: `{"auth":"<hex token>"}`
+//! - request: `{"id":1,"cmd":"clip.save","args":{"last_ms":30000}}`
+//! - response: `{"id":1,"ok":true,"result":{…}}` or
+//!   `{"id":1,"ok":false,"error":{"code":"…","message":"…"}}`
+
+#![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
+
+mod server;
+
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+pub use server::{Client, ClientError, Server, ServerError};
+
+/// Command ids. The UI, CLI and control channel all use these.
+pub mod commands {
+    /// Save the last N ms of the replay buffer. Args: `{"last_ms": u64}`.
+    pub const CLIP_SAVE: &str = "clip.save";
+    /// Recorder status (buffered time, bytes, encoder, output size).
+    pub const RECORDER_STATUS: &str = "recorder.status";
+    /// Stop the recorder process.
+    pub const RECORDER_STOP: &str = "recorder.stop";
+    /// Liveness check; returns `{"pong":true}`.
+    pub const PING: &str = "ping";
+}
+
+/// Longest accepted line (bytes, including the newline).
+pub const MAX_LINE: usize = 64 * 1024;
+
+/// Authentication line.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Auth {
+    pub auth: String,
+}
+
+/// A command request.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Request {
+    pub id: u64,
+    pub cmd: String,
+    #[serde(default)]
+    pub args: Value,
+}
+
+/// Error body of a failed response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ErrorBody {
+    pub code: String,
+    pub message: String,
+}
+
+/// A response to one request.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Response {
+    pub id: u64,
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<ErrorBody>,
+}
+
+/// Error a command handler returns.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandError {
+    /// Stable machine-readable code: `bad_args`, `unknown_command`, `not_ready`, `failed`,
+    /// `internal`, `unauthorized`, `bad_request`.
+    pub code: &'static str,
+    pub message: String,
+}
+
+impl CommandError {
+    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
+        CommandError {
+            code,
+            message: message.into(),
+        }
+    }
+
+    pub fn bad_args(message: impl Into<String>) -> Self {
+        Self::new("bad_args", message)
+    }
+
+    pub fn unknown(cmd: &str) -> Self {
+        // Echo at most 64 chars of a hostile command name.
+        let shown: String = cmd.chars().take(64).collect();
+        Self::new("unknown_command", format!("unknown command {shown:?}"))
+    }
+}
+
+/// Executes commands. Implemented by the recorder (and later the app).
+pub trait Handler: Send + Sync + 'static {
+    fn handle(&self, cmd: &str, args: &Value) -> Result<Value, CommandError>;
+}
+
+/// Contents of the discovery file the server writes for clients.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Discovery {
+    pub port: u16,
+    pub token: String,
+    pub pid: u32,
+}
+
+/// Default discovery file: `%LOCALAPPDATA%\Klip\control.json` on Windows,
+/// `$XDG_RUNTIME_DIR/klip/control.json` on Linux (falling back to the local data dir).
+pub fn default_discovery_path() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        dirs::data_local_dir().map(|d| d.join("Klip").join("control.json"))
+    }
+    #[cfg(not(windows))]
+    {
+        dirs::runtime_dir()
+            .map(|d| d.join("klip"))
+            .or_else(|| dirs::data_local_dir().map(|d| d.join("klip")))
+            .map(|d| d.join("control.json"))
+    }
+}
+
+/// Read and validate a discovery file. Treats the file as hostile: size-capped, strict
+/// schema.
+pub fn read_discovery(path: &Path) -> Result<Discovery, ClientError> {
+    let meta = std::fs::metadata(path).map_err(|_| ClientError::NotRunning)?;
+    if meta.len() > 4096 {
+        return Err(ClientError::Protocol("discovery file too large".into()));
+    }
+    let text = std::fs::read_to_string(path).map_err(|_| ClientError::NotRunning)?;
+    let d: Discovery = serde_json::from_str(&text)
+        .map_err(|e| ClientError::Protocol(format!("discovery file: {e}")))?;
+    if d.port == 0 || d.token.len() != 64 || !d.token.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(ClientError::Protocol(
+            "discovery file has invalid values".into(),
+        ));
+    }
+    Ok(d)
+}
+
+#[cfg(test)]
+mod tests;

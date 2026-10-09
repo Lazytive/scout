@@ -1,0 +1,22 @@
+# klip-buffer
+
+The replay buffer: a ring of **encoded** packets per track (video + audio tracks), bounded
+by duration and bytes.
+
+- The first video track is the anchor. Eviction drops whole GOPs from its front, so the
+  oldest anchor packet is always a keyframe. The ring keeps at least `max_duration` (up to
+  one GOP more), and never more than `max_bytes` in total (hard cap, even if that means
+  dropping below `max_duration`).
+- Other tracks are trimmed to the anchor's first packet.
+- `snapshot(length)` copies (refcounts) the packets from the keyframe at or before
+  `end - length` to the end. With 1-second GOPs a 30 s request gives 30–31 s.
+- A new codec description (`set_track_info` with different SPS/PPS) drops that track's
+  packets, since old and new packets can't share one MP4 sample description.
+- Hostile input (oversized packets, timestamps going backwards, delta frames before the
+  first keyframe, unknown tracks, extreme timestamps) is refused or saturated, never panics.
+  Covered by unit tests and a property test.
+
+Not thread-safe by itself; the recorder wraps it in a mutex and holds the lock only for
+push/snapshot (no I/O under the lock).
+
+Layer: pure.

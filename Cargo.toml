@@ -1,0 +1,63 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "xtask"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+klip-media = { path = "crates/klip-media" }
+klip-buffer = { path = "crates/klip-buffer" }
+klip-mp4 = { path = "crates/klip-mp4" }
+klip-control = { path = "crates/klip-control" }
+klip-testkit = { path = "crates/klip-testkit" }
+klip-platform = { path = "crates/klip-platform" }
+klip-probe = { path = "crates/klip-probe" }
+klip-capture = { path = "crates/klip-capture" }
+klip-recorder = { path = "crates/klip-recorder" }
+
+anyhow = "1"
+bytemuck = { version = "1.25", features = ["derive"] }
+bytes = "1.12"
+clap = { version = "4.6", features = ["derive"] }
+dirs = "7"
+getrandom = "0.4"
+gstreamer = { version = "0.25", features = ["v1_24"] }
+gstreamer-app = { version = "0.25", features = ["v1_24"] }
+gstreamer-video = { version = "0.25", features = ["v1_24"] }
+jiff = "0.2"
+pollster = "1"
+proptest = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+wgpu = "30"
+windows = "0.62"
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+undocumented_unsafe_blocks = "deny"
+dbg_macro = "deny"
+exit = "deny"
+
+[profile.release]
+debug = "line-tables-only"

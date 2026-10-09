@@ -1,0 +1,16 @@
+[package]
+name = "klip-testkit"
+description = "Test support: barcode frame counters, clip analysis with ffmpeg/ffprobe as external oracles"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

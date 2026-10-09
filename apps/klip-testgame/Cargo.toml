@@ -1,0 +1,22 @@
+[package]
+name = "klip-testgame"
+description = "Test game for Klip: barcoded frame counter, motion, flash every second"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bytemuck.workspace = true
+clap.workspace = true
+klip-media.workspace = true
+klip-testkit.workspace = true
+pollster.workspace = true
+serde_json.workspace = true
+wgpu.workspace = true
+winit.workspace = true
+
+[lints]
+workspace = true

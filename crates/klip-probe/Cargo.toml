@@ -1,0 +1,18 @@
+[package]
+name = "klip-probe"
+description = "Encoder discovery for Klip: allowlist/denylist policy, ranking per GPU vendor, dummy-encode probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gstreamer.workspace = true
+klip-media.workspace = true
+klip-platform.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

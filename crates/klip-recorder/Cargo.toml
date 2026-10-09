@@ -1,0 +1,29 @@
+[package]
+name = "klip-recorder"
+description = "Klip recorder: capture session feeding the replay ring, clip saves to MP4, command handler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+jiff.workspace = true
+klip-buffer.workspace = true
+klip-capture.workspace = true
+klip-control.workspace = true
+klip-media.workspace = true
+klip-mp4.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+gstreamer.workspace = true
+gstreamer-app.workspace = true
+klip-platform.workspace = true
+klip-testkit.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

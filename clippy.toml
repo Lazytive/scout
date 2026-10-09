@@ -1,0 +1,5 @@
+# Panicking helpers are fine inside tests only (AGENTS.md rule 3).
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true

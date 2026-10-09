@@ -1,0 +1,18 @@
+[package]
+name = "klip-buffer"
+description = "Replay ring buffer of encoded packets, bounded by duration and bytes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytes.workspace = true
+klip-media.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,8 @@
+/target/
+/plan/
+/out/
+*.mp4.part
+*.pdb
+.vscode/
+.idea/
+node_modules/

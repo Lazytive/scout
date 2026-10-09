@@ -1,0 +1,31 @@
+[package]
+name = "klip-cli"
+description = "Klip recorder CLI: replay buffer, clip saves, status"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+ctrlc = "3.5"
+dirs.workspace = true
+klip-capture.workspace = true
+klip-control.workspace = true
+klip-media.workspace = true
+klip-platform.workspace = true
+klip-probe.workspace = true
+klip-recorder.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+klip-testkit.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
