@@ -3,6 +3,11 @@
 //! into its game folder when the clip hotkey is pressed, stop when the game exits, and
 //! cost next to nothing while no game runs.
 //!
+//! M6.12 (ADR 0016): the recorder and the overlay's thumbnail run in child processes. The
+//! recorder process belongs to the daemon and is gone once the game exited (the engine's
+//! memory falls back to where it was before the game); one killed mid-recording leaves a
+//! recording the engine finalises, and a new recorder starts at once.
+//!
 //! Windows only for now: the hotkey is pressed with `SendInput` (a bare F24, which no
 //! keyboard has and which the hotkey consumes, so nothing reaches the focused app).
 
@@ -25,7 +30,7 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
-use common::{KillOnDrop, cli, game, run_json, spawn_ready};
+use common::{KillOnDrop, assert_no_other_test_game, cli, game, run_json, spawn_ready};
 use klip_testkit::{continuity, oracle, sync};
 use serde_json::{Value, json};
 
@@ -91,6 +96,37 @@ impl Events {
     }
 }
 
+/// Parent process id of `pid`, if it runs.
+fn parent_of(pid: u32) -> Option<u32> {
+    klip_platform::list_processes()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.pid == pid)
+        .map(|p| p.parent_pid)
+}
+
+/// Klip processes (recorder, media worker) started by `pid` that still run.
+fn klip_children(pid: u32) -> Vec<u32> {
+    klip_platform::list_processes()
+        .unwrap()
+        .into_iter()
+        .filter(|p| p.parent_pid == pid && p.exe.eq_ignore_ascii_case("klip-cli.exe"))
+        .map(|p| p.pid)
+        .collect()
+}
+
+/// The recorder process the engine reports, checked to be a child of the daemon.
+fn recorder_pid(discovery: &Path, daemon: u32) -> u32 {
+    let engine = run_json(cli(discovery).args(["call", "engine.status"]));
+    let pid = u32::try_from(engine["recorder_pid"].as_u64().unwrap()).unwrap();
+    assert_eq!(
+        parent_of(pid),
+        Some(daemon),
+        "recorder is the daemon's child"
+    );
+    pid
+}
+
 /// CPU used by `pid` over `secs`, in percent of one core.
 fn cpu_percent(pid: u32, secs: u64) -> f64 {
     let a = klip_platform::process_usage(pid).unwrap();
@@ -133,6 +169,7 @@ fn daemon_follows_a_game_and_clips_on_the_hotkey() {
     let settings = tmp.path().join("settings.json");
     let clips = tmp.path().join("clips");
     write_settings(&settings, &clips);
+    assert_no_other_test_game();
 
     let (mut daemon, mut events) = spawn_daemon(
         cli(&discovery)
@@ -150,6 +187,7 @@ fn daemon_follows_a_game_and_clips_on_the_hotkey() {
     std::thread::sleep(Duration::from_secs(4));
     let idle = cpu_percent(pid, 6);
     let mem = klip_platform::process_usage(pid).unwrap();
+    let private_before = mem.private_bytes;
     println!(
         "idle, no game: CPU {idle:.2} % of one core, resident {:.1} MB, private {:.1} MB",
         mem.resident_bytes as f64 / 1e6,
@@ -214,6 +252,64 @@ fn daemon_follows_a_game_and_clips_on_the_hotkey() {
     let status = run_json(cli(&discovery).arg("status"));
     assert!(status["encoder"].is_string(), "{status}");
 
+    // The recorder runs in its own process; the thumbnail is decoded in another.
+    let first_recorder = recorder_pid(&discovery, pid);
+    let thumb = events.wait_for("thumbnail", Duration::from_secs(20));
+    assert_eq!(thumb["clip"], saved["clip"]["path"], "{thumb}");
+    assert!(
+        thumb["data_url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/jpeg;base64,/9j/"),
+        "a JPEG"
+    );
+
+    // The recorder process dies mid-recording: the engine finalises the recording it
+    // left and starts a new recorder at once.
+    let session = run_json(cli(&discovery).args(["session", "start"]));
+    let session_path = Path::new(session["path"].as_str().unwrap()).to_path_buf();
+    std::thread::sleep(Duration::from_secs(4));
+    let killed = Command::new("taskkill")
+        .args(["/F", "/PID", &first_recorder.to_string()])
+        .stdout(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    let stopped = events.wait_for("recorder_stopped", Duration::from_secs(10));
+    assert!(
+        stopped["reason"]
+            .as_str()
+            .unwrap()
+            .contains("ended unexpectedly"),
+        "{stopped}"
+    );
+    let crashed_at = Instant::now();
+    events.wait_for("recorder_started", Duration::from_secs(30));
+    println!("new recorder {:?} after the kill", crashed_at.elapsed());
+    let second_recorder = recorder_pid(&discovery, pid);
+    assert_ne!(second_recorder, first_recorder);
+    std::thread::sleep(Duration::from_secs(4));
+    klip_platform::press_keys("F24").unwrap();
+    let saved2 = events.wait_for("clip_saved", Duration::from_secs(15));
+    assert!(saved2["clip"]["frames"].as_u64().unwrap() > 60, "{saved2}");
+    events.wait_for("thumbnail", Duration::from_secs(20));
+    // The left recording is finalised once nothing could still be writing it (15 s).
+    let recovered = events.wait_for("recovered", Duration::from_secs(30));
+    println!(
+        "recording finalised {:?} after the kill",
+        crashed_at.elapsed()
+    );
+    assert_eq!(
+        Path::new(recovered["path"].as_str().unwrap()),
+        session_path,
+        "{recovered}"
+    );
+    assert_eq!(recovered["result"]["kept"], true, "{recovered}");
+    let recording = oracle::probe_streams(&session_path).unwrap();
+    assert_eq!(recording[0].codec_name.as_deref(), Some("h264"));
+    let secs = recording[0].duration_secs().unwrap_or(0.0);
+    assert!(secs >= 2.0, "the recording kept what was written: {secs} s");
+
     // Let the game write its frame log, then end it: the engine stops buffering.
     std::thread::sleep(Duration::from_millis(1500));
     let _ = game_proc.0.kill();
@@ -222,6 +318,19 @@ fn daemon_follows_a_game_and_clips_on_the_hotkey() {
     events.wait_for("recorder_stopped", Duration::from_secs(10));
     events.wait_for("game_stopped", Duration::from_secs(5));
     println!("stopped {:?} after the game exited", stopped_at.elapsed());
+    assert_eq!(parent_of(second_recorder), None, "recorder process gone");
+    // The library makes the clips' scrub strips now that the game is over, in a media
+    // worker that stops after 20 s idle (ADR 0015): then no Klip process is left.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !klip_children(pid).is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "workers left: {:?}",
+            klip_children(pid)
+        );
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    println!("no worker left {:?} after the game", stopped_at.elapsed());
     let after = cpu_percent(pid, 6);
     let mem = klip_platform::process_usage(pid).unwrap();
     println!(
@@ -232,6 +341,13 @@ fn daemon_follows_a_game_and_clips_on_the_hotkey() {
     assert!(
         idle < 1.0 && after < 1.0,
         "idle CPU {idle:.2} % / {after:.2} %"
+    );
+    // Before ADR 0016 the encoder, decoder and driver state stayed: +290 MB.
+    assert!(
+        mem.private_bytes < private_before + 64_000_000,
+        "private memory {:.0} MB after the game, {:.0} MB before",
+        mem.private_bytes as f64 / 1e6,
+        private_before as f64 / 1e6
     );
 
     // The clip: H.264 + the game's audio, every frame once (as in M1).

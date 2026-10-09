@@ -108,6 +108,7 @@ windows are hard to drive from tests.
   2.9 % ± 1.0 % fewer frames uncapped; the engine uses 6 % of one core. But once a game
   was recorded the process keeps ~380 MB private memory (encoder, decoder and driver
   state): moving capture/encode and thumbnails into a child process is the likely fix.
+  Done in M6.12, ADR 0016.
 - The overlay is Windows-only so far; on Linux the sound and notification stand in
   (layer-shell later). The Linux engine paths are written but not yet run.
 - Whether a window over a borderless game turns VRR off while the card shows is not

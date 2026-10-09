@@ -111,6 +111,8 @@ pub fn worker_main() -> Option<i32> {
     if std::env::args().nth(1).as_deref() != Some(WORKER_FLAG) {
         return None;
     }
+    // Key frames decode faster in software than a GPU decoder starts (ADR 0016).
+    let _ = klip_capture::thumbnail::prefer_software_decoders();
     let stdin = std::io::stdin();
     let mut input = stdin.lock();
     let stdout = std::io::stdout();

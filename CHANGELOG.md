@@ -5,6 +5,32 @@ reason)`.
 
 ## Unreleased
 
+- M6.12 — The recorder runs in a child process (ADR 0016; branch
+  `opus/m6.12-recorder-process`, worktree `klip-m6.12`, done in parallel with M7 and
+  rebased onto it). `klip-engine`: `worker.rs` (`--klip-recorder`: start request with
+  settings, game and encoder names → `config::plan_with` + `Recorder::start`; serves
+  `klip_control` requests on threads, `worker.status`, `worker.finish`; end of input
+  finalises a running recording), `engine/host.rs` (`Isolation`, `RecorderHandle`,
+  `ChildRecorder`: capped strict JSON lines, per-command timeouts, stderr passed on,
+  `CREATE_NO_WINDOW`, waits for the process to exit on stop), `config::plan` split into
+  `encoders_for` / `encoders_named` / `plan_with`; a dead recorder process is reported,
+  restarted at once the first time per game, and its recording finalised by recovery
+  after the 15 s quiet time; `engine.status.recorder_pid`; the overlay poster comes
+  from a one-shot media worker instead of a decoder in the engine. `klip-capture`:
+  thumbnails initialise only GStreamer (no Media Foundation warm-up, -0.75 s per
+  worker) and `prefer_software_decoders()` for the media worker (poster 1.3 s → 0.13 s,
+  strip 1.5 s → 0.44 s in a fresh worker). `klip-control`: `read_line_capped` public.
+  `klip-recorder`: `session::RECOVERY_QUIET` public. CLI/app `main`s call
+  `klip_engine::worker_main()`. Tests: `engine/host.rs` unit tests (routing, junk,
+  over-long lines, error mapping), `apps/klip-cli/tests/workers.rs` (hostile start
+  requests, GPL/unknown encoder names dropped), `m6_daemon` e2e (recorder is the
+  daemon's child, kill → restart + recording finalised, no worker left, memory back),
+  test helper `assert_no_other_test_game` (parallel agents ran the test game at the same
+  time). Bench: process-tree sampling, save round trip, thumbnail and recorder-start
+  times, idle sampled after the start-up transient. Measured before/after: **381 MB →
+  22 MB private after a game**, saves 85–94 ms, fps cost unchanged. ADR 0016 (0015 is
+  M7's). (Claude Opus 5.5: engine kept ~380 MB after every game, measured in M6.10)
+
 - M7.1–M7.6 — Library (ADR 0015). `klip-mp4::probe`: clip info from the `moov` of any
   MP4 (faststart, moov at the end, fragmented), hostile-input safe. `klip-library`: tags,
   rename (safe names, never overwrites, stars/tags/thumbnails follow), the rebuildable

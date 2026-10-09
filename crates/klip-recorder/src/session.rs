@@ -51,7 +51,7 @@ pub const MAX_BOOKMARKS: usize = 10_000;
 pub const SIDECAR_SUFFIX: &str = ".recording.json";
 const MAX_SIDECAR_BYTES: u64 = 4 * 1024 * 1024;
 /// A recording modified this recently may still be written by another recorder.
-const RECOVERY_QUIET: Duration = Duration::from_secs(15);
+pub const RECOVERY_QUIET: Duration = Duration::from_secs(15);
 
 /// Where and how sessions are recorded.
 #[derive(Clone, Debug)]

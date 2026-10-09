@@ -9,9 +9,11 @@ mod engine;
 pub mod events;
 pub mod games;
 pub mod media_worker;
+mod worker;
 
-pub use engine::{Engine, EngineOptions, POLL, RETRY, default_settings_path};
+pub use engine::{Engine, EngineOptions, Isolation, POLL, RETRY, default_settings_path};
 pub use events::Event;
+pub use worker::{RECORDER_FLAG, worker_main};
 
 /// Errors from starting the engine or a recording.
 #[derive(Debug, thiserror::Error)]

@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub use server::{Client, ClientError, Server, ServerError};
+pub use server::{Client, ClientError, Server, ServerError, read_line_capped};
 
 /// Command ids. The UI, CLI and control channel all use these.
 pub mod commands {

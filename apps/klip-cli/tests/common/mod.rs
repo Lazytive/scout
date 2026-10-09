@@ -213,6 +213,27 @@ pub fn check_portal_stream(recorder_ready: &Value, game_ready: &Value) {
     }
 }
 
+/// Engine tests follow every running test game (it is on their game list): fail early
+/// and say why if one from another test run (another agent, a leftover) is running.
+pub fn assert_no_other_test_game() {
+    let name = game_exe()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let others: Vec<u32> = klip_platform::list_processes()
+        .unwrap()
+        .into_iter()
+        .filter(|p| p.exe.eq_ignore_ascii_case(&name))
+        .map(|p| p.pid)
+        .collect();
+    assert!(
+        others.is_empty(),
+        "{name} is already running (pids {others:?}): another test run would be followed \
+         by this test's engine; wait for it to finish"
+    );
+}
+
 pub fn game_exe() -> PathBuf {
     let exe = exe_dir().join(if cfg!(windows) {
         "klip-testgame.exe"

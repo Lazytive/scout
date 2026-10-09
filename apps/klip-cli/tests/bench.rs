@@ -13,6 +13,10 @@
 //! stretch is compared with the "off" stretch just before it. Then three 30 s saves and
 //! the idle cost after the game closed. The test game window sits off-screen. Needs an
 //! idle GPU. Writes `target/bench/bench-<unix time>.json` and prints a table.
+//!
+//! "Engine" numbers are the daemon plus the worker processes it started (the recorder and
+//! media workers, ADRs 0015/0016); the daemon's own share is reported too. Saves are timed
+//! by the recorder (`save_ms`) and end to end over the control channel (`round_trip_ms`).
 
 #![cfg(windows)]
 #![allow(
@@ -28,14 +32,14 @@
 
 mod common;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use common::{KillOnDrop, cli, exe_dir};
+use common::{KillOnDrop, assert_no_other_test_game, cli, exe_dir};
 use serde_json::{Value, json};
 
 const WIDTH: u32 = 1920;
@@ -132,20 +136,63 @@ impl Events {
     }
 }
 
-/// CPU (% of one core) and peak memory of `pid`, sampled once a second for `secs`.
-fn sample(pid: u32, secs: u64) -> (f64, u64, u64) {
-    let a = klip_platform::process_usage(pid).unwrap();
-    let mut resident = 0;
-    let mut private = 0;
+/// The daemon and the Klip worker processes it started.
+fn klip_tree(pid: u32) -> Vec<u32> {
+    let mut out = vec![pid];
+    out.extend(
+        klip_platform::list_processes()
+            .unwrap()
+            .into_iter()
+            .filter(|p| p.parent_pid == pid && p.exe.eq_ignore_ascii_case("klip-cli.exe"))
+            .map(|p| p.pid),
+    );
+    out
+}
+
+/// What the daemon and its workers use.
+#[derive(Clone, Copy, Default)]
+struct Usage {
+    /// % of one core.
+    cpu: f64,
+    /// Peaks of the per-second sums.
+    resident: u64,
+    private: u64,
+    /// Peak private memory of the daemon alone.
+    engine_private: u64,
+}
+
+/// CPU and peak memory of the daemon `pid` with its workers, sampled once a second for
+/// `secs`.
+fn sample(pid: u32, secs: u64) -> Usage {
+    let cpu_ns = || -> HashMap<u32, u64> {
+        klip_tree(pid)
+            .into_iter()
+            .filter_map(|p| klip_platform::process_usage(p).ok().map(|u| (p, u.cpu_ns)))
+            .collect()
+    };
+    let a = cpu_ns();
+    let mut usage = Usage::default();
     for _ in 0..secs {
         std::thread::sleep(Duration::from_secs(1));
-        let u = klip_platform::process_usage(pid).unwrap();
-        resident = resident.max(u.resident_bytes);
-        private = private.max(u.private_bytes);
+        let (mut resident, mut private) = (0, 0);
+        for p in klip_tree(pid) {
+            if let Ok(u) = klip_platform::process_usage(p) {
+                resident += u.resident_bytes;
+                private += u.private_bytes;
+                if p == pid {
+                    usage.engine_private = usage.engine_private.max(u.private_bytes);
+                }
+            }
+        }
+        usage.resident = usage.resident.max(resident);
+        usage.private = usage.private.max(private);
     }
-    let b = klip_platform::process_usage(pid).unwrap();
-    let cpu = (b.cpu_ns - a.cpu_ns) as f64 / (secs as f64 * 1e9) * 100.0;
-    (cpu, resident, private)
+    let used: u64 = cpu_ns()
+        .into_iter()
+        .map(|(p, b)| b.saturating_sub(a.get(&p).copied().unwrap_or(0)))
+        .sum();
+    usage.cpu = used as f64 / (secs as f64 * 1e9) * 100.0;
+    usage
 }
 
 fn cpu_name() -> String {
@@ -200,6 +247,9 @@ struct Scenario {
     cpu: Vec<f64>,
     resident: u64,
     private: u64,
+    engine_private: u64,
+    /// From switching the buffer on to `recorder_started`, ms.
+    start_ms: Vec<f64>,
     rec: Value,
 }
 
@@ -244,6 +294,8 @@ fn measure(
         cpu: Vec::new(),
         resident: 0,
         private: 0,
+        engine_private: 0,
+        start_ms: Vec::new(),
         rec: Value::Null,
     };
     let mut started_at = 0.0;
@@ -256,17 +308,20 @@ fn measure(
         std::thread::sleep(Duration::from_secs(3));
         let off = (now(), now() + 6.0);
         std::thread::sleep(Duration::from_secs(6));
+        let switched = Instant::now();
         klip.buffer("games");
         sc.rec = klip
             .events
             .wait_for("recorder_started", Duration::from_secs(60));
+        sc.start_ms.push(switched.elapsed().as_secs_f64() * 1000.0);
         started_at = now();
         std::thread::sleep(Duration::from_secs(3));
         let from = now();
-        let (cpu, resident, private) = sample(klip.pid, 6);
-        sc.cpu.push(cpu);
-        sc.resident = sc.resident.max(resident);
-        sc.private = sc.private.max(private);
+        let u = sample(klip.pid, 6);
+        sc.cpu.push(u.cpu);
+        sc.resident = sc.resident.max(u.resident);
+        sc.private = sc.private.max(u.private);
+        sc.engine_private = sc.engine_private.max(u.engine_private);
         windows.push((off, (from, now())));
     }
     // The game flushes its frame log once a second.
@@ -303,6 +358,8 @@ fn scenario_json(sc: &Scenario) -> Value {
         "cost_percent_pairs": costs,
         "engine_cpu_percent_of_one_core": sc.cpu.iter().sum::<f64>() / sc.cpu.len() as f64,
         "engine_resident_bytes": sc.resident, "engine_private_bytes": sc.private,
+        "engine_process_private_bytes": sc.engine_private,
+        "recorder_start_ms": sc.start_ms,
     })
 }
 
@@ -310,6 +367,7 @@ fn scenario_json(sc: &Scenario) -> Value {
 #[ignore = "benchmark: needs an idle GPU; run via `cargo xtask bench`"]
 fn bench_game_cost() {
     klip_platform::enable_dpi_awareness();
+    assert_no_other_test_game();
     let tmp = tempfile::tempdir().unwrap();
     let env_num = |k: &str, d: f64| {
         std::env::var(k)
@@ -376,8 +434,11 @@ fn bench_game_cost() {
         _child: KillOnDrop(child),
     };
     klip.events.wait_for("ready", Duration::from_secs(60));
-    std::thread::sleep(Duration::from_secs(3));
-    let (idle_before_cpu, _, idle_before_private) = sample(pid, 5);
+    // Start-up holds ~100 MB more for its first ~8 s (GStreamer and Media Foundation
+    // start-up, measured 2026-10-09); idle is what follows.
+    std::thread::sleep(Duration::from_secs(12));
+    let before = sample(pid, 5);
+    let (idle_before_cpu, idle_before_private) = (before.cpu, before.private);
 
     // Worst case: uncapped.
     let (uncapped, mut g, spawned, started_at) = measure(
@@ -395,19 +456,25 @@ fn bench_game_cost() {
         std::thread::sleep(Duration::from_millis(200));
     }
     let mut saves = Vec::new();
+    let mut control = klip_control::Client::connect(&discovery, Duration::from_secs(5)).unwrap();
     for _ in 0..3 {
-        let out = cli(&discovery)
-            .args(["clip", "--last", "30s"])
-            .output()
+        let t = Instant::now();
+        let v = control
+            .call("clip.save", json!({"last_ms": 30_000}))
             .unwrap();
-        let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let round_trip = t.elapsed().as_secs_f64() * 1000.0;
+        klip.events.wait_for("thumbnail", Duration::from_secs(20));
+        let thumbnail = t.elapsed().as_secs_f64() * 1000.0 - round_trip;
         saves.push((
             v["save_ms"].as_f64().unwrap(),
             v["duration_ms"].as_f64().unwrap(),
             v["bytes"].as_u64().unwrap(),
+            round_trip,
+            thumbnail,
         ));
         std::thread::sleep(Duration::from_secs(2));
     }
+    drop(control);
     let _ = g.0.kill();
     let _ = g.0.wait();
     klip.events
@@ -428,7 +495,9 @@ fn bench_game_cost() {
     klip.events
         .wait_for("recorder_stopped", Duration::from_secs(15));
     std::thread::sleep(Duration::from_secs(3));
-    let (idle_after_cpu, idle_after_resident, idle_after_private) = sample(pid, 10);
+    let after = sample(pid, 10);
+    let (idle_after_cpu, idle_after_resident, idle_after_private) =
+        (after.cpu, after.resident, after.private);
     let _ = cli(&discovery).arg("stop").status();
 
     let cores = std::thread::available_parallelism().map_or(1, usize::from) as f64;
@@ -454,7 +523,7 @@ fn bench_game_cost() {
         "uncapped": scenario_json(&uncapped),
         "capped": scenario_json(&capped),
         "capture": status.get("video").cloned().unwrap_or(Value::Null),
-        "saves_30s": saves.iter().map(|s| json!({"save_ms": s.0, "duration_ms": s.1, "bytes": s.2})).collect::<Vec<_>>(),
+        "saves_30s": saves.iter().map(|s| json!({"save_ms": s.0, "duration_ms": s.1, "bytes": s.2, "round_trip_ms": s.3, "thumbnail_after_ms": s.4})).collect::<Vec<_>>(),
         "ring_bytes_after_9s": status["bytes"],
         "engine_idle": {
             "before_game_cpu_percent": idle_before_cpu, "before_game_private_bytes": idle_before_private,
@@ -480,13 +549,25 @@ fn bench_game_cost() {
     print_scenario("uncapped (worst case)", &uncapped);
     print_scenario("capped at 144 (usual)", &capped);
     println!(
-        "engine while buffering: CPU {:.1} % of one core ({:.2} % of all {cores:.0}), resident {:.0} MB, private {:.0} MB",
+        "engine + recorder process while buffering: CPU {:.1} % of one core ({:.2} % of all {cores:.0}), resident {:.0} MB, private {:.0} MB (engine process alone {:.0} MB)",
         u["engine_cpu_percent_of_one_core"].as_f64().unwrap_or(0.0),
         u["engine_cpu_percent_of_one_core"].as_f64().unwrap_or(0.0) / cores,
         mb(uncapped.resident),
-        mb(uncapped.private)
+        mb(uncapped.private),
+        mb(uncapped.engine_private)
     );
-    println!("30 s saves: {save_ms:.1?} ms");
+    let round_trips: Vec<f64> = saves.iter().map(|s| s.3).collect();
+    let thumbs: Vec<f64> = saves.iter().map(|s| s.4).collect();
+    println!(
+        "30 s saves: {save_ms:.1?} ms (end to end over the control channel {round_trips:.1?} ms); thumbnail {thumbs:.0?} ms after the save"
+    );
+    let mut starts = uncapped.start_ms.clone();
+    starts.extend(&capped.start_ms);
+    starts.sort_by(f64::total_cmp);
+    println!(
+        "recorder start (buffer on -> recording): median {:.0} ms, {starts:.0?}",
+        starts[starts.len() / 2]
+    );
     println!(
         "engine idle: before a game CPU {idle_before_cpu:.2} %, private {:.0} MB; after CPU {idle_after_cpu:.2} %, private {:.0} MB (resident {:.0} MB)",
         mb(idle_before_private),

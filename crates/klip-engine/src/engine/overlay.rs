@@ -1,9 +1,12 @@
 //! What the overlay needs from the engine: a thumbnail of each saved clip (made after the
 //! save, so the pop-up appears at once and the picture follows) and a preview command.
 //! The thumbnail is also the clip's library poster; its hover-scrub strip is queued for
-//! the library's thumbnail thread (made once the game is over).
+//! the library's thumbnail thread (made once the game is over). The poster is decoded by
+//! a one-shot media worker process (ADR 0016), so no decoder stays in the engine.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -14,9 +17,17 @@ use serde_json::{Value, json};
 use super::{Inner, lock};
 use crate::config;
 use crate::events::Event;
+use crate::media_worker::{MediaWorker, ThumbJob};
 
 /// How far before the clip's end the thumbnail is taken (the moment of the hotkey).
 const THUMB_BACK: Duration = crate::media_worker::POSTER_BACK;
+/// A poster job, including the worker's start.
+const POSTER_TIMEOUT: Duration = Duration::from_secs(30);
+/// Largest poster read back from the worker.
+const MAX_POSTER: u64 = 8 * 1024 * 1024;
+
+/// Unique names for posters on their way from the worker.
+static POSTER_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
@@ -47,12 +58,46 @@ impl Inner {
         }
     }
 
+    /// The clip's poster JPEG, decoded by a one-shot media worker (it exits right after,
+    /// taking the decoder with it), or here without one (tests).
+    fn poster_jpeg(&self, clip: &Path) -> Result<Vec<u8>, String> {
+        let Some(exe) = &self.media_worker else {
+            return klip_capture::thumbnail::jpeg_near_end(
+                clip,
+                THUMB_BACK,
+                klip_library::POSTER_WIDTH,
+            )
+            .map_err(|e| e.to_string());
+        };
+        let out = std::env::temp_dir().join(format!(
+            "klip-poster-{}-{}.jpg",
+            std::process::id(),
+            POSTER_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let job = ThumbJob {
+            id: 1,
+            clip: clip.to_path_buf(),
+            poster: Some(out.clone()),
+            poster_width: klip_library::POSTER_WIDTH,
+            strip: None,
+            tiles: 0,
+            tile_width: 0,
+        };
+        let r = MediaWorker::isolated(exe.clone())
+            .run(&job, POSTER_TIMEOUT)
+            .and_then(|()| {
+                let mut jpeg = Vec::new();
+                std::fs::File::open(&out)
+                    .and_then(|f| f.take(MAX_POSTER).read_to_end(&mut jpeg))
+                    .map_err(|e| format!("reading the poster: {e}"))?;
+                Ok(jpeg)
+            });
+        let _ = std::fs::remove_file(&out);
+        r
+    }
+
     fn make_thumbnail(&self, clip: &Path) {
-        let jpeg = match klip_capture::thumbnail::jpeg_near_end(
-            clip,
-            THUMB_BACK,
-            klip_library::POSTER_WIDTH,
-        ) {
+        let jpeg = match self.poster_jpeg(clip) {
             Ok(j) => j,
             Err(e) => {
                 tracing::warn!(error = %e, "thumbnail");

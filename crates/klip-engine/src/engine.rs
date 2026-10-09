@@ -4,7 +4,8 @@
 //! starts and stops recorders; hotkey presses run their action on a short-lived job
 //! thread (one at a time per hotkey); commands run on the caller's thread (control
 //! channel, UI). Locks are held only for short reads and swaps, never across a recorder
-//! start, stop or clip save.
+//! start, stop or clip save. The recorder runs in a child process (ADR 0016,
+//! [`Isolation`]).
 
 use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -18,16 +19,19 @@ use std::time::{Duration, Instant};
 use klip_control::{CommandError, Handler, Server, commands};
 use klip_platform::{BoundShortcut, GlobalShortcuts, ShortcutSpec};
 use klip_probe::ProbeCache;
-use klip_recorder::Recorder;
 use klip_settings::{
     BufferMode, HotkeyAction, HotkeyBinding, Issue, LoadStatus, Settings, SettingsError,
 };
 use serde_json::{Value, json};
 
+mod host;
 mod library;
 mod overlay;
 mod setup;
 mod storage;
+
+pub use host::Isolation;
+use host::RecorderHandle;
 
 use crate::events::{Bus, Event};
 use crate::games::{self, DetectedGame};
@@ -50,6 +54,9 @@ pub struct EngineOptions {
     /// `klip_engine::media_worker::worker_main` first thing); `None`: library thumbnails
     /// are made in this process (tests). Default: this executable.
     pub media_worker: Option<PathBuf>,
+    /// Where the recorder runs; default [`Isolation::auto`]: a child process when the
+    /// executable calls [`crate::worker_main`].
+    pub isolation: Isolation,
 }
 
 impl EngineOptions {
@@ -60,6 +67,7 @@ impl EngineOptions {
             poll: POLL,
             events: None,
             media_worker: std::env::current_exe().ok(),
+            isolation: Isolation::auto(),
         }
     }
 }
@@ -102,7 +110,7 @@ fn describe(b: &HotkeyBinding) -> String {
 
 /// The running replay buffer.
 struct Current {
-    recorder: Arc<Recorder>,
+    recorder: Arc<RecorderHandle>,
     clip_dir: PathBuf,
 }
 
@@ -115,10 +123,15 @@ struct State {
     starting: bool,
     retry_at: Option<Instant>,
     last_error: Option<String>,
+    /// Recorder processes of the followed game that ended unexpectedly.
+    crashes: u32,
+    /// Finalise recordings a dead recorder process left, at this time.
+    recover_at: Option<Instant>,
 }
 
 pub(crate) struct Inner {
     settings_path: PathBuf,
+    isolation: Isolation,
     settings: Mutex<Settings>,
     load_status: LoadStatus,
     load_issues: Vec<Issue>,
@@ -177,6 +190,7 @@ impl Engine {
         let control = loaded.settings.app.control_channel;
         let inner = Arc::new_cyclic(|me| Inner {
             settings_path: opts.settings_path.clone(),
+            isolation: opts.isolation.clone(),
             settings: Mutex::new(loaded.settings),
             load_status: loaded.status,
             load_issues: loaded.issues,
@@ -328,6 +342,17 @@ impl Inner {
         while !self.stop.load(Ordering::Relaxed) {
             self.meter_watchdog();
             self.hotkeys_watchdog();
+            let due = {
+                let mut st = lock(&self.state);
+                let due = st.recover_at.is_some_and(|t| Instant::now() >= t);
+                if due {
+                    st.recover_at = None;
+                }
+                due
+            };
+            if due && catch_unwind(AssertUnwindSafe(|| self.recover())).is_err() {
+                tracing::error!("recovering recordings panicked");
+            }
             if catch_unwind(AssertUnwindSafe(|| self.tick())).is_err() {
                 tracing::error!("game watcher panicked; carrying on");
             }
@@ -372,6 +397,7 @@ impl Inner {
 
     /// One look at what runs; start or stop the recorder accordingly.
     fn tick(&self) {
+        self.reap_crashed_recorder();
         let settings = self.settings();
         let mode = settings.games.buffer;
         if mode == BufferMode::Off {
@@ -420,10 +446,39 @@ impl Inner {
         }
     }
 
+    /// A recorder process that ended by itself (driver crash, killed): report it, finalise
+    /// what it was recording, and restart at once the first time per game (later: after
+    /// [`RETRY`]).
+    fn reap_crashed_recorder(&self) {
+        let Some(rec) = lock(&self.state)
+            .current
+            .as_ref()
+            .map(|c| c.recorder.clone())
+        else {
+            return;
+        };
+        // Outside the lock: reaping the process may wait a moment.
+        let Some(exit) = rec.ended() else { return };
+        let error = format!("the recorder process ended unexpectedly ({exit})");
+        tracing::warn!("{error}");
+        {
+            let mut st = lock(&self.state);
+            st.crashes = st.crashes.saturating_add(1);
+            st.retry_at = if st.crashes > 1 {
+                Instant::now().checked_add(RETRY)
+            } else {
+                None
+            };
+            st.last_error = Some(error.clone());
+        }
+        self.stop_recorder(&error);
+    }
+
     fn forget_game(&self) {
         let gone = {
             let mut st = lock(&self.state);
             st.retry_at = None;
+            st.crashes = 0;
             st.game.take()
         };
         if let Some(game) = gone {
@@ -435,38 +490,39 @@ impl Inner {
 
     fn start_recorder(&self, settings: &Settings, game: Option<&DetectedGame>) {
         lock(&self.state).starting = true;
-        let res = (|| -> Result<(Recorder, PathBuf, u32, i64), EngineError> {
-            let plan = {
+        let res = (|| -> Result<host::Started, EngineError> {
+            let encoders = {
                 let mut c = lock(&self.cache);
-                let p = config::plan(settings, game, &mut c.0);
+                let e = config::encoders_for(settings, game, &mut c.0);
                 config::save_encoder_cache(&c.0, c.1.as_deref());
-                p?
+                e?
             };
-            let buffer_ms = plan
-                .config
-                .buffer
-                .checked_div(klip_media::NANOS_PER_MILLI)
-                .unwrap_or(0);
-            let rec = Recorder::start(plan.config)?;
+            let started = host::start(&self.isolation, settings, game, encoders)?;
             let mut c = lock(&self.cache);
-            for a in rec.encoder_attempts() {
+            for a in &started.attempts {
                 match &a.error {
                     None => c.0.record_started(&a.element),
                     Some(e) => c.0.record_start_failure(&a.element, e),
                 }
             }
             config::save_encoder_cache(&c.0, c.1.as_deref());
-            Ok((rec, plan.clip_dir, plan.fps, buffer_ms))
+            Ok(started)
         })();
         let name = game.map(|g| g.name.clone());
         let mut st = lock(&self.state);
         st.starting = false;
         match res {
-            Ok((rec, clip_dir, fps, buffer_ms)) => {
+            Ok(host::Started {
+                handle,
+                clip_dir,
+                fps,
+                buffer_ms,
+                status,
+                attempts: _,
+            }) => {
                 self.check_disk(true);
-                let status = rec.status();
                 st.current = Some(Current {
-                    recorder: Arc::new(rec),
+                    recorder: Arc::new(handle),
                     clip_dir: clip_dir.clone(),
                 });
                 st.retry_at = None;
@@ -498,17 +554,26 @@ impl Inner {
         }
     }
 
+    /// Stop the recorder, finalising a running recording; a recorder process has exited
+    /// (and given back its memory) when this returns.
     fn stop_recorder(&self, reason: &str) {
         let cur = lock(&self.state).current.take();
         if let Some(c) = cur {
-            if let Some(summary) = c.recorder.stop_capture() {
-                self.emit(&Event::RecordingStopped {
-                    summary: summary.to_json(),
-                });
+            let stopped = c.recorder.stop();
+            if let Some(summary) = stopped.summary {
+                self.emit(&Event::RecordingStopped { summary });
             }
             self.emit(&Event::RecorderStopped {
                 reason: reason.into(),
             });
+            // A process that died may have left a recording unfinished. Recovery leaves
+            // files written in the last moments alone (another recorder might still
+            // write them), so it runs once that quiet time has passed.
+            if stopped.unclean {
+                lock(&self.state).recover_at = Instant::now()
+                    .checked_add(klip_recorder::session::RECOVERY_QUIET)
+                    .and_then(|t| t.checked_add(Duration::from_secs(1)));
+            }
         }
     }
 
@@ -624,7 +689,7 @@ impl Inner {
         }
     }
 
-    fn recorder(&self) -> Result<(Arc<Recorder>, Option<DetectedGame>), CommandError> {
+    fn recorder(&self) -> Result<(Arc<RecorderHandle>, Option<DetectedGame>), CommandError> {
         let st = lock(&self.state);
         match &st.current {
             Some(c) => Ok((c.recorder.clone(), st.game.clone())),
@@ -682,6 +747,10 @@ impl Inner {
                 st.last_error.clone(),
             )
         };
+        let recorder = current.as_ref().map(|(r, _)| match r.status() {
+            Ok((status, session)) => (status, Some(session)),
+            Err(e) => (json!({ "error": e.message }), None),
+        });
         json!({
             "buffer_mode": settings.games.buffer,
             "game": game,
@@ -689,8 +758,9 @@ impl Inner {
             "desktop": current.is_some() && game.is_none(),
             "starting": starting,
             "clip_dir": current.as_ref().map(|(_, d)| d.to_string_lossy()),
-            "session": current.as_ref().map(|(r, _)| r.session_running()),
-            "recorder": current.as_ref().map(|(r, _)| r.status()),
+            "session": recorder.as_ref().and_then(|(_, s)| *s),
+            "recorder": recorder.map(|(r, _)| r),
+            "recorder_pid": current.as_ref().and_then(|(r, _)| r.pid()),
             "last_error": last_error,
             "hotkeys": lock(&self.bound).clone(),
             "hotkeys_paused": lock(&self.hotkeys_paused).is_some(),
@@ -725,7 +795,7 @@ impl Handler for Inner {
                     .map_err(|e| CommandError::new("failed", e.to_string()))?;
                 Ok(json!({ "running": running, "followed": lock(&self.state).game }))
             }
-            commands::RECORDER_STATUS => Ok(self.recorder()?.0.status()),
+            commands::RECORDER_STATUS => self.recorder()?.0.handle(cmd, args),
             commands::CLIP_SAVE => {
                 let (rec, game) = self.recorder()?;
                 let clip = rec.handle(cmd, args)?;

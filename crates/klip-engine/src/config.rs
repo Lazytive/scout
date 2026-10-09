@@ -340,24 +340,72 @@ pub struct Plan {
     pub fps: u32,
 }
 
-/// Build the recorder configuration from the settings (with the game's profile).
-pub fn plan(
-    settings: &Settings,
-    game: Option<&DetectedGame>,
-    cache: &mut ProbeCache,
-) -> Result<Plan, EngineError> {
-    let eff = settings.effective(game.map(|g| g.exe.as_str()));
-    let target = if cfg!(target_os = "linux") {
+/// What `game` (or the desktop) is recorded from.
+fn video_target(game: Option<&DetectedGame>) -> VideoTarget {
+    if cfg!(target_os = "linux") {
         VideoTarget::Portal
     } else {
         match game.and_then(|g| g.window) {
             Some(h) => VideoTarget::Window(h),
             None => VideoTarget::PrimaryMonitor,
         }
-    };
+    }
+}
+
+/// Build the recorder configuration from the settings (with the game's profile).
+pub fn plan(
+    settings: &Settings,
+    game: Option<&DetectedGame>,
+    cache: &mut ProbeCache,
+) -> Result<Plan, EngineError> {
+    let encoders = encoders_for(settings, game, cache)?;
+    plan_with(settings, game, encoders)
+}
+
+/// The encoders a recording of `game` tries, best first (probing uncached ones).
+pub fn encoders_for(
+    settings: &Settings,
+    game: Option<&DetectedGame>,
+    cache: &mut ProbeCache,
+) -> Result<Vec<EncoderChoice>, EngineError> {
+    let eff = settings.effective(game.map(|g| g.exe.as_str()));
+    let target = video_target(game);
     let q = eff.quality.params(target_refresh(target));
-    let codec = codec(q.codec);
-    let mut encoders = pick_encoders(codec, eff.encoder.as_deref(), target_gpu(target), cache)?;
+    pick_encoders(
+        codec(q.codec),
+        eff.encoder.as_deref(),
+        target_gpu(target),
+        cache,
+    )
+}
+
+/// The installed, allowed encoders named in `names`, in that order (what a recorder
+/// process gets from the engine; unknown names are skipped).
+pub fn encoders_named(
+    settings: &Settings,
+    game: Option<&DetectedGame>,
+    names: &[String],
+) -> Vec<EncoderChoice> {
+    let eff = settings.effective(game.map(|g| g.exe.as_str()));
+    let target = video_target(game);
+    let q = eff.quality.params(target_refresh(target));
+    let installed = klip_probe::candidates(codec(q.codec), &gpu_vendors(), target_gpu(target));
+    names
+        .iter()
+        .filter_map(|n| installed.iter().find(|c| &c.element == n).cloned())
+        .collect()
+}
+
+/// [`plan`] with the encoders already chosen (the first one is used, the rest are
+/// fallbacks).
+pub fn plan_with(
+    settings: &Settings,
+    game: Option<&DetectedGame>,
+    mut encoders: Vec<EncoderChoice>,
+) -> Result<Plan, EngineError> {
+    let eff = settings.effective(game.map(|g| g.exe.as_str()));
+    let target = video_target(game);
+    let q = eff.quality.params(target_refresh(target));
     if encoders.is_empty() {
         return Err(EngineError::Config("no encoder".into()));
     }

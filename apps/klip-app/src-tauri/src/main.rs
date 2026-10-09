@@ -292,6 +292,10 @@ fn main() -> ExitCode {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
+    // The engine's recorder runs in a copy of this executable too (ADR 0016).
+    if let Some(code) = klip_engine::worker_main() {
+        return ExitCode::from(u8::try_from(code).unwrap_or(1));
+    }
     klip_platform::enable_dpi_awareness();
     if cfg!(target_os = "linux")
         && let Err(e) = klip_platform::register_app_id(klip_platform::APP_ID)

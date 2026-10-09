@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use klip_platform::{PlatformError, ProcessInfo, WindowInfo};
 use klip_settings::{GameSettings, game_key};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Windows smaller than this aren't games (launchers, splash screens, tray pop-ups).
 pub const MIN_WIDTH: u32 = 640;
@@ -21,7 +21,7 @@ pub const MIN_USER_WIDTH: u32 = 320;
 pub const MIN_USER_HEIGHT: u32 = 240;
 
 /// Where a detected game was installed from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Store {
     Steam,
@@ -36,7 +36,7 @@ pub enum Store {
 }
 
 /// Why a program counts as a game.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "kind", content = "store")]
 pub enum Source {
     /// On the user's list.
@@ -46,7 +46,7 @@ pub enum Source {
 }
 
 /// A running game.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetectedGame {
     pub pid: u32,
     /// Executable file name, e.g. `Game.exe`.

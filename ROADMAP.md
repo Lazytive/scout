@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (end of M7).
+Last updated: 2026-10-09 (M6.12, after M7).
 
 | | Milestone | State |
 |---|---|---|
@@ -10,7 +10,7 @@ Last updated: 2026-10-09 (end of M7).
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
-| M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; Linux paths written, not yet run |
+| M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
 | M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
 | M8 | Editor, Normal mode + export presets | |
 | M9 | Editor, Advanced mode | |
@@ -152,10 +152,14 @@ game audio, buffer 30 s, clip hotkey F24 (10 s):
   in 88 ms (82 ms of it waiting for audio): 600 frames, none repeated, unreadable or out
   of order; H.264 + the game's audio track.
 - Idle cost of the engine with no game: 0.00 % of one core over 6 s, 22 MB private
-  memory (57 MB resident). After a game it stays at 0.26 % CPU but **106 MB private**
-  (111 MB resident): GPU driver, Media Foundation and GStreamer libraries stay loaded
-  once a recorder ran. Running the recorder in a child process would give that back;
-  not done yet.
+  memory (57 MB resident). After a game it stayed at 0.26 % CPU but **106 MB private**
+  (111 MB resident) until M6.12; since the recorder runs in a child process (ADR 0016)
+  it is back where it was: 23.1 MB private before and 23.1 MB after the game (release
+  build, 2026-10-09), and no Klip worker process is left 22 s after the game (the
+  library's media worker makes the clips' strips once the game is over, then stops).
+- A recorder process killed mid-recording (M6.12 e2e): a new one runs 1.4–1.5 s later,
+  and the recording it left is finalised by recovery 17.5 s after the kill (it waits
+  until nothing could still be writing it) and plays as H.264 with what was written.
 
 ### What Klip costs a game (M6.10, `cargo xtask bench`)
 
@@ -178,12 +182,44 @@ use drift by several percent between separate runs.
 - 30 s clip saves: 100–107 ms (each includes ~80–90 ms waiting for audio to catch up).
 - Idle, no game: 0.00 % CPU, 89 MB private. **After a game: 0.16 % CPU but 379 MB
   private** (285 MB resident): encoder, decoder (thumbnails) and GPU driver memory stay
-  with the process once used. Running capture/encode and thumbnails in a child process
-  would give it back; not done.
+  with the process once used. Fixed in M6.12, below. (The 89 MB was sampled during the
+  engine's first seconds: it holds ~100 MB more for ~8 s after start, then 22 MB.)
 - Capture asks Windows for at most 2x the recording rate (`MinUpdateInterval`, Windows 11
   24H2+): no measurable change in this scene, but it spares the compositor half the
   copies at 240 Hz. Finding along the way: GStreamer's WGC source and Klip's own capture
   cost about the same here, and HDR (FP16) capture costs no more than 8-bit.
+
+### Recorder in a child process (M6.12, `cargo xtask bench` before/after)
+
+Same machine and scene as above, 2026-10-09, both runs back to back with a YouTube video
+playing on the other monitor (the human's choice; it moves the fps numbers a little, not
+the memory). Before = `main` at M7 (`b24f3f9`, recorder in the engine); after = M6.12
+(recorder in `klip-cli --klip-recorder`, overlay poster from a one-shot media worker).
+"Engine" after = the engine process plus its recorder process.
+
+| | before | after |
+|---|---|---|
+| **Engine private memory after the game exited** | **381 MB** (292 MB resident), 0.31 % CPU | **22 MB** (58 MB resident), 0.31 % CPU |
+| Engine idle before any game (after the start-up transient, ~8 s) | 23.7 MB (start-up trace) | 22 MB (21.8 MB in the trace) |
+| While buffering (Balanced, 2 min) | 242 MB private, 178 MB resident, 5.8 % of one core | 264 MB private (engine process 22 MB), 241 MB resident, 7.0 % of one core |
+| 30 s clip saves | 75–104 ms | 85–94 ms; 86–95 ms end to end over the control channel |
+| Overlay picture after a save | 33 ms (1.18 s for the first save of a session; decoder kept warm in the engine) | 127–132 ms (one-shot media worker) |
+| Game fps cost, uncapped | 3.86 % ± 1.00 (median 3.53 %) | 3.73 % ± 0.46 (median 4.05 %) |
+| Game fps cost, capped at 144 | none | none |
+
+- Recorder start, from switching the buffer on to `recorder_started`: 1.58–2.04 s
+  (median 1.75 s). That includes the recorder process's Media Foundation start-up
+  (0.72–0.77 s measured on its own), which the in-process recorder had paid once when
+  the engine started; the in-process start time itself wasn't measured.
+- A poster or strip in a fresh media worker was slow for a reason unrelated to process
+  start: `klip_probe::init` started Media Foundation (0.72–0.77 s) and the GPU decoder
+  took 0.3 s to start. Thumbnails now only initialise GStreamer (33–36 ms) and the
+  media worker prefers software decoders for its few key frames (ADR 0016): poster
+  1.27–1.36 s → 132–271 ms, 16-tile strip 1.45–1.59 s → 437–443 ms (30 s 1080p60 H.264
+  test clip).
+- `bench-*.json` keeps the engine process and the total apart
+  (`engine_process_private_bytes`, `engine_private_bytes`) and now records
+  `round_trip_ms`, `thumbnail_after_ms` and `recorder_start_ms`.
 
 ### Library (M7)
 
@@ -192,7 +228,9 @@ Same machine, `cargo xtask e2e` / `m7_library.rs` on 2026-10-09 (the test game a
 using the GPU):
 - A card that comes into view gets its hover-scrub strip in 1.5–1.6 s, including
   starting the media worker process (GStreamer start-up + 16 key-frame seeks and
-  decodes); while a game is recorded only such visible cards are done.
+  decodes); while a game is recorded only such visible cards are done. Since M6.12
+  (no Media Foundation start-up in the worker, software decoding of key frames):
+  0.25 s in the same test.
 - Background strips start 0.12 s after the game ends (the engine wakes the thumbnail
   thread when the followed game stops).
 - A strip of the test game is 313–322 KB (16 x 240x135, JPEG quality 75; the barcoded
@@ -231,9 +269,11 @@ using the GPU):
     its effect on VRR/G-Sync over a real game is unmeasured (human checklist or
     PresentMon); the quick menu takes the focus while open, so it isn't shown over an
     exclusive-fullscreen game.
-  - **After a game, the process keeps ~380 MB private memory** (encoder, decoder and
-    driver state; 89 MB before the first game). A child process for capture/encode and
-    thumbnails would give it back.
+  - While a game is recorded there are two Klip processes (the engine, ~22 MB private,
+    and its recorder, ~240 MB with the 2 min Balanced buffer): 22 MB more than one
+    process, 63 MB more resident. A game's recorder starts ~1.75 s after it is found
+    (Media Foundation start-up included). A recorder process that hangs (alive but not
+    answering) is reported on each command after a timeout, not restarted.
   - The cost numbers come from the benchmark scene on one high-end GPU; a real game and
     a mid-range GPU are not measured.
   - Linux: the app, the engine's portal path per game, process-only game detection and
@@ -416,4 +456,8 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 
 ## Known bugs
 
-None open.
+- e2e `m3_hdr::sdr_game_on_hdr_desktop_is_unchanged` fails since the evening of
+  2026-10-09 with every grey level ~10 % darker (patch 16 → 13, 64 → 59, checker
+  60/90 → 54/82), identically with `main` before M6.12 (checked): the desktop's HDR /
+  SDR-content-brightness state changed, the code didn't. To check with the human (SDR
+  brightness slider) before touching the test.

@@ -113,7 +113,7 @@ AAC chain:     audioconvert → S16LE → queue → AAC encoder bitrate → aacp
   `wasapi2src` and the WGC source stamp buffers relative to arrival.
 
 `thumbnail::jpeg_near_end(path, back, max_width)`: decodes the keyframe at or before
-`back` before the clip's end (decodebin: hardware decoders rank first) and encodes a JPEG
+`back` before the clip's end (decodebin; GStreamer's ranks pick the decoder) and encodes a JPEG
 (`jpegenc`); used for the overlay and the library. Checked for every working encoder's
 output (H.264, HEVC, AV1) in `klip-recorder`'s round-trip test: first call 0.55 s
 (decoder start-up), then 15–35 ms for a 640x360 clip.
@@ -121,7 +121,15 @@ output (H.264, HEVC, AV1) in `klip-recorder`'s round-trip test: first call 0.55 
 key frame nearest the middle of each of `tiles` slices (flushing key-unit seeks), scaled
 to `tile_width` (RGB) and stacked top to bottom into one JPEG (`appsrc → jpegenc`,
 quality 75); refuses strips over 64 MB raw. The app runs both in its media worker
-process for library clips (klip-engine, ADR 0015). Measured in `m7_library.rs`: 16
-frames of a 720p60 clip in 1.5 s including the worker's start.
+process (klip-engine, ADR 0015; the overlay's poster too since M6.12, ADR 0016). Both
+initialise only GStreamer, not `klip_probe::init`'s Media Foundation warm-up (0.7 s,
+needed only where encoders run). `thumbnail::prefer_software_decoders()` (called by the
+media worker) ranks hardware video decoders down to MARGINAL so decodebin takes
+`avdec_h264`/`avdec_h265`/`dav1ddec`/`openh264dec` where installed: for a few key
+frames that beats starting a GPU decoder (1080p poster 71 ms vs 336 ms in a fresh
+process). Measured in a one-shot worker on a 30 s 1080p60 clip: poster 132–271 ms,
+16-tile strip 437–443 ms (were 1.27–1.36 s and 1.45–1.59 s); `m7_library.rs`: strip of
+a visible 720p60 card 248 ms including the worker's start (was 1.5 s). Test:
+hardware decoders rank at most MARGINAL afterwards, still present, idempotent.
 
 Layer: media engine (GStreamer). Linux sources (portal + PipeWire) arrive in M4.

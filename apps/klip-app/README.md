@@ -21,8 +21,9 @@ same tokens.
 
 ## Pieces
 
-- `src-tauri/src/main.rs`: starts the engine (`klip_probe::worker_main()` first: encoder
-  probes re-run this executable), forwards engine events to the window
+- `src-tauri/src/main.rs`: starts the engine (`klip_probe::worker_main()` and
+  `klip_engine::worker_main()` first: encoder probes, the recorder and thumbnail
+  decoding re-run this executable, ADR 0016), forwards engine events to the window
   (`klip://event`) and the tray, single instance (a second launch shows the window),
   close → tray (`app.close_to_tray`), `app.quit` from the control channel exits, and on
   exit the engine shuts down (a running recording is finalised).

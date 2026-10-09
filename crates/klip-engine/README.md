@@ -27,17 +27,28 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   hotkeys, opens the control channel (if on) and starts the `klip-watch` thread. Every
   poll (2 s): buffer mode `off` → nothing runs; a followed game that exited → its
   recorder stops (a running recording is finalised); otherwise the best detected game is
-  followed and its recorder started (`config::plan`: profile applied, window target,
-  monitor refresh for High, encoders from the probe cache, clips in
-  `<clip folder>/<Game>/`); mode `always` records the primary monitor (`Desktop`) when no
-  game runs and makes way when one starts. A recorder that fails to start is retried
-  after 30 s. Leftover recordings are finalised at start (recordings folder and its game
-  folders). Hotkeys come from the settings (ids `clip.save.0`, `session.toggle.0`, …);
-  a press runs its action on a job thread (one at a time per hotkey, under
-  `catch_unwind`); changed hotkeys are rebound at once, other changes apply when the next
-  game starts. Commands: `ping`, `engine.status`, `settings.get`, `settings.set` (strict
-  merge patch, saved atomically), `games.list`, `clip.save`, `session.*`, `bookmark.add`,
-  `recorder.status`, `overlay.menu`, `recorder.stop`/`app.quit` (the front end exits).
+  followed and its recorder started (encoders from the probe cache via
+  `config::encoders_for`, then `config::plan_with`: profile applied, window target,
+  monitor refresh for High, clips in `<clip folder>/<Game>/`); mode `always` records the
+  primary monitor (`Desktop`) when no game runs and makes way when one starts. A
+  recorder that fails to start is retried after 30 s. Leftover recordings are finalised
+  at start (recordings folder and its game folders). Hotkeys come from the settings
+  (ids `clip.save.0`, `session.toggle.0`, …); a press runs its action on a job thread
+  (one at a time per hotkey, under `catch_unwind`); changed hotkeys are rebound at once,
+  other changes apply when the next game starts. Commands: `ping`, `engine.status`,
+  `settings.get`, `settings.set` (strict merge patch, saved atomically), `games.list`,
+  `clip.save`, `session.*`, `bookmark.add`, `recorder.status`, `overlay.menu`,
+  `recorder.stop`/`app.quit` (the front end exits).
+- Recorder process (ADR 0016, `engine/host.rs` + `worker.rs`): with `Isolation::Child`
+  (the default when the executable calls `klip_engine::worker_main()`, as `klip-cli` and
+  `klip-app` do) each recorder runs in `<exe> --klip-recorder`, driven over its
+  stdin/stdout (start request with settings, game and encoder names; then
+  `klip_control` requests; `worker.status`, `worker.finish`), so the encoder and driver
+  memory goes away when the game exits. Stopping waits for the process to exit. A
+  recorder process that dies is reported (`recorder_stopped`, "ended unexpectedly"),
+  restarted at once the first time per game (then after 30 s), and its recording is
+  finalised by recovery 16 s later. `engine.status` has `recorder_pid`.
+  `Isolation::InProcess` (unit tests, tools) keeps the recorder in the engine.
 - Storage (`engine/storage.rs`): after every saved clip (that clip protected), at start
   and when the storage or folder settings change, a `klip-storage` job scans the clip
   folder and removes the oldest unstarred clips over the cap (`klip_library::over_cap`):
@@ -55,7 +66,8 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   back by themselves after 1 min), `games.candidates` (programs with a window to add
   as games; `games::candidates`, no window titles).
 - Overlay support (`engine/overlay.rs`): after each saved clip a `klip-thumbnail` job
-  takes a 320 px JPEG near its end (`klip_capture::thumbnail`), caches it as the clip's
+  takes a 320 px JPEG near its end (`klip_capture::thumbnail`, through a one-shot media
+  worker process unless `media_worker` is `None`), caches it as the clip's
   library poster (`<clips>/.klip/thumbs/<key>.jpg`, `klip_library::thumb_path`), emits
   `thumbnail` with a data URL and `thumbs_ready`, and queues the clip's strip;
   `overlay.preview` emits `overlay_preview`.
@@ -81,7 +93,9 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   `settings_changed`, `storage_cleaned`, `recovered`, `warning`), fanned out to bounded queues (256 per
   subscriber; a stalled subscriber loses events, memory doesn't grow).
 - `config`: settings → `RecorderConfig`, shared with `klip-cli record`: clip and
-  recordings folders, encoder choice + probe cache, target GPU and refresh rate, audio
+  recordings folders, encoder choice + probe cache (`encoders_for`; `encoders_named`
+  resolves names a recorder process gets against the installed, allowed encoders),
+  target GPU and refresh rate, audio
   inputs (Game = the game's process tree, or System without music players; Voice =
   running voice apps; Microphone), screen-cast portal with restore token (Linux).
 
@@ -98,7 +112,12 @@ unstarred goes at start, the starred older one stays; usage, low-disk warning,
 hotkeys pause and resume, candidates, devices, meter arguments; `mic_meter_reports_levels`
 is a hardware test on the default microphone). `tests/library.rs`: the library commands
 on a temp folder (listing, filters, strict arguments, thumbnail failures not retried,
-star/tags/rename keep together, delete, hostile paths). End to end with the test game:
-`apps/klip-cli/tests/m6_daemon.rs`, `m7_library.rs`.
+star/tags/rename keep together, delete, hostile paths). `engine/host.rs` unit tests:
+replies routed by id, stray and invalid output ignored, one start reply only, an
+over-long line closes the link and releases waiters, worker error codes mapped and
+capped. Recorder process with hostile input: `apps/klip-cli/tests/workers.rs`. End to
+end with the test game: `apps/klip-cli/tests/m6_daemon.rs` (recorder process, overlay
+thumbnail, a killed recorder restarted and its recording finalised, no worker left and
+memory back after the game), `m7_library.rs`.
 
 Layer: media engine (no UI).

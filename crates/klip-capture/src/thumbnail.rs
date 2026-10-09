@@ -1,9 +1,12 @@
 //! Still pictures of clips: a poster (the overlay's pop-up and the library card: the
 //! keyframe at or before a point near the end, as a small JPEG) and a hover-scrub strip
 //! for the library (key frames spread over the clip, stacked into one JPEG). GStreamer
-//! picks the decoder (hardware decoders rank first), so nothing here decodes video in
-//! software when the GPU can. Library clips can be any file: the app runs these in a
-//! child process (klip-engine's media worker, ADR 0015).
+//! picks the decoder. Library clips can be any file: the app runs these in a child
+//! process (klip-engine's media worker, ADR 0015), which calls
+//! [`prefer_software_decoders`] first: for a few key frames a software decoder is faster
+//! than starting a GPU decoder and leaves the GPU to the game (ADR 0016). Only
+//! GStreamer itself is initialised here, not the encoders' Media Foundation warm-up
+//! (`klip_probe::init`, ~0.7 s), which decoding doesn't need.
 
 use std::path::Path;
 use std::time::Duration;
@@ -45,10 +48,38 @@ fn wait_async(pipeline: &gst::Pipeline) -> Result<(), CaptureError> {
     }
 }
 
+/// Rank this process's hardware video decoders (element class
+/// `Codec/Decoder/Video/Hardware`) below software ones, so `decodebin` picks a software
+/// decoder where one is installed (`avdec_h264`, `avdec_h265`, `dav1ddec`, `openh264dec`)
+/// and a hardware one otherwise. For the media worker only: it decodes a few key frames
+/// per clip, where starting a GPU decoder costs more than decoding (measured on the dev
+/// machine: a 1080p poster 71 ms in software vs 336 ms with D3D11 in a fresh process).
+/// Returns how many decoders were ranked down.
+pub fn prefer_software_decoders() -> Result<usize, CaptureError> {
+    gst::init().map_err(gst_err)?;
+    let mut n: usize = 0;
+    for f in gst::Registry::get().features(gst::ElementFactory::static_type()) {
+        let Ok(factory) = f.clone().downcast::<gst::ElementFactory>() else {
+            continue;
+        };
+        let klass = factory
+            .metadata(gst::ELEMENT_METADATA_KLASS)
+            .unwrap_or_default();
+        let hardware_video_decoder = ["Decoder", "Video", "Hardware"]
+            .iter()
+            .all(|k| klass.contains(k));
+        if hardware_video_decoder && f.rank() > gst::Rank::MARGINAL {
+            f.set_rank(gst::Rank::MARGINAL);
+            n = n.saturating_add(1);
+        }
+    }
+    Ok(n)
+}
+
 /// A JPEG of the clip at `back` before its end (snapped to the keyframe at or before
 /// it), at most `max_width` pixels wide (height keeps the aspect ratio).
 pub fn jpeg_near_end(path: &Path, back: Duration, max_width: u32) -> Result<Vec<u8>, CaptureError> {
-    klip_probe::init().map_err(gst_err)?;
+    gst::init().map_err(gst_err)?;
     let pipeline = gst::Pipeline::new();
     let src = make("filesrc")?;
     props::require(&src, "location", &path.to_string_lossy()).map_err(CaptureError::Gst)?;
@@ -137,7 +168,7 @@ fn step_timeout() -> gst::ClockTime {
 /// `tiles` frames spread evenly over the clip (the key frame nearest the middle of each
 /// slice), `tile_width` pixels wide, as one JPEG with the frames stacked top to bottom.
 pub fn strip(path: &Path, tiles: u32, tile_width: u32) -> Result<Strip, CaptureError> {
-    klip_probe::init().map_err(gst_err)?;
+    gst::init().map_err(gst_err)?;
     let tiles = tiles.clamp(1, MAX_STRIP_TILES);
     let width = tile_width.clamp(16, 1920) & !1;
     let pipeline = gst::Pipeline::new();
@@ -323,4 +354,29 @@ fn encode_rgb_jpeg(
     let buffer = sample.buffer().ok_or_else(|| bad("empty JPEG"))?;
     let map = buffer.map_readable().map_err(gst_err)?;
     Ok(map.as_slice().to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hardware_video_decoders_rank_below_software() {
+        prefer_software_decoders().unwrap();
+        for f in gst::Registry::get().features(gst::ElementFactory::static_type()) {
+            let factory = f.clone().downcast::<gst::ElementFactory>().unwrap();
+            let klass = factory
+                .metadata(gst::ELEMENT_METADATA_KLASS)
+                .unwrap_or_default();
+            if klass.contains("Decoder") && klass.contains("Video") && klass.contains("Hardware") {
+                assert!(f.rank() <= gst::Rank::MARGINAL, "{}", f.name());
+            }
+        }
+        // Still there as a fallback where no software decoder is installed.
+        if let Some(d3d11) = gst::ElementFactory::find("d3d11h264dec") {
+            assert_eq!(d3d11.rank(), gst::Rank::MARGINAL);
+        }
+        // Idempotent.
+        assert_eq!(prefer_software_decoders().unwrap(), 0);
+    }
 }

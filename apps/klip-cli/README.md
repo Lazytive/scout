@@ -46,8 +46,11 @@ file (or `--settings`), buffers while a detected game runs (per-game clip folder
 per-game profiles), binds the hotkeys from the settings (Windows: RegisterHotKey; Linux:
 the portal), serves the control channel, and prints every engine event as a JSON line
 (`ready`, `game_started`, `recorder_started`, `clip_saved`, …). `klip-cli clip`,
-`status`, `session`, `bookmark` and `stop` talk to it like to `record`. e2e:
-`tests/m6_daemon.rs`.
+`status`, `session`, `bookmark` and `stop` talk to it like to `record`. Its recorder
+runs in a copy of `klip-cli` (`--klip-recorder`, ADR 0016; `main` calls
+`klip_engine::worker_main()`) that ends with the game; thumbnails come from the media
+worker (`--klip-media-worker`, ADR 0015). e2e: `tests/m6_daemon.rs`; recorder process
+input checks: `tests/workers.rs`.
 
 `record` prints one JSON line `{"event":"ready",...}` to stdout, logs to stderr, and
 serves the control channel (discovery file in `%LOCALAPPDATA%\Klip\control.json`, or

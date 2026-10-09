@@ -55,7 +55,7 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 /// Read one `\n`-terminated line of at most `max` bytes. `Ok(None)` at clean EOF.
-pub(crate) fn read_line_capped<R: BufRead>(r: &mut R, max: usize) -> io::Result<Option<Vec<u8>>> {
+pub fn read_line_capped<R: BufRead>(r: &mut R, max: usize) -> io::Result<Option<Vec<u8>>> {
     let mut buf = Vec::new();
     loop {
         let available = r.fill_buf()?;
