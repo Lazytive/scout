@@ -7,12 +7,15 @@
 //! - Recordings: fragmented while recording ([`FragmentedWriter`]), so a killed process
 //!   leaves a playable file, and turned into a regular MP4 on stop ([`finalize`]).
 //!   See `docs/adr/0013-full-session-recording.md`.
+//! - Reading: [`probe`] summarises any MP4 for the library (ADR 0015);
+//!   [`scan_fragmented`] reads recordings back for finalising.
 
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
 mod boxes;
 mod finalize;
 mod fragmented;
+mod info;
 mod moov;
 mod read;
 
@@ -24,6 +27,7 @@ use klip_media::{Nanos, Packet, TrackInfo};
 
 pub use crate::finalize::{FinalizeSummary, finalize};
 pub use crate::fragmented::{FragmentInfo, FragmentPart, FragmentedWriter};
+pub use crate::info::{MAX_INFO_MOOV_BYTES, Mp4Info, VideoSummary, probe};
 use crate::moov::{Chapter, MoovKind, TrackPlan, build_ftyp, build_moov, group_audio_tracks};
 pub use crate::read::{FragmentedScan, ScannedSample, ScannedTrack, scan_fragmented};
 

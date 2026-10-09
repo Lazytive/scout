@@ -450,15 +450,30 @@ pub struct Profile {
     pub auto_clip: Option<bool>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GameSettings {
     pub buffer: BufferMode,
+    /// Games found in store library folders (Steam, Epic, …) count; off: only
+    /// `user_games` (tests set this so a game the human plays is never followed).
+    pub detect_stores: bool,
     pub user_games: Vec<UserGame>,
     /// Executables never treated as games.
     pub never: Vec<String>,
     /// Keyed by [`game_key`].
     pub profiles: BTreeMap<String, Profile>,
+}
+
+impl Default for GameSettings {
+    fn default() -> Self {
+        GameSettings {
+            buffer: BufferMode::default(),
+            detect_stores: true,
+            user_games: Vec::new(),
+            never: Vec::new(),
+            profiles: BTreeMap::new(),
+        }
+    }
 }
 
 /// Profile key for an executable: its lower-case file name.

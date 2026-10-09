@@ -3,17 +3,20 @@
 
   import FirstRun from './FirstRun.svelte';
   import Home from './Home.svelte';
+  import Library from './Library.svelte';
   import { formatDuration } from './lib/format';
   import ThemeMenu from './lib/ThemeMenu.svelte';
   import Settings from './Settings.svelte';
   import { app, connect } from './lib/store.svelte';
 
   type Page = 'home' | 'library' | 'settings';
-  let page = $state<Page>('home');
+  // KLIP_START_PAGE (tests): the app injects the page to open on.
+  const start = (globalThis as { __KLIP_START_PAGE__?: string }).__KLIP_START_PAGE__;
+  let page = $state<Page>(start === 'library' || start === 'settings' ? start : 'home');
 
   const workspaces: { id: Page; label: string; soon?: boolean }[] = [
     { id: 'home', label: 'Home' },
-    { id: 'library', label: 'Library', soon: true },
+    { id: 'library', label: 'Library' },
     { id: 'settings', label: 'Settings' },
   ];
 
@@ -71,6 +74,8 @@
   <main>
     {#if page === 'home'}
       <Home />
+    {:else if page === 'library'}
+      <Library />
     {:else if page === 'settings'}
       <Settings />
     {/if}

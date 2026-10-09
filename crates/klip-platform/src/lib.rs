@@ -19,6 +19,7 @@ mod linux_impl;
 #[cfg(target_os = "linux")]
 mod pipewire_audio;
 mod screencast;
+mod shell;
 mod shortcuts;
 #[cfg(any(windows, target_os = "linux"))]
 mod timeline;
@@ -30,6 +31,7 @@ mod wgc;
 mod windows_impl;
 
 pub use screencast::{ScreenCast, ScreenCastRequest, ScreenCastSource, ScreenCastStream};
+pub use shell::{open_file, reveal_file};
 pub use shortcuts::{APP_ID, BoundShortcut, GlobalShortcuts, ShortcutSpec, register_app_id};
 #[cfg(windows)]
 pub use wgc::{

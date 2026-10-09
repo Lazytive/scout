@@ -7,6 +7,7 @@
   import Row from '../lib/forms/Row.svelte';
   import Segmented from '../lib/forms/Segmented.svelte';
   import Select from '../lib/forms/Select.svelte';
+  import Toggle from '../lib/forms/Toggle.svelte';
   import { bufferChoices, type Settings } from '../lib/settings';
   import { fieldError, save } from '../lib/store.svelte';
 
@@ -76,8 +77,22 @@
 </Row>
 
 <Row
+  label="Store games"
+  hint="Find games installed by Steam, Epic, GOG, Xbox, EA, Ubisoft, Riot, itch and Heroic by themselves."
+  error={fieldError('games.detect_stores')}
+>
+  <Toggle
+    label="Find games from store libraries"
+    checked={g.detect_stores ?? true}
+    onchange={(v) => save(['games', 'detect_stores'], v)}
+  />
+</Row>
+
+<Row
   label="My games"
-  hint="Games from Steam, Epic, GOG, Xbox, EA, Ubisoft, Riot, itch and Heroic are found by themselves. Add anything else here."
+  hint={(g.detect_stores ?? true)
+    ? 'Store games are found by themselves. Add anything else here.'
+    : 'Only these programs are recorded.'}
   error={fieldError('games.user_games')}
 >
   {#if g.user_games.length > 0}

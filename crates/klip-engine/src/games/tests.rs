@@ -218,6 +218,20 @@ fn detects_store_games_with_big_windows() {
     assert_eq!(games[0].window, Some(3));
     assert_eq!(games[0].source, Source::Library(Store::Steam));
     assert_eq!(games[0].key, "b.exe");
+
+    // Store detection off: only the user's own list counts.
+    let mut only_mine = GameSettings {
+        detect_stores: false,
+        ..GameSettings::default()
+    };
+    assert!(detect(&s, &only_mine).is_empty());
+    only_mine.user_games.push(UserGame {
+        exe: "a.exe".into(),
+        name: None,
+    });
+    let games = detect(&s, &only_mine);
+    assert_eq!(names(&games), vec!["Game A"], "named from its folder");
+    assert_eq!(games[0].source, Source::User);
 }
 
 #[test]

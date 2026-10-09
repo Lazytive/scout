@@ -102,6 +102,18 @@ pub enum Event {
     StorageCleaned {
         report: Value,
     },
+    /// Clips were renamed, tagged, starred or deleted through Klip (`reason`).
+    LibraryChanged {
+        reason: String,
+    },
+    /// A clip's thumbnails were made (versions: modification times in ms; `None`: still
+    /// missing). `failed`: they could not be made and won't be retried.
+    ThumbsReady {
+        key: String,
+        poster: Option<u64>,
+        strip: Option<u64>,
+        failed: bool,
+    },
     /// Recordings a killed recorder left, finalised at start.
     Recovered {
         path: String,

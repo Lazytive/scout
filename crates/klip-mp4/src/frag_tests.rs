@@ -93,7 +93,7 @@ fn write_fragments(
     (out, infos_out)
 }
 
-fn standard_file() -> (Vec<u8>, Vec<Packet>, Vec<Packet>, Vec<FragmentInfo>) {
+pub(crate) fn standard_file() -> (Vec<u8>, Vec<Packet>, Vec<Packet>, Vec<FragmentInfo>) {
     let (vi, ai) = (video_info(), audio_info());
     let v = video_packets(180, ORIGIN);
     // 3 s of audio starting 30 ms later.
@@ -277,7 +277,7 @@ fn truncation_at_every_byte_keeps_the_complete_fragments() {
     }
 }
 
-fn finalize_bytes(d: &[u8], markers: &[Marker]) -> (Vec<u8>, FinalizeSummary) {
+pub(crate) fn finalize_bytes(d: &[u8], markers: &[Marker]) -> (Vec<u8>, FinalizeSummary) {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("rec.mp4");
     std::fs::write(&p, d).unwrap();
@@ -285,7 +285,7 @@ fn finalize_bytes(d: &[u8], markers: &[Marker]) -> (Vec<u8>, FinalizeSummary) {
     (std::fs::read(&p).unwrap(), s)
 }
 
-fn markers() -> Vec<Marker> {
+pub(crate) fn markers() -> Vec<Marker> {
     vec![
         Marker {
             at: 1_500_000_000,
@@ -514,17 +514,17 @@ fn writer_rejects_bad_input_without_writing() {
 }
 
 /// xorshift64*: deterministic pseudo-random numbers for mutation tests.
-struct Rng(u64);
+pub(crate) struct Rng(pub(crate) u64);
 
 impl Rng {
-    fn next(&mut self) -> u64 {
+    pub(crate) fn next(&mut self) -> u64 {
         self.0 ^= self.0 >> 12;
         self.0 ^= self.0 << 25;
         self.0 ^= self.0 >> 27;
         self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
     }
 
-    fn below(&mut self, n: usize) -> usize {
+    pub(crate) fn below(&mut self, n: usize) -> usize {
         (self.next() % n as u64) as usize
     }
 }

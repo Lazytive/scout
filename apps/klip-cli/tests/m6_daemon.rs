@@ -113,6 +113,8 @@ fn write_settings(path: &Path, clips: &Path) {
         "hotkeys": [{"action": "clip.save", "keys": "F24", "secs": 10}],
         "games": {
             "buffer": "games",
+            // Only the test game: never a game the human is playing.
+            "detect_stores": false,
             "user_games": [{"exe": "klip-testgame.exe", "name": "Klip Test Game"}],
         },
     });

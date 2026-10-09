@@ -31,7 +31,7 @@ const MAX_TRACKS: usize = 64;
 /// Most samples accepted in one `trun` (ours hold a few hundred).
 const MAX_RUN_SAMPLES: usize = 1_000_000;
 /// A child box: type and payload.
-type Child<'a> = ([u8; 4], &'a [u8]);
+pub(crate) type Child<'a> = ([u8; 4], &'a [u8]);
 
 /// `sample_is_non_sync_sample` in sample flags.
 const NON_SYNC: u32 = 0x0001_0000;
@@ -178,16 +178,16 @@ pub fn scan_fragmented<R: Read + Seek>(r: &mut R) -> Result<FragmentedScan, Mp4E
 }
 
 #[derive(Clone, Copy, Debug)]
-struct BoxHeader {
-    kind: [u8; 4],
-    offset: u64,
-    header_len: u64,
+pub(crate) struct BoxHeader {
+    pub(crate) kind: [u8; 4],
+    pub(crate) offset: u64,
+    pub(crate) header_len: u64,
     /// Whole box, header included.
-    size: u64,
+    pub(crate) size: u64,
 }
 
 impl BoxHeader {
-    fn end(&self) -> u64 {
+    pub(crate) fn end(&self) -> u64 {
         self.offset.saturating_add(self.size)
     }
 
@@ -197,7 +197,7 @@ impl BoxHeader {
 }
 
 /// The box header at `offset`; `None` if the box doesn't fit in the file.
-fn read_header<R: Read + Seek>(
+pub(crate) fn read_header<R: Read + Seek>(
     r: &mut R,
     offset: u64,
     file_len: u64,
@@ -236,7 +236,7 @@ fn read_header<R: Read + Seek>(
     }))
 }
 
-fn read_payload<R: Read + Seek>(r: &mut R, h: &BoxHeader) -> Result<Vec<u8>, Mp4Error> {
+pub(crate) fn read_payload<R: Read + Seek>(r: &mut R, h: &BoxHeader) -> Result<Vec<u8>, Mp4Error> {
     let len = usize::try_from(h.size.saturating_sub(h.header_len))
         .map_err(|_| Mp4Error::TooLarge("box"))?;
     r.seek(SeekFrom::Start(h.payload_start()))?;
@@ -809,7 +809,7 @@ fn opus_head(b: &[u8]) -> Result<Bytes, Mp4Error> {
 }
 
 /// Child boxes of a container payload. Errors if a child overruns the container.
-fn children(d: &[u8]) -> Result<Vec<Child<'_>>, Mp4Error> {
+pub(crate) fn children(d: &[u8]) -> Result<Vec<Child<'_>>, Mp4Error> {
     let mut out = Vec::new();
     let mut c = Cur::new(d);
     while c.remaining() > 0 {
@@ -835,13 +835,13 @@ fn children(d: &[u8]) -> Result<Vec<Child<'_>>, Mp4Error> {
 }
 
 /// Bounds-checked big-endian reader over a byte slice.
-struct Cur<'a> {
+pub(crate) struct Cur<'a> {
     d: &'a [u8],
     pos: usize,
 }
 
 impl<'a> Cur<'a> {
-    fn new(d: &'a [u8]) -> Cur<'a> {
+    pub(crate) fn new(d: &'a [u8]) -> Cur<'a> {
         Cur { d, pos: 0 }
     }
 
@@ -849,7 +849,7 @@ impl<'a> Cur<'a> {
         self.d.len().saturating_sub(self.pos)
     }
 
-    fn take(&mut self, n: usize) -> Result<&'a [u8], Mp4Error> {
+    pub(crate) fn take(&mut self, n: usize) -> Result<&'a [u8], Mp4Error> {
         let end = self
             .pos
             .checked_add(n)
@@ -862,13 +862,13 @@ impl<'a> Cur<'a> {
         Ok(s)
     }
 
-    fn rest(&mut self) -> &'a [u8] {
+    pub(crate) fn rest(&mut self) -> &'a [u8] {
         let s = self.d.get(self.pos..).unwrap_or_default();
         self.pos = self.d.len();
         s
     }
 
-    fn skip(&mut self, n: usize) -> Result<(), Mp4Error> {
+    pub(crate) fn skip(&mut self, n: usize) -> Result<(), Mp4Error> {
         self.take(n).map(|_| ())
     }
 
@@ -879,15 +879,15 @@ impl<'a> Cur<'a> {
         Ok(a)
     }
 
-    fn u8(&mut self) -> Result<u8, Mp4Error> {
+    pub(crate) fn u8(&mut self) -> Result<u8, Mp4Error> {
         Ok(self.array::<1>()?[0])
     }
 
-    fn u16(&mut self) -> Result<u16, Mp4Error> {
+    pub(crate) fn u16(&mut self) -> Result<u16, Mp4Error> {
         Ok(u16::from_be_bytes(self.array()?))
     }
 
-    fn u32(&mut self) -> Result<u32, Mp4Error> {
+    pub(crate) fn u32(&mut self) -> Result<u32, Mp4Error> {
         Ok(u32::from_be_bytes(self.array()?))
     }
 
@@ -895,16 +895,16 @@ impl<'a> Cur<'a> {
         Ok(i32::from_be_bytes(self.array()?))
     }
 
-    fn u64(&mut self) -> Result<u64, Mp4Error> {
+    pub(crate) fn u64(&mut self) -> Result<u64, Mp4Error> {
         Ok(u64::from_be_bytes(self.array()?))
     }
 
-    fn fourcc(&mut self) -> Result<[u8; 4], Mp4Error> {
+    pub(crate) fn fourcc(&mut self) -> Result<[u8; 4], Mp4Error> {
         self.array()
     }
 
     /// Version and flags of a full box.
-    fn full_box(&mut self) -> Result<(u8, u32), Mp4Error> {
+    pub(crate) fn full_box(&mut self) -> Result<(u8, u32), Mp4Error> {
         let v = self.u32()?;
         let [version, a, b, c] = v.to_be_bytes();
         Ok((version, u32::from_be_bytes([0, a, b, c])))

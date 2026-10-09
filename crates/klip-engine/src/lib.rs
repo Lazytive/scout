@@ -8,6 +8,7 @@ pub mod config;
 mod engine;
 pub mod events;
 pub mod games;
+pub mod media_worker;
 
 pub use engine::{Engine, EngineOptions, POLL, RETRY, default_settings_path};
 pub use events::Event;

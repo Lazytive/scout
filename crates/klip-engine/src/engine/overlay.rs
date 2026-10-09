@@ -1,33 +1,22 @@
 //! What the overlay needs from the engine: a thumbnail of each saved clip (made after the
 //! save, so the pop-up appears at once and the picture follows) and a preview command.
+//! The thumbnail is also the clip's library poster; its hover-scrub strip is queued for
+//! the library's thumbnail thread (made once the game is over).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use base64::Engine as _;
 use klip_control::CommandError;
-use klip_library::{Library, META_DIR};
+use klip_library::{Library, ThumbKind};
 use serde_json::{Value, json};
 
 use super::{Inner, lock};
 use crate::config;
 use crate::events::Event;
 
-/// Thumbnail width in pixels.
-pub const THUMB_WIDTH: u32 = 320;
 /// How far before the clip's end the thumbnail is taken (the moment of the hotkey).
-const THUMB_BACK: Duration = Duration::from_millis(500);
-
-/// `<clips>/.klip/thumbs/<key with / as ~>.jpg`.
-pub fn thumb_path(lib: &Library, clip: &Path) -> Option<PathBuf> {
-    let key = lib.key(clip).ok()?;
-    Some(
-        lib.root()
-            .join(META_DIR)
-            .join("thumbs")
-            .join(format!("{}.jpg", key.replace('/', "~"))),
-    )
-}
+const THUMB_BACK: Duration = crate::media_worker::POSTER_BACK;
 
 fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
@@ -59,7 +48,11 @@ impl Inner {
     }
 
     fn make_thumbnail(&self, clip: &Path) {
-        let jpeg = match klip_capture::thumbnail::jpeg_near_end(clip, THUMB_BACK, THUMB_WIDTH) {
+        let jpeg = match klip_capture::thumbnail::jpeg_near_end(
+            clip,
+            THUMB_BACK,
+            klip_library::POSTER_WIDTH,
+        ) {
             Ok(j) => j,
             Err(e) => {
                 tracing::warn!(error = %e, "thumbnail");
@@ -67,15 +60,30 @@ impl Inner {
             }
         };
         let settings = self.settings();
-        let cached = config::clip_base(&settings)
-            .ok()
-            .map(Library::new)
-            .and_then(|lib| thumb_path(&lib, clip));
+        let lib = config::clip_base(&settings).ok().map(Library::new);
+        let key = lib.as_ref().and_then(|l| l.key(clip).ok());
+        let cached: Option<PathBuf> = lib
+            .as_ref()
+            .zip(key.as_deref())
+            .and_then(|(l, k)| l.thumb_path(k, ThumbKind::Poster));
+        let mut written = false;
         if let Some(p) = &cached {
             let _guard = lock(&self.library_lock);
-            if let Err(e) = write_atomic(p, &jpeg) {
-                tracing::warn!(error = %e, "could not cache a thumbnail");
+            match write_atomic(p, &jpeg) {
+                Ok(()) => written = true,
+                Err(e) => tracing::warn!(error = %e, "could not cache a thumbnail"),
             }
+        }
+        if let (Some(lib), Some(key)) = (&lib, key) {
+            if written {
+                self.emit(&Event::ThumbsReady {
+                    key: key.clone(),
+                    poster: Some(super::library::now_ms().max(1)),
+                    strip: None,
+                    failed: false,
+                });
+            }
+            self.queue_new_clip(lib.root(), key);
         }
         let data_url = format!(
             "data:image/jpeg;base64,{}",

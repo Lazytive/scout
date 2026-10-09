@@ -60,6 +60,7 @@ export interface Settings {
   appearance: { theme: string };
   games: {
     buffer: 'games' | 'always' | 'off';
+    detect_stores: boolean;
     user_games: { exe: string; name: string | null }[];
     never: string[];
     profiles: Record<string, Profile>;

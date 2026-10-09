@@ -4,6 +4,7 @@
 import { CommandError, call, onEvent, setWindowTheme } from './api';
 import { describeEvent, type Tone } from './format';
 import { patchFor, splitError, type Settings } from './settings';
+import { libraryEvent } from './library.svelte';
 import { applyTheme, resolve, type ThemeSetting } from './themes';
 import type { KlipEvent, Status, StorageStatus } from './types';
 
@@ -159,6 +160,8 @@ export async function connect(): Promise<() => void> {
       app.mic = { peak: e.peak_db, rms: e.rms_db };
       return;
     }
+    libraryEvent(e);
+    if (e.event === 'thumbs_ready' || e.event === 'library_changed') return;
     log(e);
     if (e.event === 'settings_changed') useSettings(e.settings);
     void refresh();

@@ -5,6 +5,24 @@ reason)`.
 
 ## Unreleased
 
+- M7.1–M7.6 — Library (ADR 0015). `klip-mp4::probe`: clip info from the `moov` of any
+  MP4 (faststart, moov at the end, fragmented), hostile-input safe. `klip-library`: tags,
+  rename (safe names, never overwrites, stars/tags/thumbnails follow), the rebuildable
+  info index `.klip/index.json`, `query` (search, game/starred/tag/date filters, sorts,
+  facets), thumbnail cache paths (collision-free names) and pruning. `klip-capture`:
+  hover-scrub strips (16 key frames in one JPEG). `klip-engine`: media worker child
+  process for library thumbnails (`--klip-media-worker`, timeout kill, idle stop, below-
+  normal priority), `library.list|thumbs|thumb`, `clip.rename|tags|delete|open|reveal`,
+  events `library_changed` / `thumbs_ready`, thumbnail queue (visible cards first, the
+  rest only while no game is recorded); `games.detect_stores` (tests no longer follow a
+  game the human is playing: an M7 e2e run had followed one). `klip-platform`:
+  `open_file`, `reveal_file`. App: Library workspace (filters, day-grouped grid, hover-
+  scrub cards, search/sort/size, multi-select + keyboard, details with rename/tags/info,
+  context menu, delete confirm with Recycle Bin / permanent), `klipthumb` URI scheme,
+  `KLIP_START_PAGE` test override, Settings → Games "Find games from store libraries".
+  Tests: proptests for names/tags/MP4 probing, engine `tests/library.rs`, vitest
+  `library.test.ts`, e2e `m7_library.rs`. (Claude Opus 5.5: M7)
+
 - M6.11 — M6 wrap-up: ADR 0014 accepted with everything M6 decided (detection, storage,
   shell, look and themes, settings UI, overlay, benchmark method), ROADMAP M6 → done with
   an honest list (memory after a game, overlay vs VRR unmeasured, Linux paths unrun) and

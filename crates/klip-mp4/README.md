@@ -47,11 +47,23 @@ into a regular MP4 in place. Decision records: `docs/adr/0003-own-mp4-writer.md`
   `moov` become `free`, fsync. Repeating it after an interruption gives the same file; a
   finished file returns `already_final`.
 
+## Reading clips (`probe`)
+- `probe(reader)` → `Mp4Info`: movie duration, creation time, the first video track
+  (codec name, width, height, average fps from samples / track duration), audio track
+  count, chapter times (`udta/chpl`: Klip's bookmarks), whether it is fragmented. Reads
+  box headers and the `moov` only (≤ 64 MiB), wherever it is (front, end, after
+  fragments); works on files from other programs (unknown codecs are named by their four
+  letters). A track or `udta` that doesn't parse is skipped; no `moov` is an error. Used
+  by the library's info index (ADR 0015).
+
 ## Tests
 Unit tests parse the produced boxes and check offsets point at the right payloads, edit
 lists, composition offsets, `co64`, Opus `dOps`, chapters, hostile input; for recordings:
 data offsets and `tfdt`s, init round trip, truncation at every byte of the last
-fragments, every intermediate state of an interrupted finalise, 3000 mutated files.
+fragments, every intermediate state of an interrupted finalise, 3000 mutated files;
+`probe` (`info_tests.rs`): faststart and moov-at-end clips, live and finalised
+recordings, truncation at every byte, 4000 mutated files, random bytes and random box
+trees (proptest), a 64 MiB+ `moov` refused without reading it.
 Real-media validation (ffprobe + decode) happens in the recorder's hardware tests.
 
 Layer: pure.

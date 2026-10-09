@@ -55,9 +55,26 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   back by themselves after 1 min), `games.candidates` (programs with a window to add
   as games; `games::candidates`, no window titles).
 - Overlay support (`engine/overlay.rs`): after each saved clip a `klip-thumbnail` job
-  takes a 320 px JPEG near its end (`klip_capture::thumbnail`), caches it as
-  `<clips>/.klip/thumbs/<key>.jpg` and emits `thumbnail` with a data URL;
+  takes a 320 px JPEG near its end (`klip_capture::thumbnail`), caches it as the clip's
+  library poster (`<clips>/.klip/thumbs/<key>.jpg`, `klip_library::thumb_path`), emits
+  `thumbnail` with a data URL and `thumbs_ready`, and queues the clip's strip;
   `overlay.preview` emits `overlay_preview`.
+- Library (`engine/library.rs`, ADR 0015): `library.list` (a `klip_library::Query`;
+  scans the folder, probes new/changed clips into the index, prunes orphaned thumbnails
+  once per folder, returns the listing with counts, strip layout and how many thumbnails
+  are missing), `library.thumbs` (make these keys' thumbnails next), `library.thumb`
+  (the cached file, for the app's URI scheme), `clip.rename`, `clip.tags`, `clip.delete`
+  (Recycle Bin / Trash; `permanent: true` deletes; never a recording in progress),
+  `clip.open`, `clip.reveal`; `library_changed` after rename / tags / star / delete. A
+  `klip-thumbs` thread makes missing posters and strips through the media worker:
+  requested keys first, then the rest newest first, but only while no game is followed
+  (the game stopping wakes it); failures are remembered in the index and emitted as
+  `thumbs_ready` with `failed`.
+- Media worker (`media_worker.rs`): library thumbnails in a child process — the host
+  binary re-run with `--klip-media-worker` (`worker_main()` first in `main`, after
+  `klip_probe::worker_main()`), one JSON job/reply per line, atomic outputs, 60 s per job
+  then kill + respawn, stopped after 20 s idle, below-normal priority (Windows).
+  `EngineOptions::media_worker = None` runs jobs in-process (tests).
 - `events`: `Event` (`ready`, `game_started/stopped`, `recorder_started/stopped/failed`,
   `clip_saved` with the game's window, `recording_started/stopped`, `bookmark`,
   `action_failed` for hotkeys, `quick_menu`, `mic_level`, `thumbnail`, `overlay_preview`, `hotkeys` with each binding's error,
@@ -79,6 +96,9 @@ repaired and rewritten, the storage cap (1.3 GiB of test clips against 1 GiB: th
 unstarred goes at start, the starred older one stays; usage, low-disk warning,
 `clip.star` checks), the setup commands (estimate scales with the buffer and preset,
 hotkeys pause and resume, candidates, devices, meter arguments; `mic_meter_reports_levels`
-is a hardware test on the default microphone). End to end with the test game: `apps/klip-cli/tests/m6_daemon.rs`.
+is a hardware test on the default microphone). `tests/library.rs`: the library commands
+on a temp folder (listing, filters, strict arguments, thumbnail failures not retried,
+star/tags/rename keep together, delete, hostile paths). End to end with the test game:
+`apps/klip-cli/tests/m6_daemon.rs`, `m7_library.rs`.
 
 Layer: media engine (no UI).

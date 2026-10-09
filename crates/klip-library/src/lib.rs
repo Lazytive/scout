@@ -1,8 +1,10 @@
-//! The clip folder: Klip's metadata about it (stars now; tags and titles with the
-//! library, M7), a scan of the clips in it, and the storage-cap policy (ADR 0014).
+//! The clip folder (ADR 0014, ADR 0015): Klip's metadata about it (stars, tags), a scan
+//! of the clips in it, renaming, the info cache and thumbnail cache, searching and
+//! filtering for the library grid, and the storage-cap policy.
 //!
 //! Clips stay plain MP4 files in a normal folder. The metadata lives in
-//! `<folder>/.klip/library.json`; losing it loses stars, never clips. Pure: no OS calls
+//! `<folder>/.klip/library.json`; losing it loses stars and tags, never clips. The info
+//! index and thumbnails next to it are caches, rebuilt from the clips. Pure: no OS calls
 //! besides reading and writing files (moving to the Recycle Bin is `klip-platform`'s).
 
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
@@ -15,6 +17,21 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
+
+mod index;
+mod names;
+mod query;
+mod thumbs;
+
+pub use index::{ClipInfo, INDEX_FILE, Index, IndexEntry, probe_file};
+pub use names::{
+    MAX_NAME_CHARS, MAX_TAG_CHARS, MAX_TAGS, check_clip_name, clean_tag, normalize_tags,
+};
+pub use query::{Facet, ListedClip, Listing, MAX_LIST, Query, Sort, game_of, query};
+pub use thumbs::{
+    MAX_THUMB_BYTES, POSTER_WIDTH, STRIP_TILE_WIDTH, STRIP_TILES, THUMBS_DIR, ThumbKind,
+    ThumbVersions,
+};
 
 /// Metadata folder inside the clip folder.
 pub const META_DIR: &str = ".klip";
@@ -37,6 +54,9 @@ pub const GIB: u64 = 1 << 30;
 pub struct ClipMeta {
     /// Starred clips are never removed to stay under the cap.
     pub starred: bool,
+    /// The user's tags ([`normalize_tags`]).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 /// `library.json`. Keys are paths relative to the clip folder with `/` separators.
@@ -63,6 +83,14 @@ pub enum LibraryError {
     Io(#[from] std::io::Error),
     #[error("{0} is not inside the clip folder")]
     Outside(String),
+    #[error("{0}")]
+    BadName(String),
+    #[error("there is already a clip called {0}")]
+    Exists(String),
+    #[error("the clip is still being recorded")]
+    Recording,
+    #[error("no such clip")]
+    NoClip,
 }
 
 fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
@@ -72,7 +100,7 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
 }
 
 /// Write `data` via a temp file, fsync and rename.
-fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
@@ -93,7 +121,7 @@ fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
 /// The clip folder and its metadata.
 #[derive(Clone, Debug)]
 pub struct Library {
-    root: PathBuf,
+    pub(crate) root: PathBuf,
 }
 
 impl Library {
@@ -132,6 +160,11 @@ impl Library {
                 m.clips.retain(|k, _| clean_rel(k));
                 while m.clips.len() > MAX_CLIPS {
                     m.clips.pop_last();
+                }
+                for c in m.clips.values_mut() {
+                    if !c.tags.is_empty() {
+                        c.tags = names::lenient_tags(c.tags.iter().map(String::as_str), MAX_TAGS);
+                    }
                 }
                 m
             }
@@ -181,6 +214,53 @@ impl Library {
         self.save_meta(&meta)
     }
 
+    /// Set a clip's tags (as typed; stored normalised, [`normalize_tags`]). Returns them.
+    pub fn set_tags(&self, path: &Path, tags: &[String]) -> Result<Vec<String>, LibraryError> {
+        let key = self.key(path)?;
+        let tags = normalize_tags(tags).map_err(LibraryError::BadName)?;
+        let mut meta = self.load_meta();
+        let entry = meta.clips.entry(key.clone()).or_default();
+        entry.tags.clone_from(&tags);
+        if *entry == ClipMeta::default() {
+            meta.clips.remove(&key);
+        }
+        self.save_meta(&meta)?;
+        Ok(tags)
+    }
+
+    /// Rename a clip file to `name` (+ `.mp4`, [`check_clip_name`]) in its folder; its
+    /// stars, tags and thumbnails follow. Never replaces another file. Returns the new
+    /// path.
+    pub fn rename(&self, path: &Path, name: &str) -> Result<PathBuf, LibraryError> {
+        let old_key = self.key(path)?;
+        if !path.is_file() {
+            return Err(LibraryError::NoClip);
+        }
+        if with_suffix(path, RECORDING_SIDECAR).exists() {
+            return Err(LibraryError::Recording);
+        }
+        let name = check_clip_name(name).map_err(LibraryError::BadName)?;
+        let dir = path.parent().ok_or(LibraryError::NoClip)?;
+        let new_path = dir.join(format!("{name}.mp4"));
+        if new_path == path {
+            return Ok(new_path);
+        }
+        if new_path.exists() && !same_file(path, &new_path) {
+            return Err(LibraryError::Exists(format!("{name}.mp4")));
+        }
+        let new_key = self.key(&new_path)?;
+        fs::rename(path, &new_path)?;
+        let mut meta = self.load_meta();
+        if let Some(m) = meta.clips.remove(&old_key) {
+            meta.clips.insert(new_key.clone(), m);
+            if let Err(e) = self.save_meta(&meta) {
+                tracing::warn!(error = %e, "renamed a clip but could not move its stars/tags");
+            }
+        }
+        self.move_thumbs(&old_key, &new_key);
+        Ok(new_path)
+    }
+
     /// Every finished clip (MP4) in the folder and its game folders: recordings still
     /// being written (with a sidecar), temp files and the metadata folder are skipped.
     pub fn scan(&self) -> Vec<ClipFile> {
@@ -225,8 +305,17 @@ impl Library {
     }
 }
 
+/// Whether `a` and `b` are the same file (a case-only rename on a case-insensitive
+/// file system).
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
+}
+
 /// Whether `key` is a relative path with no `..`, no empty parts and no backslashes.
-fn clean_rel(key: &str) -> bool {
+pub(crate) fn clean_rel(key: &str) -> bool {
     !key.is_empty()
         && key.len() <= 4096
         && !key.contains('\\')
@@ -315,3 +404,6 @@ pub fn forget(meta: &mut Meta, keys: &[String]) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod library_tests;

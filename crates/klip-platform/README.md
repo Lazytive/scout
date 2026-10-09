@@ -18,6 +18,11 @@ Windows (Win32/DXGI via the `windows` crate):
 - `move_to_trash(paths)` (both OSes): the `trash` crate (MIT) on a `klip-trash` thread
   of its own (its Windows code sets up COM for the calling thread). Diagnostic
   `diag_trash_moves_a_file` (manual: it leaves a file in the Recycle Bin).
+- `open_file(path)` / `reveal_file(path)` (M7, `shell.rs`): the library's Open and Show
+  in folder. Windows: `ShellExecuteW("open")` and `SHParseDisplayName` +
+  `SHOpenFolderAndSelectItems` on a short-lived single-threaded-apartment thread. Linux:
+  `xdg-open`; the freedesktop `FileManager1.ShowItems` through `gdbus`, else the folder
+  with `xdg-open` (not yet run).
 - `process_usage(pid)`: CPU time and memory (Windows: GetProcessTimes +
   GetProcessMemoryInfo; Linux: `/proc/<pid>/stat` + `statm`), for Klip's own processes
   (idle cost, benchmarks). Monitors report `refresh_hz` (EnumDisplaySettingsW).

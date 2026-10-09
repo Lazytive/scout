@@ -69,6 +69,24 @@ pub mod commands {
     pub const GAMES_CANDIDATES: &str = "games.candidates";
     /// Show the overlay as if a clip had been saved (settings page, tests).
     pub const OVERLAY_PREVIEW: &str = "overlay.preview";
+    /// Clips in the library. Args: `klip_library::Query` (all optional): `search`,
+    /// `game`, `starred`, `tag`, `since_ms`, `sort`, `limit`.
+    pub const LIBRARY_LIST: &str = "library.list";
+    /// Make these clips' thumbnails next. Args: `{"keys": [key, …]}`.
+    pub const LIBRARY_THUMBS: &str = "library.thumbs";
+    /// The cached thumbnail file of a clip. Args: `{"key", "kind": "poster"|"strip"}`.
+    pub const LIBRARY_THUMB: &str = "library.thumb";
+    /// Rename a clip file. Args: `{"path", "name"}`.
+    pub const CLIP_RENAME: &str = "clip.rename";
+    /// Set a clip's tags. Args: `{"path", "tags": [..]}`.
+    pub const CLIP_TAGS: &str = "clip.tags";
+    /// Move clips to the Recycle Bin / Trash. Args: `{"paths": [..], "permanent": bool}`
+    /// (`permanent`: delete instead).
+    pub const CLIP_DELETE: &str = "clip.delete";
+    /// Open a clip in the default player. Args: `{"path"}`.
+    pub const CLIP_OPEN: &str = "clip.open";
+    /// Show a clip in the file manager. Args: `{"path"}`.
+    pub const CLIP_REVEAL: &str = "clip.reveal";
 }
 
 /// Longest accepted line (bytes, including the newline).

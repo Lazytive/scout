@@ -3,6 +3,7 @@
 // then a game starts and the replay buffer runs; commands answer like the real engine.
 
 import { CommandError } from './api';
+import { mockLibrary } from './mock-library';
 import type { Settings } from './settings';
 import type { Game, KlipEvent, Status } from './types';
 
@@ -91,7 +92,7 @@ export function mockBackend() {
     overlay: { mode: 'minimal', sound: true, notification: false, corner: 'top-right', seconds: 3, recording_dot: true },
     storage: { cap_gb: 50, over_cap: 'trash', low_disk_gb: 10 },
     appearance: { theme: 'system' },
-    games: { buffer: 'games', user_games: [{ exe: 'MyIndieGame.exe', name: 'My Indie Game' }], never: [], profiles: {} },
+    games: { buffer: 'games', detect_stores: true, user_games: [{ exe: 'MyIndieGame.exe', name: 'My Indie Game' }], never: [], profiles: {} },
   };
 
   /** RFC 7396 merge patch. */
@@ -106,6 +107,7 @@ export function mockBackend() {
     return out;
   };
   let meterTimer: ReturnType<typeof setInterval> | null = null;
+  const library = mockLibrary(emit);
 
   const need = () => {
     if (!status.recording) throw new CommandError('not_ready', 'no game is running');
@@ -216,8 +218,11 @@ export function mockBackend() {
           need();
           emit({ event: 'bookmark', result: { recording_ms: status.session ? 4000 : null } });
           return {};
-        default:
+        default: {
+          const r = library(cmd, args);
+          if (r !== undefined) return r;
           throw new CommandError('unknown_command', `mock: ${cmd}`);
+        }
       }
     },
     async listen(cb: (e: KlipEvent) => void) {

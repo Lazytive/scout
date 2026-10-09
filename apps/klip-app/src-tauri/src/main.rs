@@ -5,6 +5,8 @@
 //! Development and test overrides (environment):
 //! - `KLIP_SETTINGS`: settings file instead of the user's.
 //! - `KLIP_DISCOVERY`: control-channel discovery file instead of the user's.
+//! - `KLIP_START_PAGE=home|library|settings`: the page the window opens on (tests take
+//!   screenshots of an off-screen window they can't click).
 //! - `KLIP_WINDOW_POS=x,y`: open the window there at start, without taking focus (tests
 //!   put it on a second monitor so whoever uses the first one isn't disturbed).
 
@@ -14,6 +16,7 @@
 mod cue;
 mod ipc;
 mod overlay;
+mod thumb_scheme;
 mod tray;
 
 use std::path::PathBuf;
@@ -56,10 +59,15 @@ fn create_main<R: Runtime>(
     visible: bool,
     pos: Option<(i32, i32)>,
 ) -> tauri::Result<()> {
-    let b = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::default())
+    let mut b = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::default())
         .title("Klip")
         .inner_size(1180.0, 760.0)
         .min_inner_size(820.0, 520.0);
+    if let Ok(page) = std::env::var("KLIP_START_PAGE")
+        && matches!(page.as_str(), "home" | "library" | "settings")
+    {
+        b = b.initialization_script(format!("window.__KLIP_START_PAGE__ = '{page}';"));
+    }
     if let Some((x, y)) = pos {
         b.position(f64::from(x), f64::from(y))
             .visible(true)
@@ -143,6 +151,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             None,
         ))
         .invoke_handler(tauri::generate_handler![ipc::klip, ipc::overlay_close])
+        // Library thumbnails for <img> tags (thumb_scheme.rs).
+        .register_asynchronous_uri_scheme_protocol(
+            thumb_scheme::SCHEME,
+            |ctx, request, responder| {
+                let path = request.uri().path().to_string();
+                let handler = ctx
+                    .app_handle()
+                    .try_state::<AppState>()
+                    .map(|s| s.handler.clone());
+                tauri::async_runtime::spawn_blocking(move || {
+                    let response = match handler {
+                        Some(h) => thumb_scheme::respond(&h, &path),
+                        None => {
+                            let mut r = tauri::http::Response::new(Vec::new());
+                            *r.status_mut() = tauri::http::StatusCode::SERVICE_UNAVAILABLE;
+                            r
+                        }
+                    };
+                    responder.respond(response);
+                });
+            },
+        )
         .setup(move |app| {
             let (tx, rx) = std::sync::mpsc::sync_channel(klip_engine::events::QUEUE);
             let mut opts = EngineOptions::new(settings_path.clone());
@@ -249,6 +279,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn main() -> ExitCode {
     // Encoder probes run in a fresh copy of this executable (klip_probe::isolated).
     if let Some(code) = klip_probe::worker_main() {
+        return ExitCode::from(u8::try_from(code).unwrap_or(1));
+    }
+    // Library thumbnails too (klip_engine::media_worker): hostile files can't crash us.
+    if let Some(code) = klip_engine::media_worker::worker_main() {
         return ExitCode::from(u8::try_from(code).unwrap_or(1));
     }
     tracing_subscriber::fmt()

@@ -341,7 +341,7 @@ pub fn detect(snap: &Snapshot, settings: &GameSettings) -> Vec<DetectedGame> {
                 .unwrap_or_else(|| name_from_exe(&exe));
             return Some((exe, name, Source::User));
         }
-        if is_helper(&exe) {
+        if is_helper(&exe) || !settings.detect_stores {
             return None;
         }
         let (store, name) = library?;

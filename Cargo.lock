@@ -2830,11 +2830,13 @@ name = "klip-engine"
 version = "0.0.1"
 dependencies = [
  "base64 0.23.1",
+ "bytes",
  "dirs 7.0.0",
  "klip-capture",
  "klip-control",
  "klip-library",
  "klip-media",
+ "klip-mp4",
  "klip-platform",
  "klip-probe",
  "klip-recorder",
@@ -2850,6 +2852,10 @@ dependencies = [
 name = "klip-library"
 version = "0.0.1"
 dependencies = [
+ "bytes",
+ "klip-media",
+ "klip-mp4",
+ "proptest",
  "serde",
  "serde_json",
  "tempfile",
@@ -2870,6 +2876,7 @@ version = "0.0.1"
 dependencies = [
  "bytes",
  "klip-media",
+ "proptest",
  "tempfile",
  "thiserror 2.0.21",
 ]

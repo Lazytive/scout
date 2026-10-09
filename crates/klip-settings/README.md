@@ -4,7 +4,8 @@ Klip's settings (ADR 0014). Pure: no OS calls besides reading and writing the fi
 
 - `Settings`: the schema v1 with defaults (`app`, `clips`, `recording`, `audio`,
   `hotkeys`, `overlay`, `storage`, `appearance`, `games`). Every struct is
-  `#[serde(default)]`, so missing fields take their defaults.
+  `#[serde(default)]`, so missing fields take their defaults. `games.detect_stores`
+  (M7, default true): store-library games count; off, only `user_games` (tests use it).
 - `load(path)` never fails. Invalid JSON / UTF-8, a non-object or a file over 1 MiB →
   defaults (`LoadStatus::Reset`). Otherwise wrong fields are removed one at a time
   (located with `serde_path_to_error`; a bad list entry goes as a whole) and get their

@@ -1001,6 +1001,10 @@ fn main() -> std::process::ExitCode {
     if let Some(code) = klip_probe::worker_main() {
         return std::process::ExitCode::from(u8::try_from(code).unwrap_or(1));
     }
+    // Library thumbnails too (klip_engine::media_worker): hostile files can't crash us.
+    if let Some(code) = klip_engine::media_worker::worker_main() {
+        return std::process::ExitCode::from(u8::try_from(code).unwrap_or(1));
+    }
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(

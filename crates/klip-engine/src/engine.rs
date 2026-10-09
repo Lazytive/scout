@@ -24,6 +24,7 @@ use klip_settings::{
 };
 use serde_json::{Value, json};
 
+mod library;
 mod overlay;
 mod setup;
 mod storage;
@@ -45,6 +46,10 @@ pub struct EngineOptions {
     pub poll: Duration,
     /// A first subscriber, so it also sees `ready` and what happens during start.
     pub events: Option<SyncSender<Event>>,
+    /// Program that hosts the media worker (it calls
+    /// `klip_engine::media_worker::worker_main` first thing); `None`: library thumbnails
+    /// are made in this process (tests). Default: this executable.
+    pub media_worker: Option<PathBuf>,
 }
 
 impl EngineOptions {
@@ -54,6 +59,7 @@ impl EngineOptions {
             discovery: None,
             poll: POLL,
             events: None,
+            media_worker: std::env::current_exe().ok(),
         }
     }
 }
@@ -125,6 +131,12 @@ pub(crate) struct Inner {
     cache: Mutex<(ProbeCache, Option<PathBuf>)>,
     /// Serialises read-modify-write of the clip metadata.
     library_lock: Mutex<()>,
+    /// The library's info index (lock after `library_lock`, before `thumbs`).
+    library: Mutex<library::LibState>,
+    /// Clips waiting for thumbnails, and the thread making them.
+    thumbs: (Mutex<library::ThumbQueue>, Condvar),
+    thumbs_thread: Mutex<Option<JoinHandle<()>>>,
+    media_worker: Option<PathBuf>,
     /// A storage clean-up job is running.
     cleaning: AtomicBool,
     low_disk_warned: Mutex<Option<Instant>>,
@@ -176,6 +188,10 @@ impl Engine {
             busy: Mutex::new(HashSet::new()),
             cache: Mutex::new(config::load_encoder_cache()),
             library_lock: Mutex::new(()),
+            library: Mutex::new(library::LibState::default()),
+            thumbs: (Mutex::new(library::ThumbQueue::default()), Condvar::new()),
+            thumbs_thread: Mutex::new(None),
+            media_worker: opts.media_worker.clone(),
             cleaning: AtomicBool::new(false),
             low_disk_warned: Mutex::new(None),
             meter: Mutex::new(None),
@@ -259,6 +275,7 @@ impl Engine {
     fn stop_all(&mut self) {
         self.inner.stop.store(true, Ordering::Relaxed);
         self.inner.wake();
+        self.inner.stop_thumbs();
         if let Some(s) = self.server.take() {
             s.shutdown();
         }
@@ -411,6 +428,8 @@ impl Inner {
         };
         if let Some(game) = gone {
             self.emit(&Event::GameStopped { game });
+            // Library thumbnails that waited for the game can be made now.
+            self.thumbs.1.notify_all();
         }
     }
 
@@ -755,6 +774,14 @@ impl Handler for Inner {
             commands::STORAGE_STATUS => self.storage_status(),
             commands::STORAGE_CLEANUP => self.cleanup(&[]),
             commands::CLIP_STAR => self.star(args),
+            commands::LIBRARY_LIST => self.library_list(args),
+            commands::LIBRARY_THUMBS => self.library_thumbs(args),
+            commands::LIBRARY_THUMB => self.library_thumb(args),
+            commands::CLIP_RENAME => self.clip_rename(args),
+            commands::CLIP_TAGS => self.clip_tags(args),
+            commands::CLIP_DELETE => self.clip_delete(args),
+            commands::CLIP_OPEN => self.clip_open(args, false),
+            commands::CLIP_REVEAL => self.clip_open(args, true),
             commands::OVERLAY_PREVIEW => self.overlay_preview(),
             commands::OVERLAY_MENU => {
                 self.emit(&Event::QuickMenu);

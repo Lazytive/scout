@@ -64,6 +64,14 @@ export interface ClipResult {
   bookmarks: number;
 }
 
+export interface ThumbsReadyEvent {
+  event: 'thumbs_ready';
+  key: string;
+  poster: number | null;
+  strip: number | null;
+  failed: boolean;
+}
+
 export type KlipEvent =
   | { event: 'ready'; version: string; settings: string; issues: string[]; port: number | null }
   | { event: 'game_started'; game: Game }
@@ -91,4 +99,6 @@ export type KlipEvent =
   | { event: 'settings_changed'; settings: unknown }
   | { event: 'storage_cleaned'; report: { removed: number; bytes: number } }
   | { event: 'recovered'; path: string; result: unknown }
-  | { event: 'warning'; message: string };
+  | { event: 'warning'; message: string }
+  | { event: 'library_changed'; reason: string }
+  | ThumbsReadyEvent;

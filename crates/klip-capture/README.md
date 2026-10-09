@@ -117,5 +117,11 @@ AAC chain:     audioconvert → S16LE → queue → AAC encoder bitrate → aacp
 (`jpegenc`); used for the overlay and the library. Checked for every working encoder's
 output (H.264, HEVC, AV1) in `klip-recorder`'s round-trip test: first call 0.55 s
 (decoder start-up), then 15–35 ms for a 640x360 clip.
+`thumbnail::strip(path, tiles, tile_width)` (M7): the library's hover-scrub strip, the
+key frame nearest the middle of each of `tiles` slices (flushing key-unit seeks), scaled
+to `tile_width` (RGB) and stacked top to bottom into one JPEG (`appsrc → jpegenc`,
+quality 75); refuses strips over 64 MB raw. The app runs both in its media worker
+process for library clips (klip-engine, ADR 0015). Measured in `m7_library.rs`: 16
+frames of a 720p60 clip in 1.5 s including the worker's start.
 
 Layer: media engine (GStreamer). Linux sources (portal + PipeWire) arrive in M4.

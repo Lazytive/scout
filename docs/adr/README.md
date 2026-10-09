@@ -19,3 +19,4 @@ One file per decision: context, decision, consequences. Status is `accepted`, `p
 | [0012](0012-linux-capture.md) | Linux: screen-cast portal + PipeWire, GL → NVENC, VA-API, openh264 | accepted (M4) |
 | [0013](0013-full-session-recording.md) | Full-session recording: fragmented MP4, finalise in place, bookmarks as chapters | accepted (M5) |
 | [0014](0014-app-architecture.md) | App architecture: settings, library, engine crates; thin Tauri shell; hotkeys, detection, storage, themes, overlay, bench method | accepted (M6) |
+| [0015](0015-library.md) | Library: plain files, rebuildable info/thumbnail caches, sprite-strip hover-scrub, thumbnails in a child process, `klipthumb` scheme | accepted (M7) |

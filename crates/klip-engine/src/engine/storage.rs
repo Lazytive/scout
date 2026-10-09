@@ -169,6 +169,9 @@ impl Inner {
         }
         lib.set_starred(p, starred)
             .map_err(|e| CommandError::bad_args(e.to_string()))?;
+        self.emit(&Event::LibraryChanged {
+            reason: "starred".into(),
+        });
         Ok(json!({ "starred": starred }))
     }
 }

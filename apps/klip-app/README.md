@@ -43,6 +43,23 @@ same tokens.
   (`tauri-plugin-notification`) follow their own switches in every mode. Settings →
   Overlay → "Show me" previews it (`overlay.preview`). Test overrides:
   `KLIP_OVERLAY_POS=x,y`, `KLIP_NO_FOCUS=1`.
+- `src-tauri/src/thumb_scheme.rs` (M7): the `klipthumb` URI scheme for library
+  thumbnails (`http://klipthumb.localhost/<poster|strip>/<key>?v=<version>` in
+  WebView2): only cached thumbnails of library clips (the engine's `library.thumb` checks
+  the key), ≤ 8 MiB, cacheable by URL; allowed in the CSP's `img-src` only.
+- `src/Library.svelte` + `src/library/*` (M7): the Library workspace. Left: Browse
+  (all / starred with counts, date ranges, games, tags). Centre: search (debounced),
+  sort, card size S/M/L (remembered in `localStorage`), clips grouped by day for date
+  sorts; cards show the poster, and on hover the strip frame under the pointer with a
+  playhead and its time (`ClipCard.svelte`), the length, bookmarks and a star; cards that
+  scroll into view ask for missing thumbnails (`thumb-requests.ts`). Click / Ctrl /
+  Shift select, arrows (+Shift) move, Enter opens, Del → Recycle Bin, Shift+Del →
+  permanently (both confirmed), F2 renames, Ctrl+A, Esc; right-click menu. Right:
+  Details (poster, name to rename with the engine's error under it, Open, Show in
+  folder, star, tags, info, path, delete), several selected (star all, delete), or the
+  library's totals. State and actions: `src/lib/library.svelte.ts`; pure helpers
+  (names, day headings, scrub maths, selection) in `src/lib/library.ts` with vitest
+  tests; the mock engine's library is `src/lib/mock-library.ts` (drawn SVG thumbnails).
 - `src-tauri/src/tray.rs`: tray icon drawn at runtime (grey = waiting, blue = buffering,
   red dot = recording; no image asset), tooltip, menu (save clip, start/stop recording,
   bookmark, open, quit), left click opens the window.
@@ -93,7 +110,8 @@ feature the app loads the dev server at `devUrl` instead of the embedded `dist/`
 and audits npm licences from `package-lock.json` (shipped packages: permissive only).
 
 Development and test overrides (environment): `KLIP_SETTINGS` (settings file),
-`KLIP_DISCOVERY` (control-channel discovery file), `KLIP_WINDOW_POS=x,y` (create the
+`KLIP_DISCOVERY` (control-channel discovery file), `KLIP_START_PAGE=home|library|settings`
+(the page the window opens on), `KLIP_WINDOW_POS=x,y` (create the
 window there, visible and **not activated**: tests put it off-screen, e.g. `12000,200`,
 and capture it with `tools/window-shot.ps1`). Never
 run a dev build with the real settings while someone plays: it would buffer their game

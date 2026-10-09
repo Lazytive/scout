@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (end of M6).
+Last updated: 2026-10-09 (end of M7).
 
 | | Milestone | State |
 |---|---|---|
@@ -11,7 +11,7 @@ Last updated: 2026-10-09 (end of M6).
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
 | M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; Linux paths written, not yet run |
-| M7 | Library | |
+| M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
 | M8 | Editor, Normal mode + export presets | |
 | M9 | Editor, Advanced mode | |
 | M10 | Themes v1 | |
@@ -185,10 +185,39 @@ use drift by several percent between separate runs.
   copies at 240 Hz. Finding along the way: GStreamer's WGC source and Klip's own capture
   cost about the same here, and HDR (FP16) capture costs no more than 8-bit.
 
+### Library (M7)
+
+Same machine, `cargo xtask e2e` / `m7_library.rs` on 2026-10-09 (the test game at
+1280x720 off-screen, clips of 8 s at 720p60 H.264 12 Mbit/s; another game may have been
+using the GPU):
+- A card that comes into view gets its hover-scrub strip in 1.5–1.6 s, including
+  starting the media worker process (GStreamer start-up + 16 key-frame seeks and
+  decodes); while a game is recorded only such visible cards are done.
+- Background strips start 0.12 s after the game ends (the engine wakes the thumbnail
+  thread when the followed game stops).
+- A strip of the test game is 313–322 KB (16 x 240x135, JPEG quality 75; the barcoded
+  test pattern compresses badly, real games are not measured yet). All 16 frames differ.
+- Poster for the library = the overlay's picture of the just-saved clip (no extra work).
+- Clip info (duration, size, fps, codec, bookmarks) read from the `moov` only matched
+  the recorder: 7–9 s, 1280x720, H.264, 60 fps ± 3.
+
 ## Approximate / not done yet
 
+- **Library (M7)**:
+  - No playback inside Klip yet: Open hands the clip to the default player (the editor's
+    preview is M8). Hover-scrub shows 16 key frames per clip, not every frame; long
+    recordings get coarse strips.
+  - The first listing of a big folder reads every clip's `moov` before the grid shows
+    (cached afterwards in `.klip/index.json`); not measured beyond a few clips. The grid
+    isn't virtualised: thousands of clips mean thousands of cards (images load lazily).
+  - A separate recordings folder (`clips.recordings_folder`) is not part of the library.
+  - Copy / drag out / Discord export are M11. Rename and delete of a clip that another
+    program has open fail with the OS's message.
+  - Linux: open (`xdg-open`) and show in folder (FileManager1 via `gdbus`) are written
+    but not run; the media worker runs at normal priority there.
+
 - **App shell (M6)**:
-  - The Library page is M7; the window doesn't remember its size and position.
+  - The window doesn't remember its size and position.
   - Changes to quality, audio or folders apply when the next game starts (the running
     buffer isn't restarted); "Allow local control" applies at the next start; voice apps
     that start after the game aren't added to its recording.
@@ -364,6 +393,26 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 6. Storage cap: in a test clip folder, set the size limit low (e.g. 1 GB) with a few GB
    of clips, star one old clip, save a new clip: the oldest unstarred clips appear in the
    Recycle Bin (restorable), the starred one stays.
+
+## Manual checks for the human (M7)
+
+1. Library with your real clips: `cargo run -p klip-app` (or the built app), Library tab.
+   Clips are grouped by day; posters appear, and cards scrolled into view get their
+   hover-scrub strips within a couple of seconds (a whole old library fills in in the
+   background while no game runs). Move the mouse across a card: the picture follows,
+   with the time in the corner. Does it feel right?
+2. Search (name, game, tag), the filters on the left (Starred, dates, games, tags), sort
+   and card size S/M/L.
+3. Select a clip: rename it in Details (Enter), add tags, star it; check in Explorer that
+   the file was renamed. Double-click opens it in your player; "Show in folder" opens
+   Explorer with it selected.
+4. Delete (Del): it lands in the Recycle Bin and can be restored (Klip shows it again
+   after restoring, when the window gets focus). Shift+Del deletes permanently after a
+   warning. Rename or delete a clip that is open in a player: Klip should show the error,
+   nothing breaks.
+5. Put a few MP4s from another program (OBS, ShadowPlay, phone) in the clip folder: they
+   show up with length, resolution and pictures; a broken file shows "No preview".
+6. Ctrl/Shift-click and Shift+arrows select several clips; Ctrl+A; the right-click menu.
 
 ## Known bugs
 

@@ -72,6 +72,27 @@ export async function pickFolder(current: string | null): Promise<string | null>
   return typeof picked === 'string' ? picked : null;
 }
 
+export type ThumbKind = 'poster' | 'strip';
+
+let thumbProvider: ((kind: ThumbKind, key: string, v: number) => string) | null = null;
+
+/** The mock engine draws its own thumbnails. */
+export function setThumbProvider(p: (kind: ThumbKind, key: string, v: number) => string): void {
+  thumbProvider = p;
+}
+
+// The app's `klipthumb` scheme; WebView2 (Windows) spells custom schemes as http://<scheme>.localhost.
+const thumbBase =
+  typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent)
+    ? 'http://klipthumb.localhost/'
+    : 'klipthumb://localhost/';
+
+/** URL of a clip's cached thumbnail (`v`: its version, so a new one isn't cached). */
+export function thumbUrl(kind: ThumbKind, key: string, v: number): string {
+  if (thumbProvider) return thumbProvider(kind, key, v);
+  return `${thumbBase}${kind}/${encodeURIComponent(key)}?v=${v}`;
+}
+
 /** Subscribe to engine events; returns the unsubscribe function. */
 export async function onEvent(cb: (e: KlipEvent) => void): Promise<() => void> {
   return (await getBackend()).listen(cb);

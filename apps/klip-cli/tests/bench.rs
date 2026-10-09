@@ -343,7 +343,7 @@ fn bench_game_cost() {
             "audio": {"desktop": "game", "voice": false, "mic": false},
             "hotkeys": [],
             "storage": {"cap_gb": 0},
-            "games": {"buffer": "off", "user_games": [{"exe": "klip-testgame.exe"}]},
+            "games": {"buffer": "off", "detect_stores": false, "user_games": [{"exe": "klip-testgame.exe"}]},
         })
         .to_string(),
     )
