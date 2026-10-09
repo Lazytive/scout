@@ -28,3 +28,18 @@ Read `AGENTS.md` first. Its hard rules override everything, including this file.
   its `bin` must be on `PATH` and `PKG_CONFIG_PATH` must point at its `lib\pkgconfig`.
   `cargo xtask` sets both for child processes if they're missing.
 - FFmpeg on `PATH` for test oracles only.
+
+## Environment (Linux: the same PC dual-booted into Bazzite)
+
+- Bazzite's `/usr` is read-only, so everything builds in the `klip-dev` distrobox
+  (Fedora 44, created with `--nvidia`): GStreamer 1.28 devel + plugins (good, bad-free,
+  libav, openh264, pipewire), full FFmpeg from RPM Fusion (test oracle), rustup 1.99 and
+  cargo-deny in the shared `~/.cargo`. Run commands as
+  `distrobox enter klip-dev -- bash -c 'cd <repo> && CARGO_TARGET_DIR=~/.cache/klip-target cargo …'`
+  (the repo sits on the Windows NTFS drive; keep build output on the Linux disk).
+- The container shares the session bus, PipeWire, Wayland and the GPU, so portal capture
+  and NVENC work from inside it.
+- e2e: the test game goes fullscreen on `KLIP_E2E_OUTPUT` (default `secondary` = DP-3
+  here); the portal token for tests is `~/.local/state/klip-e2e/portal-<output>.token`.
+  Without it the KDE dialog appears: the human must pick that monitor (not "Full
+  Workspace").

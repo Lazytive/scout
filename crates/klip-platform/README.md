@@ -40,7 +40,21 @@ so it is wrapped in `ManuallyDrop`; otherwise the heap is corrupted (found by
 `audio_capture_is_continuous_and_qpc_stamped`). Diagnostic: `tests/loopback_offset.rs`
 (`diag_`, needs `KLIP_DIAG_PID`) compares process and system loopback timing.
 
-Linux: returns `PlatformError::Unsupported` until M4 (portal + PipeWire live elsewhere).
+Linux (`linux_impl.rs`, `screencast.rs`; ADR 0012):
+- `list_gpus`: DRM cards from sysfs (PCI vendor/device ids, driver, PCI slot packed into
+  `luid`); names from NVIDIA's `/proc/driver/nvidia/gpus/*/information`, else hwdata's
+  `pci.ids`; driver version for NVIDIA (`/sys/module/nvidia/version`), VRAM for amdgpu.
+- `list_processes`: `/proc/<pid>/stat` (parent pid parsed after the last `)`) and the
+  `exe` link's file name (else `comm`).
+- `qpc_now_ns`: CLOCK_MONOTONIC (`rustix`), the clock of GStreamer's system clock and
+  PipeWire's stream times.
+- `ScreenCast`: an xdg-desktop-portal ScreenCast session (`ashpd`, `async-io` backend,
+  blocked on with `pollster`): source types, cursor mode, persist mode "until revoked",
+  restore token in and out; streams (PipeWire node, monitor/window, logical position and
+  size) and the PipeWire remote fd. Dropping it closes the session. A cancelled dialog
+  is `PlatformError::Cancelled`; portal replies are handled inside `catch_unwind`.
+- Monitors, windows, audio sessions and `AudioCapture` return `Unsupported` for now
+  (Wayland has no window list; audio is M4.4).
 
 Only documented OS APIs are used (WGC is the OS capture API). Nothing here touches
 another process's memory or rendering (rule 1).

@@ -5,6 +5,21 @@ reason)`.
 
 ## Unreleased
 
+- M4.3 — Linux video capture (ADR 0012): `klip_platform::ScreenCast` (xdg-desktop-portal
+  ScreenCast via `ashpd`, persist "until revoked", restore token), `VideoTarget::Portal`
+  + shared `PortalSession`, `pipewiresrc` → `videorate` → encode chain sized from the
+  stream's first caps; CLI `--portal`, `--portal-token` (token stored atomically, read
+  back as hostile input); test game `--monitor NAME|secondary` (Wayland can't place
+  windows); M1 acceptance passes through the portal on KDE Wayland. (Claude Opus 5.5:
+  M4, the user is on Linux)
+- M4.2 — Linux platform basics + encoders: GPUs from sysfs, processes from `/proc`,
+  `qpc_now_ns` = CLOCK_MONOTONIC; encode chain from system memory (GL convert/scale →
+  NVENC, `vapostproc` → VA-API, `videoconvertscale` → openh264); VA low-power encoders
+  and per-device names on the allowlist; openh264 probes convert to I420. All four Linux
+  encoders round-trip exactly. (Claude Opus 5.5: M4)
+- M4.1 — Linux builds: `cargo xtask ci` green on Bazzite in a Fedora 44 distrobox.
+  (Claude Opus 5.5: M4)
+
 - M3.6 — Capture fallbacks (ADR 0011): recorder supervisor switches window capture to
   its monitor on exclusive fullscreen, a stall while covering the monitor, or a capture
   failure, back when the window leaves fullscreen, and to DXGI when monitor capture sees

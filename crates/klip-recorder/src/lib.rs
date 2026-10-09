@@ -476,7 +476,10 @@ impl Recorder {
                 let mode = match cfg.video.target {
                     VideoTarget::Window(hwnd) => VideoMode::Window { hwnd },
                     VideoTarget::Monitor(monitor) => VideoMode::Monitor { monitor },
-                    VideoTarget::PrimaryMonitor => VideoMode::Monitor { monitor: 0 },
+                    // A portal stream is whatever the user picked; nothing to supervise.
+                    VideoTarget::PrimaryMonitor | VideoTarget::Portal => {
+                        VideoMode::Monitor { monitor: 0 }
+                    }
                 };
                 (s, e, a, mode)
             }

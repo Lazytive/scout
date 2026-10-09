@@ -148,7 +148,7 @@ fn gpu_of(family: EncoderFamily, vendor: EncoderVendor, long_name: &str) -> Opti
     }
     if !matches!(
         family,
-        EncoderFamily::MediaFoundation | EncoderFamily::D3d12
+        EncoderFamily::MediaFoundation | EncoderFamily::D3d12 | EncoderFamily::VaApi
     ) {
         return None;
     }
@@ -170,6 +170,10 @@ fn gpu_of(family: EncoderFamily, vendor: EncoderVendor, long_name: &str) -> Opti
 /// `N` for a per-device element `...device<N>enc`, 0 for the base name (GStreamer gives
 /// the base name to the first adapter it registers).
 fn device_index(element: &str) -> u32 {
+    // VA-API: render nodes start at 128 (`renderD128` is the first device).
+    if let Some((_, node)) = policy::va_render_device(element) {
+        return node.saturating_sub(128);
+    }
     policy::without_device_suffix(element)
         .and_then(|_| {
             let rest = element.strip_suffix("enc")?;
@@ -285,7 +289,9 @@ fn upload_for(family: EncoderFamily) -> &'static str {
         EncoderFamily::NvencD3d11 | EncoderFamily::Amf | EncoderFamily::Qsv => "d3d11upload ! ",
         EncoderFamily::D3d12 => "d3d12upload ! ",
         EncoderFamily::NvencCuda => "cudaupload ! ",
-        EncoderFamily::MediaFoundation | EncoderFamily::VaApi | EncoderFamily::OpenH264 => "",
+        // openh264enc takes I420 only.
+        EncoderFamily::OpenH264 => "videoconvert ! ",
+        EncoderFamily::MediaFoundation | EncoderFamily::VaApi => "",
     }
 }
 
@@ -531,8 +537,13 @@ mod tests {
             .filter(|g| !g.software)
             .map(|g| g.vendor)
             .collect();
-        let monitor_gpu = klip_platform::list_monitors()
-            .unwrap()
+        // Linux has no monitor → GPU mapping (the portal picks what to capture).
+        let monitors = if cfg!(windows) {
+            klip_platform::list_monitors().unwrap()
+        } else {
+            klip_platform::list_monitors().unwrap_or_default()
+        };
+        let monitor_gpu = monitors
             .into_iter()
             .find(|m| m.primary)
             .and_then(|m| m.adapter_luid)

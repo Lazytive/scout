@@ -104,7 +104,14 @@ fn round_trip(encoder: EncoderChoice, frames: u32) {
         .block(false)
         .max_bytes((W * H * 4 * 8) as u64)
         .build();
-    let upload = gst::ElementFactory::make("d3d11upload").build().unwrap();
+    // The encode chain takes D3D11 textures on Windows, system memory on Linux.
+    let upload = gst::ElementFactory::make(if cfg!(windows) {
+        "d3d11upload"
+    } else {
+        "identity"
+    })
+    .build()
+    .unwrap();
     pipeline.add_many([appsrc.upcast_ref(), &upload]).unwrap();
     appsrc.link(&upload).unwrap();
     let cfg = EncodeConfig {

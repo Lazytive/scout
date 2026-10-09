@@ -20,7 +20,10 @@ mod common;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use common::{KillOnDrop, capture_api_args, cli, game, run_json, spawn_ready, stop_recorder};
+use common::{
+    KillOnDrop, capture_api_args, capture_args, check_portal_stream, cli, game, run_json,
+    spawn_ready, stop_recorder,
+};
 use klip_testkit::{continuity, oracle, sync};
 
 #[test]
@@ -60,8 +63,7 @@ fn record_buffer_and_clip_last_30s() {
         Duration::from_secs(30),
     );
     let _game = KillOnDrop(game);
-    let hwnd = ready["hwnd"].as_u64().unwrap();
-    assert_ne!(hwnd, 0);
+    println!("game: {ready}");
 
     let (rec, rec_ready) = spawn_ready(
         cli(&discovery)
@@ -72,14 +74,18 @@ fn record_buffer_and_clip_last_30s() {
                 "--fps",
                 &capture_fps.to_string(),
             ])
-            .args(["--window-handle", &hwnd.to_string()])
+            .args(capture_args(&ready))
+            // The game's size (a no-op for its window; scales a monitor stream down).
+            .args(["--max-size", "1280x720"])
             .args(capture_api_args())
             .arg("--out")
             .arg(&clips),
-        Duration::from_secs(60),
+        // Long enough to answer the portal's dialog on the first Linux run.
+        Duration::from_secs(120),
     );
     let mut rec = KillOnDrop(rec);
     println!("recorder: {rec_ready}");
+    check_portal_stream(&rec_ready, &ready);
 
     std::thread::sleep(Duration::from_secs(clip_secs + 3));
 

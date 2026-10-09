@@ -3,7 +3,8 @@
 Encoder discovery, licence/patent policy, probing and the probe cache (ADR 0009).
 
 - `policy`: the **allowlist** (NVENC D3D11/CUDA, AMF, QSV, Media Foundation, D3D12 Video
-  Encode, VA-API, openh264 on Linux only; per-device `<base>device<N>enc` names of each)
+  Encode, VA-API incl. low-power `va*lpenc`, openh264 on Linux only; per-device
+  `<base>device<N>enc` names of each, VA's `varenderD<N><codec>enc`)
   and the **denylist** (`x264enc`, `x265enc`, GPL/software H.264/HEVC `avenc_*`, …) plus
   GPL plugin names for the bundle audit. This file is the only product source allowed to
   mention denied names (`cargo xtask audit`).

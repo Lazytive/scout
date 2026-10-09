@@ -1,6 +1,6 @@
 # klip-testgame
 
-A wgpu (Direct3D 12 on Windows) window used to verify clips:
+A wgpu (Direct3D 12 on Windows, Vulkan on Linux) window used to verify clips:
 
 - the `klip-testkit` barcode (24-bit frame counter + CRC-8) on every frame,
 - a moving bar and a scrolling checker for encoder motion,
@@ -22,7 +22,11 @@ klip-testgame [--width 1280] [--height 720] [--fps 120]
               [--background] [--title "Klip Test Game"]
 ```
 
-`--background` opens the window without taking focus (automated tests).
+`--background` opens the window without taking focus (automated tests). `--monitor NAME`
+(or `secondary`: a monitor not at the desktop origin) makes it borderless fullscreen on
+that monitor; on Wayland, where apps can't place windows, that is how tests keep it off
+the main screen. The ready line lists `monitors` (name, position, size, scale) and
+`monitor_name`.
 
 Frame pacing is done by the game (vsync off: Immediate/Mailbox), sleeping then spinning
 to each deadline. Measured: 120.0 fps, frame interval p99 8.7 ms at 1280x720. After the

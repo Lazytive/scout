@@ -46,6 +46,26 @@ re-stamped on arrival (it stamps frames with its own clock slots; ADR 0008).
 - `TimeBase`: one clock (system clock = QPC on Windows) and base time for every pipeline
   of a recording; `base_clock_ns` maps clip times to other QPC-based logs.
 
+## Video (Linux, ADR 0012)
+
+```
+klip_platform::ScreenCast (portal session; shared as PortalSession by every pipeline)
+  → pipewiresrc fd=<remote> path=<node> ! video/x-raw (system memory)
+  [probe: keep the compositor's frame time in the arrival meta]
+  ! videorate drop-only=true ! framerate=F/1
+  [probe: pts = FrameGrid.snap(capture time)]
+  ! NVENC:   glupload ! glcolorconvert ! RGBA ! glcolorscale ! RGBA WxH ! glcolorconvert ! NV12 (GL)
+    VA-API:  vapostproc ! NV12 WxH (VA memory)
+    openh264: videoconvertscale ! I420 WxH
+  ! queue leaky ! <encoder> ! <parser> ! appsink
+```
+
+- `VideoTarget::Portal` + `VideoConfig::portal`. The output size comes from the stream's
+  first caps: a probe on `pipewiresrc` sizes the chain's capsfilters
+  (`EncodeChain::set_size`) as they pass; `start` waits up to 5 s for them.
+- `KLIP_PORTAL_CAPS` overrides the source caps (diagnosis; e.g. DMA-BUF, see ADR 0012);
+  `KLIP_CAPTURE_STAMPS=arrival` stamps frames on arrival instead of the compositor's time.
+
 ## Audio (`audio`, `lag`, `apps`)
 
 ```

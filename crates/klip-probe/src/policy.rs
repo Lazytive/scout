@@ -95,6 +95,10 @@ pub const ALLOWED: &[AllowedEncoder] = &[
     enc("vah264enc", Codec::H264, F::VaApi, V::Os),
     enc("vah265enc", Codec::H265, F::VaApi, V::Os),
     enc("vaav1enc", Codec::Av1, F::VaApi, V::Os),
+    // Low-power (fixed-function) VA entry points; Intel Arc encodes AV1 only this way.
+    enc("vah264lpenc", Codec::H264, F::VaApi, V::Os),
+    enc("vah265lpenc", Codec::H265, F::VaApi, V::Os),
+    enc("vaav1lpenc", Codec::Av1, F::VaApi, V::Os),
     AllowedEncoder {
         element: "openh264enc",
         codec: Codec::H264,
@@ -137,8 +141,11 @@ pub fn is_denied(element: &str) -> bool {
 /// The element name without a per-device suffix: GStreamer registers the encoder of the
 /// first adapter as e.g. `mfh264enc` and the others as `mfh264device<N>enc` (Media
 /// Foundation, D3D12, NVENC D3D11, AMF, QSV all do this). `None` if `element` has no such
-/// suffix.
+/// suffix. VA-API names them after the render node instead (see [`va_render_device`]).
 pub fn without_device_suffix(element: &str) -> Option<String> {
+    if let Some((base, _)) = va_render_device(element) {
+        return Some(base);
+    }
     let rest = element.strip_suffix("enc")?;
     let pos = rest.rfind("device")?;
     let (base, tail) = rest.split_at(pos);
@@ -147,6 +154,21 @@ pub fn without_device_suffix(element: &str) -> Option<String> {
         return None;
     }
     Some(format!("{base}enc"))
+}
+
+/// VA-API registers the encoders of every device after the first under the device's
+/// render node: `varenderD129h264enc` is `vah264enc` on `/dev/dri/renderD129`. Returns
+/// the base name and the node number.
+pub fn va_render_device(element: &str) -> Option<(String, u32)> {
+    let rest = element.strip_prefix("varender")?;
+    let rest = rest.strip_prefix('D').or_else(|| rest.strip_prefix('d'))?;
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    let node = rest.get(..digits)?.parse::<u32>().ok()?;
+    let codec = rest.get(digits..)?;
+    if !codec.ends_with("enc") || codec.len() <= 3 {
+        return None;
+    }
+    Some((format!("va{codec}"), node))
 }
 
 /// Look up an element on the allowlist, including per-device names (see
@@ -215,6 +237,22 @@ mod tests {
             without_device_suffix("mfh264device12enc").as_deref(),
             Some("mfh264enc")
         );
+    }
+
+    #[test]
+    fn va_device_names_map_to_the_base_encoder() {
+        assert_eq!(
+            va_render_device("varenderD129h264enc"),
+            Some(("vah264enc".to_string(), 129))
+        );
+        assert_eq!(
+            allowed("varenderD130av1lpenc").map(|a| a.element),
+            Some("vaav1lpenc")
+        );
+        assert_eq!(va_render_device("varenderDenc"), None);
+        assert_eq!(va_render_device("varenderD129enc"), None);
+        assert_eq!(va_render_device("vah264enc"), None);
+        assert!(allowed("varenderD129x264enc").is_none());
     }
 
     #[test]

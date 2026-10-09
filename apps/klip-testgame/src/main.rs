@@ -89,6 +89,12 @@ struct Args {
     /// so tests don't cover what you're doing on the main one).
     #[arg(long, value_parser = parse_pos, allow_hyphen_values = true)]
     position: Option<(i32, i32)>,
+    /// Borderless fullscreen on the monitor with this name (e.g. `DP-3`; see the ready
+    /// line's `monitors`), or `secondary`: one that isn't at the desktop origin (the only
+    /// one if there is just one). Wayland lets no app place its windows, so this is how
+    /// tests keep the game off the main screen there.
+    #[arg(long)]
+    monitor: Option<String>,
     /// Stop drawing between these times since start, `FROM..TO` (e.g. `6s..10s`): the
     /// window stays but shows no new frames, like a game hanging or a capture stall.
     #[arg(long, value_parser = parse_span)]
@@ -405,6 +411,8 @@ struct App {
     tap_log: Option<BufWriter<File>>,
     announced: bool,
     error: Option<anyhow::Error>,
+    /// The monitor picked with `--monitor`.
+    monitor_name: Option<String>,
 }
 
 impl App {
@@ -422,7 +430,32 @@ impl App {
         if let Some((x, y)) = self.args.position {
             attrs = attrs.with_position(winit::dpi::PhysicalPosition::new(x, y));
         }
+        if let Some(name) = &self.args.monitor {
+            let pick = |m: &winit::monitor::MonitorHandle| match name.as_str() {
+                "secondary" => m.position() != winit::dpi::PhysicalPosition::new(0, 0),
+                n => m.name().as_deref() == Some(n),
+            };
+            let monitor = el
+                .available_monitors()
+                .find(pick)
+                .or_else(|| {
+                    let all: Vec<_> = el.available_monitors().collect();
+                    let names: std::collections::HashSet<_> =
+                        all.iter().filter_map(|m| m.name()).collect();
+                    (name == "secondary" && names.len() <= 1)
+                        .then(|| all.into_iter().next())
+                        .flatten()
+                })
+                .ok_or_else(|| {
+                    let names: Vec<String> =
+                        el.available_monitors().filter_map(|m| m.name()).collect();
+                    anyhow!("no monitor named {name}; monitors: {names:?}")
+                })?;
+            self.monitor_name = monitor.name();
+            attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))));
+        }
         match self.args.mode {
+            _ if self.args.monitor.is_some() => {}
             Mode::Windowed => {}
             Mode::Borderless => {
                 // The monitor under --position, else the current one.
@@ -468,10 +501,24 @@ impl App {
             _ => 0,
         };
         let size = gfx.window.inner_size();
+        let monitors: Vec<_> = gfx
+            .window
+            .available_monitors()
+            .map(|m| {
+                serde_json::json!({
+                    "name": m.name(),
+                    "position": [m.position().x, m.position().y],
+                    "size": [m.size().width, m.size().height],
+                    "scale": m.scale_factor(),
+                })
+            })
+            .collect();
         let line = serde_json::json!({
             "event": "ready",
             "pid": std::process::id(),
             "hwnd": hwnd,
+            "monitor_name": self.monitor_name,
+            "monitors": monitors,
             "width": size.width,
             "height": size.height,
             "fps": self.args.fps,
@@ -641,6 +688,7 @@ fn main() -> Result<()> {
         tap_log,
         announced: false,
         error: None,
+        monitor_name: None,
     };
     let event_loop = EventLoop::new()?;
     event_loop.run_app(&mut app)?;

@@ -159,6 +159,31 @@ struct RecordArgs {
     /// Don't leave music players out of system audio.
     #[arg(long)]
     no_default_excludes: bool,
+    /// Capture through the desktop's screen-cast portal (Linux; the default there): what
+    /// its dialog offers. The choice is remembered (see --portal-token).
+    #[arg(long, value_enum, conflicts_with_all = ["window_title", "window_handle", "monitor"])]
+    portal: Option<PortalArg>,
+    /// File that keeps the portal's restore token, so the dialog is shown only once
+    /// (default: the Klip folder in the XDG state dir).
+    #[arg(long, value_name = "FILE")]
+    portal_token: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum PortalArg {
+    Monitor,
+    Window,
+    Any,
+}
+
+impl From<PortalArg> for klip_platform::ScreenCastSource {
+    fn from(a: PortalArg) -> Self {
+        match a {
+            PortalArg::Monitor => klip_platform::ScreenCastSource::Monitor,
+            PortalArg::Window => klip_platform::ScreenCastSource::Window,
+            PortalArg::Any => klip_platform::ScreenCastSource::Any,
+        }
+    }
 }
 
 fn parse_dur(s: &str) -> Result<Nanos, String> {
@@ -251,6 +276,7 @@ fn target_gpu(target: VideoTarget) -> Option<klip_platform::GpuVendor> {
         VideoTarget::PrimaryMonitor => monitors.iter().find(|m| m.primary)?.handle,
         VideoTarget::Monitor(h) => h,
         VideoTarget::Window(h) => klip_platform::window_info(h).ok()?.monitor,
+        VideoTarget::Portal => return None,
     };
     let luid = monitors.iter().find(|m| m.handle == handle)?.adapter_luid?;
     klip_platform::list_gpus()
@@ -306,6 +332,12 @@ fn pick_encoders(
 }
 
 fn pick_target(args: &RecordArgs) -> Result<VideoTarget> {
+    // Linux can only capture through the portal (Wayland gives apps no other way).
+    let explicit =
+        args.window_title.is_some() || args.window_handle.is_some() || args.monitor.is_some();
+    if args.portal.is_some() || (cfg!(target_os = "linux") && !explicit) {
+        return Ok(VideoTarget::Portal);
+    }
     if let Some(text) = &args.window_title {
         let w = klip_platform::find_windows(text)?
             .into_iter()
@@ -325,6 +357,60 @@ fn pick_target(args: &RecordArgs) -> Result<VideoTarget> {
         return Ok(VideoTarget::Monitor(m.handle));
     }
     Ok(VideoTarget::PrimaryMonitor)
+}
+
+/// Largest restore token accepted from the token file (portals use UUID-sized tokens).
+const MAX_PORTAL_TOKEN: u64 = 1024;
+
+fn portal_token_path(args: &RecordArgs) -> Option<PathBuf> {
+    args.portal_token.clone().or_else(|| {
+        dirs::state_dir()
+            .or_else(dirs::data_local_dir)
+            .map(|d| d.join("Klip").join("screencast-token"))
+    })
+}
+
+/// The stored restore token, if the file holds a plausible one (it is user-writable, so
+/// treat it as hostile: size-capped, printable ASCII only).
+fn read_portal_token(path: &Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > MAX_PORTAL_TOKEN {
+        return None;
+    }
+    let token = std::fs::read_to_string(path).ok()?.trim().to_string();
+    let ok = !token.is_empty() && token.bytes().all(|b| b.is_ascii_graphic());
+    ok.then_some(token)
+}
+
+/// Write `token` atomically (temp file + rename).
+fn write_portal_token(path: &Path, token: &str) -> std::io::Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, token)?;
+    std::fs::rename(&tmp, path)
+}
+
+/// Open the screen-cast session: restores the stored choice, or shows the desktop's dialog.
+fn open_portal(args: &RecordArgs) -> Result<klip_capture::PortalSession> {
+    let path = portal_token_path(args);
+    let restore_token = path.as_deref().and_then(read_portal_token);
+    if restore_token.is_none() {
+        eprintln!("Pick the screen or window to record in your desktop's sharing dialog.");
+    }
+    let cast = klip_platform::ScreenCast::start(&klip_platform::ScreenCastRequest {
+        source: args.portal.unwrap_or(PortalArg::Any).into(),
+        show_cursor: !args.no_cursor,
+        restore_token,
+    })
+    .context("screen-cast portal")?;
+    if let (Some(p), Some(t)) = (path.as_deref(), cast.restore_token())
+        && let Err(e) = write_portal_token(p, t)
+    {
+        tracing::warn!(error = %e, "could not store the screen-cast restore token");
+    }
+    Ok(klip_capture::PortalSession(Arc::new(cast)))
 }
 
 fn excluded_apps(args: &RecordArgs) -> Vec<String> {
@@ -378,7 +464,9 @@ fn system_source(excluded: &[String]) -> AudioSource {
 fn pick_audio(args: &RecordArgs, target: VideoTarget) -> Result<Option<AudioConfig>> {
     let mode = args.audio.unwrap_or(match target {
         VideoTarget::Window(_) => AudioMode::Game,
-        VideoTarget::Monitor(_) | VideoTarget::PrimaryMonitor => AudioMode::System,
+        VideoTarget::Monitor(_) | VideoTarget::PrimaryMonitor | VideoTarget::Portal => {
+            AudioMode::System
+        }
     });
     if mode == AudioMode::Apps && args.app.is_empty() {
         bail!("--audio apps needs at least one --app");
@@ -485,6 +573,10 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             .ok_or_else(|| anyhow!("no Videos folder; pass --out"))?
             .join("Klip"),
     };
+    let portal = match target {
+        VideoTarget::Portal => Some(open_portal(args)?),
+        _ => None,
+    };
     let audio = pick_audio(args, target)?;
     let audio_kbps = audio.as_ref().map_or(0, |a| {
         let tracks = u32::try_from(a.track_labels().len()).unwrap_or(u32::MAX);
@@ -494,6 +586,7 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
         Some(mb) => mb.saturating_mul(1024 * 1024),
         None => estimate_buffer_bytes(args.buffer, args.bitrate.saturating_add(audio_kbps)),
     };
+    let portal_info = portal.as_ref().and_then(|p| p.0.streams().first().cloned());
     let cfg = RecorderConfig {
         buffer: args.buffer,
         max_buffer_bytes,
@@ -506,6 +599,7 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             show_cursor: !args.no_cursor,
             api: args.capture_api.into(),
             output: None,
+            portal,
         },
         encode: EncodeConfig {
             encoder,
@@ -542,6 +636,12 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             "clip_dir": clip_dir.to_string_lossy(),
             "port": server.port(),
             "audio": status.get("audio"),
+            "portal": portal_info.as_ref().map(|s| json!({
+                "node": s.node_id,
+                "kind": s.kind.map(|k| format!("{k:?}").to_lowercase()),
+                "position": s.position,
+                "size": s.size,
+            })),
         })
     );
     if let Some(e) = status

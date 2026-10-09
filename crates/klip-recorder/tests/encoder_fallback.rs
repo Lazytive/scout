@@ -59,6 +59,7 @@ fn falls_back_to_the_next_encoder() {
             show_cursor: false,
             api: Default::default(),
             output: None,
+            portal: None,
         },
         encode: EncodeConfig {
             encoder: broken,

@@ -8,6 +8,9 @@
 
 #[cfg(windows)]
 mod gst_d3d11;
+#[cfg(target_os = "linux")]
+mod linux_impl;
+mod screencast;
 #[cfg(windows)]
 mod wasapi;
 #[cfg(windows)]
@@ -15,6 +18,7 @@ mod wgc;
 #[cfg(windows)]
 mod windows_impl;
 
+pub use screencast::{ScreenCast, ScreenCastRequest, ScreenCastSource, ScreenCastStream};
 #[cfg(windows)]
 pub use wgc::{
     GpuCapture, GpuCaptureConfig, GpuCaptureStats, GpuCaptureTarget, GpuFrameSink, HdrDisplay,
@@ -29,6 +33,8 @@ pub enum PlatformError {
     NoSuchWindow(u64),
     #[error("OS call failed: {0}")]
     Os(String),
+    #[error("cancelled by the user")]
+    Cancelled,
 }
 
 /// GPU vendor, from the PCI vendor id.
@@ -150,7 +156,7 @@ pub enum CaptureEndpoint {
 /// A packet of captured audio: interleaved 32-bit float at the capture's rate/channels.
 #[derive(Clone, Copy, Debug)]
 pub struct AudioPacket<'a> {
-    /// QueryPerformanceCounter time of the first frame, in ns (see [`qpc_now_ns`]).
+    /// Performance-clock time of the first frame, in ns (see [`qpc_now_ns`]).
     pub qpc_ns: i64,
     pub frames: u32,
     /// `None` for silence.
@@ -217,14 +223,19 @@ impl Drop for AudioCapture {
     }
 }
 
-/// Current QueryPerformanceCounter time in ns: the clock of [`AudioPacket::qpc_ns`], WGC
-/// frame times and (on Windows) GStreamer's system clock.
+/// Current time of the OS performance clock in ns: the clock of [`AudioPacket::qpc_ns`],
+/// captured frame times and GStreamer's system clock. Windows: QueryPerformanceCounter;
+/// Linux: CLOCK_MONOTONIC (also PipeWire's clock).
 pub fn qpc_now_ns() -> i64 {
     #[cfg(windows)]
     {
         wasapi::qpc_now_ns()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux_impl::monotonic_ns()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         0
     }
@@ -265,7 +276,11 @@ pub fn list_processes() -> Result<Vec<ProcessInfo>, PlatformError> {
     {
         windows_impl::list_processes()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux_impl::list_processes()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         Err(PlatformError::Unsupported)
     }
@@ -290,7 +305,11 @@ pub fn list_gpus() -> Result<Vec<GpuAdapter>, PlatformError> {
     {
         windows_impl::list_gpus()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux_impl::list_gpus()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         Err(PlatformError::Unsupported)
     }

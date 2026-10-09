@@ -68,7 +68,29 @@ pub enum VideoTarget {
     Monitor(u64),
     /// HWND; client area only.
     Window(u64),
+    /// The first stream of [`VideoConfig::portal`], a screen-cast portal session (Linux:
+    /// the monitor or window the user picked in the desktop's dialog).
+    Portal,
 }
+
+/// An open screen-cast portal session, shared by every pipeline of a recording (encoder
+/// fallbacks and restarts reconnect to the same stream without asking the user again).
+#[derive(Clone)]
+pub struct PortalSession(pub Arc<klip_platform::ScreenCast>);
+
+impl std::fmt::Debug for PortalSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl PartialEq for PortalSession {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for PortalSession {}
 
 /// Video capture settings.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -85,6 +107,8 @@ pub struct VideoConfig {
     /// encoder's output, and so the replay track, unchanged when a recording switches
     /// between window and monitor capture).
     pub output: Option<(u32, u32)>,
+    /// The session [`VideoTarget::Portal`] captures from.
+    pub portal: Option<PortalSession>,
 }
 
 /// Capture implementation for video.
@@ -100,6 +124,8 @@ pub enum CaptureApi {
     /// GStreamer's `d3d11screencapturesrc` with DXGI Desktop Duplication (monitors only;
     /// sees exclusive-fullscreen games that WGC may not).
     GstDxgi,
+    /// The screen-cast portal + PipeWire (Linux; [`VideoTarget::Portal`]).
+    Portal,
 }
 
 /// Encoder settings.
@@ -364,9 +390,48 @@ pub struct EncodeChain {
     queue: gst::Element,
     /// The encoder element.
     pub encoder: gst::Element,
+    /// Capsfilters that carry the output size, with their caps minus the size.
+    sized: Vec<(gst::Element, String)>,
+}
+
+/// Caps `base` at `width x height` with square pixels.
+fn sized_caps(base: &str, width: u32, height: u32) -> String {
+    format!("{base},width={width},height={height},pixel-aspect-ratio=1/1")
+}
+
+/// A capsfilter for `base` at `width x height`, remembered in `sized` so the size can be
+/// changed before the first frame (see [`EncodeChain::set_size`]).
+fn sized_filter(
+    base: &str,
+    width: u32,
+    height: u32,
+    sized: &mut Vec<(gst::Element, String)>,
+) -> Result<gst::Element, CaptureError> {
+    let el = capsfilter(&sized_caps(base, width, height))?;
+    sized.push((el.clone(), base.to_string()));
+    Ok(el)
+}
+
+/// Point the size-carrying capsfilters of a chain at `width x height`.
+fn set_sizes(
+    sized: &[(gst::Element, String)],
+    width: u32,
+    height: u32,
+) -> Result<(), CaptureError> {
+    for (el, base) in sized {
+        let caps = gst::Caps::from_str(&sized_caps(base, width, height)).map_err(gst_err)?;
+        el.set_property("caps", &caps);
+    }
+    Ok(())
 }
 
 impl EncodeChain {
+    /// Change the output size. Only before the first frame: the encoder's caps are fixed
+    /// once it runs.
+    pub fn set_size(&self, width: u32, height: u32) -> Result<(), CaptureError> {
+        set_sizes(&self.sized, width, height)
+    }
+
     /// The DXGI adapter the encoder runs on, if it reports one (`adapter-luid`).
     pub fn adapter_luid(&self) -> Option<i64> {
         let spec = self.encoder.find_property("adapter-luid")?;
@@ -407,8 +472,72 @@ impl EncodeChain {
     }
 }
 
-/// Build `d3d11convert → NV12 (w x h) → [download/upload] → queue → encoder → parser →
-/// appsink` inside `bin`. Input must be `video/x-raw(memory:D3D11Memory)`.
+/// Elements from the chain input to NV12 at `width x height` in the memory the encoder
+/// takes. Windows: input is `video/x-raw(memory:D3D11Memory)`.
+#[cfg(windows)]
+fn convert_front(
+    cfg: &EncodeConfig,
+    width: u32,
+    height: u32,
+    sized: &mut Vec<(gst::Element, String)>,
+) -> Result<Vec<gst::Element>, CaptureError> {
+    let mut chain = vec![make("d3d11convert")?];
+    chain.push(sized_filter(
+        "video/x-raw(memory:D3D11Memory),format=NV12",
+        width,
+        height,
+        sized,
+    )?);
+    match cfg.encoder.family {
+        EncoderFamily::NvencCuda => {
+            chain.push(make("d3d11download")?);
+            chain.push(make("cudaupload")?);
+        }
+        // D3D11 → D3D12 on the GPU (shared texture), no download.
+        EncoderFamily::D3d12 => chain.push(make("d3d12upload")?),
+        _ if cfg.encoder.needs_system_memory() => chain.push(make("d3d11download")?),
+        _ => {}
+    }
+    Ok(chain)
+}
+
+/// Linux: input is system-memory `video/x-raw` (any format the converter takes, e.g.
+/// PipeWire's BGRx). Conversion and scaling run on the GPU where the encoder has a way in:
+/// OpenGL for NVENC (it takes GL textures; GStreamer's CUDA converters need NVIDIA's
+/// runtime compiler `libnvrtc`, which desktops don't have), VA for VA-API; openh264
+/// converts on the CPU (I420). `glcolorscale` only scales RGBA textures, hence the
+/// conversions around it.
+#[cfg(not(windows))]
+fn convert_front(
+    cfg: &EncodeConfig,
+    width: u32,
+    height: u32,
+    sized: &mut Vec<(gst::Element, String)>,
+) -> Result<Vec<gst::Element>, CaptureError> {
+    let (w, h) = (width, height);
+    Ok(match cfg.encoder.family {
+        EncoderFamily::NvencCuda => vec![
+            make("glupload")?,
+            make("glcolorconvert")?,
+            capsfilter("video/x-raw(memory:GLMemory),format=RGBA")?,
+            make("glcolorscale")?,
+            sized_filter("video/x-raw(memory:GLMemory),format=RGBA", w, h, sized)?,
+            make("glcolorconvert")?,
+            sized_filter("video/x-raw(memory:GLMemory),format=NV12", w, h, sized)?,
+        ],
+        EncoderFamily::VaApi => vec![
+            make("vapostproc")?,
+            sized_filter("video/x-raw(memory:VAMemory),format=NV12", w, h, sized)?,
+        ],
+        _ => vec![
+            make("videoconvertscale")?,
+            sized_filter("video/x-raw,format=I420", w, h, sized)?,
+        ],
+    })
+}
+
+/// Build `convert/scale → NV12 (w x h) on the encoder's device → queue → encoder → parser →
+/// appsink` inside `bin` (see [`convert_front`] for the input each platform takes).
 pub fn build_encode_chain(
     bin: &gst::Pipeline,
     cfg: &EncodeConfig,
@@ -421,23 +550,12 @@ pub fn build_encode_chain(
             "bad size/fps {width}x{height}@{fps}"
         )));
     }
-    let family = cfg.encoder.family;
-    let convert = make("d3d11convert")?;
-    let mut chain = vec![convert.clone()];
-    let nv12 = format!(
-        "video/x-raw(memory:D3D11Memory),format=NV12,width={width},height={height},pixel-aspect-ratio=1/1"
-    );
-    chain.push(capsfilter(&nv12)?);
-    match family {
-        EncoderFamily::NvencCuda => {
-            chain.push(make("d3d11download")?);
-            chain.push(make("cudaupload")?);
-        }
-        // D3D11 → D3D12 on the GPU (shared texture), no download.
-        EncoderFamily::D3d12 => chain.push(make("d3d12upload")?),
-        _ if cfg.encoder.needs_system_memory() => chain.push(make("d3d11download")?),
-        _ => {}
-    }
+    let mut sized = Vec::new();
+    let mut chain = convert_front(cfg, width, height, &mut sized)?;
+    let convert = chain
+        .first()
+        .cloned()
+        .ok_or_else(|| CaptureError::Gst("empty encode chain".into()))?;
     let queue = make("queue")?;
     props::set_str(&queue, "max-size-buffers", "8");
     props::set_str(&queue, "max-size-bytes", "0");
@@ -475,6 +593,7 @@ pub fn build_encode_chain(
         origin,
         queue,
         encoder,
+        sized,
     })
 }
 
@@ -745,6 +864,8 @@ pub struct CaptureSession {
     /// Klip's own capture feeding the pipeline (stopped before the pipeline).
     #[cfg(windows)]
     gpu: Option<klip_platform::GpuCapture>,
+    /// Keeps the screen-cast session open while its stream is captured.
+    portal: Option<PortalSession>,
     /// Which implementation captures.
     api: CaptureApi,
 }
@@ -756,6 +877,10 @@ impl std::fmt::Debug for CaptureSession {
             .finish_non_exhaustive()
     }
 }
+
+/// How long a screen-cast stream may take to deliver its first frame (the compositor sends
+/// one as soon as the stream connects).
+const PORTAL_FIRST_FRAME: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Reference caps of the arrival-time meta on captured frames.
 const ARRIVAL_META: &str = "timestamp/x-klip-arrival";
@@ -783,6 +908,37 @@ fn restamp_on_arrival(src: &gst::Element, tb: &TimeBase) -> Result<(), CaptureEr
             let mut last = last.lock().unwrap_or_else(PoisonError::into_inner);
             // Strictly increasing even if two frames arrive within one clock tick.
             let now = tb.now().max(last.saturating_add(1));
+            *last = now;
+            let t = gst::ClockTime::from_nseconds(u64::try_from(now).unwrap_or(0));
+            let b = buffer.make_mut();
+            b.set_pts(t);
+            b.set_dts(gst::ClockTime::NONE);
+            gst::ReferenceTimestampMeta::add(b, &caps, t, gst::ClockTime::NONE);
+        }
+        gst::PadProbeReturn::Ok
+    });
+    Ok(())
+}
+
+/// Keep each frame's capture time from `src` (the compositor's time when the source stamps
+/// frames, else the arrival time on `tb`) in the arrival-time meta, strictly increasing,
+/// for [`snap_kept_frames`]. `KLIP_CAPTURE_STAMPS=arrival` stamps on arrival instead (A/B
+/// timing runs).
+fn keep_source_times(src: &gst::Element, tb: &TimeBase) -> Result<(), CaptureError> {
+    if std::env::var("KLIP_CAPTURE_STAMPS").is_ok_and(|v| v == "arrival") {
+        return restamp_on_arrival(src, tb);
+    }
+    let pad = src
+        .static_pad("src")
+        .ok_or_else(|| CaptureError::Gst("capture source has no src pad".into()))?;
+    let tb = tb.clone();
+    let caps = gst::Caps::new_empty_simple(ARRIVAL_META);
+    let last = Mutex::new(Nanos::MIN);
+    pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
+        if let Some(gst::PadProbeData::Buffer(buffer)) = info.data.as_mut() {
+            let mut last = last.lock().unwrap_or_else(PoisonError::into_inner);
+            let stamped = clock_ns(buffer.pts()).unwrap_or_else(|| tb.now());
+            let now = stamped.max(last.saturating_add(1));
             *last = now;
             let t = gst::ClockTime::from_nseconds(u64::try_from(now).unwrap_or(0));
             let b = buffer.make_mut();
@@ -851,6 +1007,10 @@ fn source_size(target: VideoTarget) -> Result<(u32, u32, VideoTarget), CaptureEr
                 .ok_or_else(|| CaptureError::Target("no primary monitor".into()))?;
             Ok((m.width, m.height, VideoTarget::Monitor(m.handle)))
         }
+        // Sized from the stream's caps (see `start_portal`).
+        VideoTarget::Portal => Err(CaptureError::Target(
+            "portal streams have no size before they start".into(),
+        )),
     }
 }
 
@@ -905,6 +1065,7 @@ fn target_monitor(target: VideoTarget) -> Option<klip_platform::MonitorInfo> {
         VideoTarget::PrimaryMonitor => monitors.iter().find(|m| m.primary)?.handle,
         VideoTarget::Monitor(h) => h,
         VideoTarget::Window(h) => klip_platform::window_info(h).ok()?.monitor,
+        VideoTarget::Portal => return None,
     };
     monitors.into_iter().find(|m| m.handle == handle)
 }
@@ -930,6 +1091,9 @@ impl CaptureSession {
         klip_probe::init().map_err(gst_err)?;
         if video.fps == 0 || video.fps > 1000 {
             return Err(CaptureError::Config(format!("bad fps {}", video.fps)));
+        }
+        if video.target == VideoTarget::Portal {
+            return Self::start_portal(video, encode, sink, timebase);
         }
         let (src_w, src_h, target) = source_size(video.target)?;
         let (out_w, out_h) = match video.output {
@@ -978,7 +1142,7 @@ impl CaptureSession {
         let gpu_target = match target {
             VideoTarget::Window(h) => klip_platform::GpuCaptureTarget::Window(h),
             VideoTarget::Monitor(h) => klip_platform::GpuCaptureTarget::Monitor(h),
-            VideoTarget::PrimaryMonitor => {
+            VideoTarget::PrimaryMonitor | VideoTarget::Portal => {
                 return Err(CaptureError::Target("no monitor handle".into()));
             }
         };
@@ -1094,6 +1258,11 @@ impl CaptureSession {
                     .map_err(CaptureError::Config)?;
             }
             VideoTarget::PrimaryMonitor => {}
+            VideoTarget::Portal => {
+                return Err(CaptureError::Config(
+                    "portal streams are captured with pipewiresrc".into(),
+                ));
+            }
         }
         if let Some(tb) = timebase {
             restamp_on_arrival(&src, tb)?;
@@ -1140,6 +1309,111 @@ impl CaptureSession {
             CaptureApi::GstWgc
         };
         tracing::info!(width = out_w, height = out_h, fps = video.fps, encoder = %encode.encoder.element, api = ?session.api, "capture started (GStreamer source)");
+        Ok(session)
+    }
+
+    /// A screen-cast portal stream: `pipewiresrc` (system memory) → `videorate` → the
+    /// encode chain. The output size comes from the stream's first caps (unless pinned):
+    /// a probe sizes the chain as they pass, before any frame gets there.
+    fn start_portal(
+        video: &VideoConfig,
+        encode: &EncodeConfig,
+        sink: Arc<dyn PacketSink>,
+        timebase: Option<&TimeBase>,
+    ) -> Result<CaptureSession, CaptureError> {
+        let portal = video
+            .portal
+            .clone()
+            .ok_or_else(|| CaptureError::Config("no screen-cast session".into()))?;
+        let stream = portal
+            .0
+            .streams()
+            .first()
+            .cloned()
+            .ok_or_else(|| CaptureError::Target("screen-cast session has no stream".into()))?;
+        let pipeline = gst::Pipeline::with_name("klip-capture");
+        let src = make("pipewiresrc")?;
+        props::require(&src, "fd", &portal.0.pipewire_fd().to_string())
+            .map_err(CaptureError::Config)?;
+        props::require(&src, "path", &stream.node_id.to_string()).map_err(CaptureError::Config)?;
+        // Leave `on-disconnect` at "none": its "error"/"eos" modes fire on every buffer
+        // renegotiation (all buffers are removed then too; KWin renegotiates right after
+        // the first frame), not only when the stream goes away.
+        props::set_str(&src, "client-name", "Klip");
+        if let Some(tb) = timebase {
+            keep_source_times(&src, tb)?;
+        }
+        // System memory: every GPU path below can upload it, and the compositor finishes
+        // each frame before handing it over. DMA-BUF (`KLIP_PORTAL_CAPS=
+        // video/x-raw(memory:DMABuf)`) halves the CPU cost but, on NVIDIA (no implicit
+        // sync), repeated stale frames in the M1 test; see ADR 0012.
+        let raw = capsfilter(
+            &std::env::var("KLIP_PORTAL_CAPS").unwrap_or_else(|_| "video/x-raw".into()),
+        )?;
+        let videorate = make("videorate")?;
+        // Never invent frames; keep the one nearest each output slot.
+        props::set_str(&videorate, "drop-only", "true");
+        let rate = capsfilter(&format!("video/x-raw(ANY),framerate={}/1", video.fps))?;
+        let head = [src.clone(), raw, videorate, rate.clone()];
+        pipeline.add_many(&head).map_err(gst_err)?;
+        gst::Element::link_many(&head).map_err(gst_err)?;
+        let pinned = match video.output {
+            Some((w, h)) if w >= 64 && h >= 64 && w <= 8192 && h <= 8192 => Some((w & !1, h & !1)),
+            Some(o) => return Err(CaptureError::Config(format!("bad output size {o:?}"))),
+            None => None,
+        };
+        // Built at a provisional size; the first caps from the stream set the real one
+        // before any frame reaches the chain.
+        let (w0, h0) = pinned.unwrap_or((video.max_width.max(64), video.max_height.max(64)));
+        let chain = build_encode_chain(&pipeline, encode, w0 & !1, h0 & !1, video.fps)?;
+        rate.link(&chain.input).map_err(gst_err)?;
+        let (tx, rx) = std::sync::mpsc::sync_channel::<((u32, u32), (u32, u32))>(1);
+        let sized = chain.sized.clone();
+        let max = (video.max_width, video.max_height);
+        src.static_pad("src")
+            .ok_or_else(|| CaptureError::Gst("pipewiresrc has no src pad".into()))?
+            .add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
+                let Some(gst::PadProbeData::Event(ev)) = &info.data else {
+                    return gst::PadProbeReturn::Ok;
+                };
+                let gst::EventView::Caps(c) = ev.view() else {
+                    return gst::PadProbeReturn::Ok;
+                };
+                let Some(size) = c.caps().structure(0).and_then(|s| {
+                    let w = u32::try_from(s.get::<i32>("width").ok()?).ok()?;
+                    let h = u32::try_from(s.get::<i32>("height").ok()?).ok()?;
+                    Some((w, h))
+                }) else {
+                    return gst::PadProbeReturn::Ok;
+                };
+                // Later size changes (a resized window) are scaled to this first size.
+                let out = pinned.unwrap_or_else(|| fit_size(size.0, size.1, max.0, max.1));
+                if let Err(e) = set_sizes(&sized, out.0, out.1) {
+                    tracing::warn!(error = %e, "could not size the encode chain");
+                }
+                let _ = tx.try_send((size, out));
+                gst::PadProbeReturn::Remove
+            });
+        let stats = Arc::new(CaptureStats::default());
+        if timebase.is_some() {
+            let pad = rate
+                .static_pad("src")
+                .ok_or_else(|| CaptureError::Gst("capsfilter has no src pad".into()))?;
+            snap_kept_frames(&pad, video.fps, stats.clone());
+        }
+        chain.attach(0, sink.clone(), stats.clone(), Timing::AsIs);
+        let mut session = Self::run(pipeline, sink, stats, (w0, h0), timebase)?;
+        session.portal = Some(portal);
+        session.api = CaptureApi::Portal;
+        let ((src_w, src_h), (out_w, out_h)) =
+            rx.recv_timeout(PORTAL_FIRST_FRAME).map_err(|_| {
+                CaptureError::Target(format!(
+                    "no frame from the screen-cast stream within {} s",
+                    PORTAL_FIRST_FRAME.as_secs()
+                ))
+            })?;
+        session.output = (out_w, out_h);
+        tracing::info!(width = out_w, height = out_h, source_width = src_w, source_height = src_h, fps = video.fps, encoder = %encode.encoder.element, node = stream.node_id, "capture started (screen-cast portal)");
         Ok(session)
     }
 
@@ -1207,6 +1481,7 @@ impl CaptureSession {
             output,
             #[cfg(windows)]
             gpu: None,
+            portal: None,
             api: CaptureApi::Auto,
         };
         session

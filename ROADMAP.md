@@ -8,7 +8,7 @@ Last updated: 2026-10-09 (end of M3).
 | M1 | Recorder CLI (Windows, NVENC) | **done**: acceptance passes |
 | M2 | Audio (game/per-app/mic tracks, A/V sync ≤ 1 frame) | **done**: acceptance passes |
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
-| M4 | Linux (portal + PipeWire, VA-API) | next |
+| M4 | Linux (portal + PipeWire, VA-API) | **in progress**: video capture + encode pass; audio, hotkey next |
 | M5 | Full-session recording + bookmarks | |
 | M6 | Desktop app shell (Tauri) | |
 | M7 | Library | |
@@ -88,6 +88,20 @@ Audio (M2):
   control channel, frame grid, drift aligner, lag estimator, app-exclusion planner: unit
   and property tests.
 
+### Linux (M4, so far)
+
+Machine: same PC on Bazzite 44 (KDE Plasma 6.7.5 Wayland), NVIDIA driver 615.71,
+GStreamer 1.28.7, PipeWire 1.6.9; two 3840x2160 monitors at scale 1.7. `cargo xtask ci`
+green (built in a Fedora 44 distrobox).
+- Encoders: `nvh264enc`, `nvh265enc`, `nvav1enc`, `openh264enc` round-trip 240 barcoded
+  frames exactly (`every_working_encoder_round_trips_exactly`); 600-frame ring + MP4
+  test passes.
+- M1 acceptance through the portal (test game fullscreen 3840x2160 @ 120 fps on the
+  second monitor, 60 fps capture scaled to 1280x720, NVENC H.264): 15.27 s clip, 60.00
+  fps, every barcode readable, no repeats or reordering, frame interval p99 17.2 ms; save
+  4 ms.
+- Recorder CPU 4K stream → 1080p60: 31 % of one core, RSS 457 MB (no audio).
+
 ## Approximate / not done yet
 
 - **Audio timing references are the test game's own logs.** Video is measured against
@@ -131,7 +145,12 @@ Audio (M2):
   one AAC track).
 - If the captured window closes, the recorder keeps the buffer (clips still save) but
   doesn't recover capture; restart/re-target logic comes with game detection (M6).
-- Linux: nothing yet (M4).
+- **Linux** (M4, ADR 0012): video through the screen-cast portal works on KDE Wayland
+  with NVENC; not yet: audio (M4.4), global hotkey (M4.5), X11 and GNOME (M4.6), VA-API
+  on real AMD/Intel hardware. Capture copies frames through system memory (31 % of one
+  core at 4K → 1080p60); DMA-BUF is faster but shows stale frames on NVIDIA until
+  explicit sync is handled. Stopping the share from the desktop stalls the stream
+  instead of reporting an error. Windows/monitors can't be targeted by handle (Wayland).
 
 ## Manual checks for the human (M2)
 
