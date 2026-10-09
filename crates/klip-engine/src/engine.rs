@@ -24,6 +24,8 @@ use klip_settings::{
 };
 use serde_json::{Value, json};
 
+mod storage;
+
 use crate::events::{Bus, Event};
 use crate::games::{self, DetectedGame};
 use crate::{EngineError, config};
@@ -119,6 +121,11 @@ pub(crate) struct Inner {
     bound: Mutex<Vec<Value>>,
     busy: Mutex<HashSet<String>>,
     cache: Mutex<(ProbeCache, Option<PathBuf>)>,
+    /// Serialises read-modify-write of the clip metadata.
+    library_lock: Mutex<()>,
+    /// A storage clean-up job is running.
+    cleaning: AtomicBool,
+    low_disk_warned: Mutex<Option<Instant>>,
     wake: (Mutex<bool>, Condvar),
     stop: AtomicBool,
     exit: AtomicBool,
@@ -162,6 +169,9 @@ impl Engine {
             bound: Mutex::new(Vec::new()),
             busy: Mutex::new(HashSet::new()),
             cache: Mutex::new(config::load_encoder_cache()),
+            library_lock: Mutex::new(()),
+            cleaning: AtomicBool::new(false),
+            low_disk_warned: Mutex::new(None),
             wake: (Mutex::new(false), Condvar::new()),
             stop: AtomicBool::new(false),
             exit: AtomicBool::new(false),
@@ -289,6 +299,7 @@ impl Inner {
         if catch_unwind(AssertUnwindSafe(|| self.recover())).is_err() {
             tracing::error!("recovering recordings panicked");
         }
+        self.cleanup_in_background(Vec::new());
         while !self.stop.load(Ordering::Relaxed) {
             if catch_unwind(AssertUnwindSafe(|| self.tick())).is_err() {
                 tracing::error!("game watcher panicked; carrying on");
@@ -423,6 +434,7 @@ impl Inner {
         st.starting = false;
         match res {
             Ok((rec, clip_dir, fps, buffer_ms)) => {
+                self.check_disk(true);
                 let status = rec.status();
                 st.current = Some(Current {
                     recorder: Arc::new(rec),
@@ -615,6 +627,9 @@ impl Inner {
         if new.hotkeys != old.hotkeys {
             self.bind_hotkeys();
         }
+        if new.storage != old.storage || new.clips != old.clips {
+            self.cleanup_in_background(Vec::new());
+        }
         let v = new
             .to_value()
             .map_err(|e| CommandError::new("failed", e.to_string()))?;
@@ -689,6 +704,13 @@ impl Handler for Inner {
                     window: game.as_ref().and_then(|g| g.window),
                     clip: clip.clone(),
                 });
+                let saved: Vec<PathBuf> = clip
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(PathBuf::from)
+                    .into_iter()
+                    .collect();
+                self.cleanup_in_background(saved);
                 Ok(clip)
             }
             commands::SESSION_START | commands::SESSION_STOP | commands::SESSION_TOGGLE => {
@@ -709,6 +731,9 @@ impl Handler for Inner {
                 }
                 Ok(r)
             }
+            commands::STORAGE_STATUS => self.storage_status(),
+            commands::STORAGE_CLEANUP => self.cleanup(&[]),
+            commands::CLIP_STAR => self.star(args),
             commands::OVERLAY_MENU => {
                 self.emit(&Event::QuickMenu);
                 Ok(json!({ "shown": true }))

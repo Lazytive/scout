@@ -82,6 +82,10 @@ pub enum Event {
     SettingsChanged {
         settings: Value,
     },
+    /// Clips removed to stay under the storage cap.
+    StorageCleaned {
+        report: Value,
+    },
     /// Recordings a killed recorder left, finalised at start.
     Recovered {
         path: String,

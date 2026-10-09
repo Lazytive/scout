@@ -11,6 +11,7 @@ publish.workspace = true
 dirs.workspace = true
 klip-capture.workspace = true
 klip-control.workspace = true
+klip-library.workspace = true
 klip-media.workspace = true
 klip-platform.workspace = true
 klip-probe.workspace = true
@@ -22,6 +23,7 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+klip-platform.workspace = true
 tempfile.workspace = true
 
 [lints]

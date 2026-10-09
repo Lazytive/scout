@@ -21,6 +21,7 @@ klip-capture = { path = "crates/klip-capture" }
 klip-recorder = { path = "crates/klip-recorder" }
 klip-settings = { path = "crates/klip-settings" }
 klip-engine = { path = "crates/klip-engine" }
+klip-library = { path = "crates/klip-library" }
 
 anyhow = "1"
 bytemuck = { version = "1.25", features = ["derive"] }
@@ -40,6 +41,8 @@ serde_json = "1"
 serde_path_to_error = "0.1"
 tempfile = "3"
 thiserror = "2"
+# Recycle Bin / freedesktop Trash. No chrono (only needed to list the trash).
+trash = { version = "5.2", default-features = false, features = ["coinit_apartmentthreaded"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wgpu = "30"

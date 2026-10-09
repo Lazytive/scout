@@ -424,6 +424,32 @@ pub fn process_usage(pid: u32) -> Result<ProcessUsage, PlatformError> {
     }
 }
 
+/// Move files to the Recycle Bin (Windows) or the freedesktop Trash (Linux), one result
+/// per file. Runs on a thread of its own: on Windows the `trash` crate initialises COM
+/// (single-threaded apartment) for the calling thread, which must not clash with ours.
+pub fn move_to_trash(paths: &[std::path::PathBuf]) -> Vec<Result<(), PlatformError>> {
+    let owned = paths.to_vec();
+    let n = owned.len();
+    let job = std::thread::Builder::new()
+        .name("klip-trash".into())
+        .spawn(move || {
+            owned
+                .iter()
+                .map(|p| {
+                    trash::delete(p)
+                        .map_err(|e| PlatformError::Os(format!("moving to the trash: {e}")))
+                })
+                .collect::<Vec<_>>()
+        });
+    let failed = |m: &str| (0..n).map(|_| Err(PlatformError::Os(m.into()))).collect();
+    match job {
+        Ok(h) => h
+            .join()
+            .unwrap_or_else(|_| failed("the trash thread panicked")),
+        Err(_) => failed("no thread for the trash"),
+    }
+}
+
 /// Press and release a shortcut-spec trigger (e.g. `ALT+F10`) as if typed, system-wide.
 /// For tests and automation (Windows; elsewhere unsupported). The modifiers reach the
 /// focused app, so tests use bare keys no keyboard has (F13–F24).

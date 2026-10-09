@@ -84,6 +84,20 @@ fn own_process_path_and_windows() {
     assert!(list_windows().is_ok());
 }
 
+/// Manual check (not in `e2e`: it leaves a file in the Recycle Bin).
+#[test]
+#[ignore = "diagnostic: puts a small file into the Recycle Bin"]
+fn diag_trash_moves_a_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("klip-trash-check.mp4");
+    std::fs::write(&f, b"klip").unwrap();
+    let r = crate::move_to_trash(std::slice::from_ref(&f));
+    assert!(r[0].is_ok(), "{r:?}");
+    assert!(!f.exists());
+    let missing = crate::move_to_trash(&[dir.path().join("missing.mp4")]);
+    assert!(missing[0].is_err());
+}
+
 #[test]
 fn own_cpu_and_memory() {
     let a = crate::process_usage(std::process::id()).unwrap();

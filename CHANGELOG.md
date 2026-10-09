@@ -5,6 +5,13 @@ reason)`.
 
 ## Unreleased
 
+- M6.5 — Storage management. New pure crate `klip-library` (clip-folder metadata with
+  stars in `.klip/library.json`, scan, the cap policy). `klip-platform::move_to_trash`
+  (`trash` crate, MIT). Engine: clean-up after saves / at start / on settings change,
+  low-disk warning, commands `storage.status`, `storage.cleanup`, `clip.star`, event
+  `storage_cleaned`. (Claude Opus 5.5: clips must not fill the disk; starred ones are
+  never touched)
+
 - M6.4 — `klip-engine`: `Engine` (settings, `klip-watch` game watcher, recorder start/stop
   per game with profiles and per-game clip folders, Always/Games/Off buffer modes, retry,
   recovery of leftover recordings, hotkeys from settings with per-binding errors, job

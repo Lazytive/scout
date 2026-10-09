@@ -38,10 +38,18 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   game starts. Commands: `ping`, `engine.status`, `settings.get`, `settings.set` (strict
   merge patch, saved atomically), `games.list`, `clip.save`, `session.*`, `bookmark.add`,
   `recorder.status`, `overlay.menu`, `recorder.stop`/`app.quit` (the front end exits).
+- Storage (`engine/storage.rs`): after every saved clip (that clip protected), at start
+  and when the storage or folder settings change, a `klip-storage` job scans the clip
+  folder and removes the oldest unstarred clips over the cap (`klip_library::over_cap`):
+  to the Recycle Bin / Trash by default, deleted with `over_cap: delete`; the event
+  `storage_cleaned` reports what went and what failed. Free space on the clip drive is
+  checked at recorder start and after clean-ups: below `low_disk_gb` → a `warning`
+  event (at most every 30 min). Commands `storage.status`, `storage.cleanup`,
+  `clip.star`.
 - `events`: `Event` (`ready`, `game_started/stopped`, `recorder_started/stopped/failed`,
   `clip_saved` with the game's window, `recording_started/stopped`, `bookmark`,
   `action_failed` for hotkeys, `quick_menu`, `hotkeys` with each binding's error,
-  `settings_changed`, `recovered`, `warning`), fanned out to bounded queues (256 per
+  `settings_changed`, `storage_cleaned`, `recovered`, `warning`), fanned out to bounded queues (256 per
   subscriber; a stalled subscriber loses events, memory doesn't grow).
 - `config`: settings → `RecorderConfig`, shared with `klip-cli record`: clip and
   recordings folders, encoder choice + probe cache, target GPU and refresh rate, audio
@@ -55,6 +63,8 @@ lists, minimised windows, window-less detection, and the poll cost on the real s
 `tests/engine.rs` (no recording: buffer off, control channel off): commands, `not_ready`
 without a game, strict settings changes (nothing changes on disk or in memory when
 rejected), `settings_changed`, hotkeys rebound from settings, a broken settings file
-repaired and rewritten. End to end with the test game: `apps/klip-cli/tests/m6_daemon.rs`.
+repaired and rewritten, the storage cap (1.3 GiB of test clips against 1 GiB: the oldest
+unstarred goes at start, the starred older one stays; usage, low-disk warning,
+`clip.star` checks). End to end with the test game: `apps/klip-cli/tests/m6_daemon.rs`.
 
 Layer: media engine (no UI).

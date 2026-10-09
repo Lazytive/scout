@@ -2,7 +2,12 @@
 //! off (so a game the human is playing is never recorded by a test) and the control
 //! channel is off (so a running Klip's discovery file is never touched).
 
-#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
@@ -152,5 +157,76 @@ fn broken_settings_files_are_repaired_and_rewritten() {
     assert!(dir.path().join("settings.json.bad").exists());
     let on_disk: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(on_disk["recording"]["buffer_secs"], 120);
+    engine.shutdown();
+}
+
+/// A clip of `mib` MiB without writing the bytes (the length is what counts).
+fn big_clip(path: &std::path::Path, mib: u64, age_secs: u64) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let f = std::fs::File::create(path).unwrap();
+    f.set_len(mib << 20).unwrap();
+    f.set_modified(std::time::SystemTime::now() - Duration::from_secs(age_secs))
+        .unwrap();
+}
+
+#[test]
+fn storage_cap_removes_the_oldest_unstarred_clips() {
+    let dir = tempfile::tempdir().unwrap();
+    if klip_platform::free_disk_space(dir.path()).unwrap() < 4 << 30 {
+        eprintln!("skipped: needs 4 GiB free for the test files");
+        return;
+    }
+    let clips = dir.path().join("clips");
+    let starred_old = clips.join("G/starred-old.mp4");
+    let old = clips.join("G/old.mp4");
+    let mid = clips.join("H/mid.mp4");
+    let new = clips.join("G/new.mp4");
+    big_clip(&starred_old, 400, 900);
+    big_clip(&old, 400, 600);
+    big_clip(&mid, 400, 300);
+    big_clip(&new, 100, 10);
+    std::fs::create_dir_all(clips.join(".klip")).unwrap();
+    std::fs::write(
+        clips.join(".klip/library.json"),
+        r#"{"version":1,"clips":{"G/starred-old.mp4":{"starred":true}}}"#,
+    )
+    .unwrap();
+    let path = dir.path().join("settings.json");
+    let s = json!({
+        "app": {"control_channel": false},
+        "clips": {"folder": clips},
+        "hotkeys": [],
+        "games": {"buffer": "off"},
+        "storage": {"cap_gb": 1, "over_cap": "delete", "low_disk_gb": 100000},
+    });
+    std::fs::write(&path, s.to_string()).unwrap();
+    // 1300 MiB against a 1 GiB cap: the oldest unstarred clip goes at start.
+    let (engine, rx) = start(path);
+    let cleaned = next(&rx, "storage_cleaned");
+    assert_eq!(cleaned["report"]["removed"], 1, "{cleaned}");
+    assert_eq!(cleaned["report"]["to_trash"], false);
+    assert!(starred_old.exists() && !old.exists() && mid.exists() && new.exists());
+
+    let st = engine.handle("storage.status", &Value::Null).unwrap();
+    assert_eq!(st["usage"]["clips"], 3);
+    assert_eq!(st["usage"]["starred"], 1);
+    assert_eq!(st["cap_bytes"], 1u64 << 30);
+    assert_eq!(st["low_disk"], true, "the threshold is 100 TB");
+    let w = next(&rx, "warning");
+    assert!(
+        w["message"].as_str().unwrap().starts_with("Low disk space"),
+        "{w}"
+    );
+
+    // Unstarring doesn't remove anything while under the cap; stars need a real clip.
+    engine
+        .handle("clip.star", &json!({"path": starred_old, "starred": false}))
+        .unwrap();
+    let r = engine.handle("storage.cleanup", &Value::Null).unwrap();
+    assert_eq!(r["removed"], 0);
+    let e = engine
+        .handle("clip.star", &json!({"path": old, "starred": true}))
+        .unwrap_err();
+    assert_eq!(e.code, "bad_args");
     engine.shutdown();
 }

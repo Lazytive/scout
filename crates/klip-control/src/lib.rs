@@ -48,6 +48,12 @@ pub mod commands {
     pub const GAMES_LIST: &str = "games.list";
     /// Open the overlay's quick menu (what its hotkey does).
     pub const OVERLAY_MENU: &str = "overlay.menu";
+    /// Clip folder size, cap, free space.
+    pub const STORAGE_STATUS: &str = "storage.status";
+    /// Bring the clip folder under its cap now.
+    pub const STORAGE_CLEANUP: &str = "storage.cleanup";
+    /// Star or unstar a clip. Args: `{"path": "…", "starred": true}`.
+    pub const CLIP_STAR: &str = "clip.star";
 }
 
 /// Longest accepted line (bytes, including the newline).

@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (M6 in progress: M6.1–M6.4).
+Last updated: 2026-10-09 (M6 in progress: M6.1–M6.5).
 
 | | Milestone | State |
 |---|---|---|
@@ -10,7 +10,7 @@ Last updated: 2026-10-09 (M6 in progress: M6.1–M6.4).
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
-| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon` done (M6.1–M6.4); app window, storage, overlay, themes, bench next |
+| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap done (M6.1–M6.5); app window, overlay, themes, bench next |
 | M7 | Library | |
 | M8 | Editor, Normal mode + export presets | |
 | M9 | Editor, Advanced mode | |
@@ -288,6 +288,19 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 3. **Long recording**: an hour of a real game with `--session`; `klip-cli status` →
    `session` shows size and fragments; stopping should take well under a second and the
    file should play to the end with sound in sync.
+
+## Manual checks for the human (M6, so far)
+
+1. Storage cap: in a test clip folder, set `storage.cap_gb` low (e.g. 1) with a few
+   GB of clips, star one old clip, save a new clip: the oldest unstarred clips appear
+   in the Recycle Bin (restorable), the starred one stays.
+2. Game detection: start a few games from Steam / Epic / Xbox app / Battle.net (no
+   anti-cheat titles without asking): `klip-cli daemon` prints `game_started` with the
+   right name; launchers and store clients don't count. Battle.net games have no common
+   library folder: add them to `games.user_games`.
+3. Hotkeys: in a real (non anti-cheat) game in fullscreen, Alt+F10 saves a clip; a key
+   combination another app holds (e.g. the NVIDIA overlay's Alt+F10) shows up as an
+   error in the `hotkeys` event.
 
 ## Known bugs
 

@@ -14,6 +14,7 @@ pub const PURE: &[&str] = &[
     "klip-control",
     "klip-testkit",
     "klip-settings",
+    "klip-library",
 ];
 /// Media engine (and the platform layer): no UI, no apps.
 pub const ENGINE: &[&str] = &[

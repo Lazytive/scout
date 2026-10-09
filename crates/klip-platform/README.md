@@ -15,6 +15,12 @@ Windows (Win32/DXGI via the `windows` crate):
   (DisplayConfig, "SDR content brightness") and peak luminance.
 - `exclusive_fullscreen_active`: the shell's "D3D full screen" notification state.
 - `enable_dpi_awareness`: per-monitor-v2, so sizes are physical pixels.
+- `move_to_trash(paths)` (both OSes): the `trash` crate (MIT) on a `klip-trash` thread
+  of its own (its Windows code sets up COM for the calling thread). Diagnostic
+  `diag_trash_moves_a_file` (manual: it leaves a file in the Recycle Bin).
+- `process_usage(pid)`: CPU time and memory (Windows: GetProcessTimes +
+  GetProcessMemoryInfo; Linux: `/proc/<pid>/stat` + `statm`), for Klip's own processes
+  (idle cost, benchmarks). Monitors report `refresh_hz` (EnumDisplaySettingsW).
 - `list_processes`: pid, parent pid, executable name (Toolhelp snapshot).
   `process_path(pid)`: full executable path (`QueryFullProcessImageNameW` with
   `PROCESS_QUERY_LIMITED_INFORMATION`: no memory access, allowed even for protected

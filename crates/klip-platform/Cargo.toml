@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 thiserror.workspace = true
+trash.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.13", default-features = false, features = ["async-io", "screencast", "global_shortcuts"] }
@@ -63,6 +64,7 @@ windows-core.workspace = true
 
 [dev-dependencies]
 klip-settings.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
