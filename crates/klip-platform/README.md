@@ -31,6 +31,8 @@ Windows (Win32/DXGI via the `windows` crate):
   device lock); per frame one shader pass (crop, scale, letterbox; HDR monitors: FP16
   capture, scene-peak measurement, tone-map to SDR) into a pooled texture handed to a
   `GpuFrameSink` with WGC's QPC capture time. Counters in `GpuCaptureStats`.
+- `free_disk_space(path)`: bytes available to the user on that volume
+  (`GetDiskFreeSpaceExW`; Linux `statvfs`), for the recording reserve.
 - `qpc_now_ns` (the clock of those stamps) and `process_loopback_supported` (build 19041+,
   via `RtlGetVersion`).
 

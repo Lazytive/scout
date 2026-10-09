@@ -358,3 +358,33 @@ fn snapshot_until_cuts_at_the_request_time() {
         r.snapshot(NANOS_PER_SEC).unwrap().end
     );
 }
+
+#[test]
+fn tail_starts_at_the_newest_keyframe_and_lists_every_described_track() {
+    let mut r = Ring::new(
+        RingConfig {
+            max_duration: 10 * NANOS_PER_SEC,
+            max_bytes: u64::MAX,
+        },
+        &[TrackKind::Video, TrackKind::Audio, TrackKind::Audio],
+    )
+    .unwrap();
+    r.set_track_info(0, video_info(0)).unwrap();
+    r.set_track_info(1, audio_info()).unwrap();
+    // Track 2 is never described: left out.
+    let empty = r.tail_from_last_keyframe();
+    assert_eq!(empty.len(), 2);
+    assert!(empty.iter().all(|t| t.packets.is_empty()));
+    fill(&mut r, 0, 150);
+    for i in 0..150 {
+        r.push(1, pkt(i, true, 10)).unwrap();
+    }
+    let tail = r.tail_from_last_keyframe();
+    assert_eq!(tail.len(), 2);
+    assert_eq!(tail[0].packets.first().unwrap().dts, 120 * FRAME);
+    assert!(tail[0].packets.first().unwrap().keyframe);
+    assert_eq!(tail[0].packets.len(), 30);
+    assert_eq!(tail[1].track, 1);
+    assert_eq!(tail[1].packets.len(), 30);
+    assert_eq!(tail[1].packets[0].dts, 120 * FRAME);
+}

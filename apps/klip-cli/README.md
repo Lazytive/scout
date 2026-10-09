@@ -14,7 +14,12 @@ klip-cli record [--buffer 120s] [--fps 60] [--bitrate 20000] [--max-size 1920x10
                 [--portal monitor|window|any] [--portal-token FILE]   # Linux
                 [--game EXE]           # Linux: the game's program, for the Game track
                 [--hotkey [KEYS]] [--hotkey-length 30s]   # Linux: GlobalShortcuts portal
+                [--session] [--session-dir DIR]          # full-session recording
+                [--record-hotkey [KEYS]] [--bookmark-hotkey [KEYS]]   # Linux portal
 klip-cli clip [--last 30s]        # save from the running recorder; prints JSON
+klip-cli session start|stop|toggle   # full-session recording in the running recorder
+klip-cli bookmark                 # mark this moment (recording + clips that cover it)
+klip-cli finalize FILE            # finish a recording a killed recorder left
 klip-cli status | stop
 klip-cli probe [--codec h264]     # GPUs + every allowed encoder, tested
 klip-cli monitors | windows TEXT
@@ -31,6 +36,14 @@ followed by each input (for editors) unless `--no-separate-tracks`.
 `record` prints one JSON line `{"event":"ready",...}` to stdout, logs to stderr, and
 serves the control channel (discovery file in `%LOCALAPPDATA%\Klip\control.json`, or
 `--discovery`). Bind `klip-cli clip` to a desktop shortcut as a hotkey fallback.
+
+Full-session recording (ADR 0013): `--session` (or `klip-cli session start`) writes
+`Klip_Recording_<time>.mp4` into `--session-dir` (default: the clip folder) as a
+fragmented MP4, so a crash leaves a playable file; stopping (or stopping the recorder)
+finalises it into a regular MP4 and prints `{"event":"recording_stopped",...}`.
+Bookmarks become chapters ("Bookmark n") in the recording and in clips that cover them.
+At start, `record` finalises recordings a killed recorder left in that folder
+(`{"event":"recovered",...}`).
 
 Linux (ADR 0012): `record` captures through the desktop's screen-cast portal (the only
 way on Wayland; `--window-*`/`--monitor` are Windows options). The first run shows the

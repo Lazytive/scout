@@ -486,6 +486,34 @@ impl Ring {
         Ok(Snapshot { tracks, start, end })
     }
 
+    /// Every described track with its packets from the newest anchor keyframe on (other
+    /// tracks: packets whose dts is at or after that keyframe's). Packets may be empty,
+    /// e.g. all of them while the anchor has no keyframe yet. Used to start a recording
+    /// with what is already buffered.
+    pub fn tail_from_last_keyframe(&self) -> Vec<TrackSnapshot> {
+        let start = self
+            .tracks
+            .get(self.anchor)
+            .and_then(|a| a.packets.iter().rev().find(|p| p.keyframe))
+            .map(|p| p.dts);
+        self.tracks
+            .iter()
+            .enumerate()
+            .filter_map(|(i, t)| {
+                let info = t.info.clone()?;
+                let packets = match start {
+                    Some(s) => t.packets.iter().filter(|p| p.dts >= s).cloned().collect(),
+                    None => Vec::new(),
+                };
+                Some(TrackSnapshot {
+                    track: i,
+                    info,
+                    packets,
+                })
+            })
+            .collect()
+    }
+
     /// Current counters.
     pub fn stats(&self) -> RingStats {
         RingStats {

@@ -13,6 +13,9 @@ by duration and bytes.
   `snapshot_until(Some(t), length)` ends at the last video packet starting before `t`
   (saves cut at the request time while waiting for audio). Snapshot tracks carry their
   ring index (`TrackSnapshot::track`); tracks without data are left out.
+- `tail_from_last_keyframe()`: every described track from the newest video keyframe on
+  (other tracks from that keyframe's dts), packets possibly empty; starts a full-session
+  recording with what is already buffered.
 - `track_end`, `anchor_end`, `active_secondary_tracks` let the recorder see whether audio
   has caught up.
 - A new codec description (`set_track_info` with different SPS/PPS) drops that track's

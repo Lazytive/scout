@@ -17,7 +17,7 @@ use klip_capture::audio::{AudioConfig, AudioInput, AudioSource};
 use klip_capture::{EncodeConfig, VideoConfig, VideoTarget};
 use klip_control::{Client, ClientError, Server, commands};
 use klip_media::{Codec, NANOS_PER_MILLI, Nanos};
-use klip_recorder::{Recorder, RecorderConfig, estimate_buffer_bytes};
+use klip_recorder::{Recorder, RecorderConfig, SessionConfig, estimate_buffer_bytes};
 use serde_json::json;
 
 #[derive(Parser, Debug)]
@@ -47,6 +47,16 @@ enum Cmd {
     Status,
     /// Stop the running recorder.
     Stop,
+    /// Start or stop a full-session recording in the running recorder.
+    Session {
+        #[arg(value_enum)]
+        action: SessionAction,
+    },
+    /// Mark this moment (in the recording, and in clips that cover it).
+    Bookmark,
+    /// Finalise a recording left unfinished by a killed recorder (normally done when the
+    /// recorder starts).
+    Finalize { file: PathBuf },
     /// List GPUs and test every allowed encoder for a codec.
     Probe {
         #[arg(long, default_value = "h264")]
@@ -80,6 +90,13 @@ impl From<CaptureApiArg> for klip_capture::CaptureApi {
             CaptureApiArg::GstDxgi => klip_capture::CaptureApi::GstDxgi,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum SessionAction {
+    Start,
+    Stop,
+    Toggle,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -180,6 +197,19 @@ struct RecordArgs {
     /// Length of clips saved with --hotkey.
     #[arg(long, default_value = "30s", value_parser = parse_dur)]
     hotkey_length: Nanos,
+    /// Start a full-session recording right away (stop it with `klip-cli session stop`,
+    /// or it stops with the recorder).
+    #[arg(long)]
+    session: bool,
+    /// Folder for full-session recordings (default: the clip folder).
+    #[arg(long, value_name = "DIR")]
+    session_dir: Option<PathBuf>,
+    /// Shortcut that starts/stops a full-session recording (Linux portal, like --hotkey).
+    #[arg(long, num_args = 0..=1, default_missing_value = "ALT+F9", value_name = "KEYS")]
+    record_hotkey: Option<String>,
+    /// Shortcut that adds a bookmark (Linux portal, like --hotkey).
+    #[arg(long, num_args = 0..=1, default_missing_value = "ALT+F8", value_name = "KEYS")]
+    bookmark_hotkey: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -426,57 +456,119 @@ fn open_portal(args: &RecordArgs) -> Result<klip_capture::PortalSession> {
     Ok(klip_capture::PortalSession(Arc::new(cast)))
 }
 
-/// Bind the clip hotkey: each press saves the last `length` and prints a JSON line.
-fn bind_hotkey(
+/// Run `job` on its own thread unless the previous run of the same shortcut is still busy
+/// (saving waits for audio and writes a file; keep the portal thread free).
+fn spawn_job(busy: &Arc<AtomicBool>, job: impl FnOnce() + Send + 'static) {
+    if busy.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let flag = busy.clone();
+    let spawned = std::thread::Builder::new()
+        .name("klip-hotkey".into())
+        .spawn(move || {
+            job();
+            flag.store(false, Ordering::Release);
+        });
+    if spawned.is_err() {
+        busy.store(false, Ordering::Release);
+        eprintln!("Hotkey action failed: no thread");
+    }
+}
+
+/// Bind the requested shortcuts: clip save (`length`), recording start/stop, bookmark.
+/// Each press prints a JSON line.
+fn bind_hotkeys(
     recorder: Arc<Recorder>,
-    keys: &str,
-    length: Nanos,
-) -> Result<klip_platform::GlobalShortcuts> {
-    let busy = Arc::new(AtomicBool::new(false));
-    let on_press = move |id: &str| {
-        if id != commands::CLIP_SAVE || busy.swap(true, Ordering::AcqRel) {
-            return;
-        }
-        // Saving waits for audio and writes a file; keep the portal thread free.
-        let (recorder, busy) = (recorder.clone(), busy.clone());
-        let spawned = std::thread::Builder::new()
-            .name("klip-hotkey-save".into())
-            .spawn(move || {
-                match recorder.save_clip(length) {
-                    Ok(c) => println!(
-                        "{}",
-                        json!({
-                            "event": "clip",
-                            "path": c.path.to_string_lossy(),
-                            "duration_ms": c.duration / NANOS_PER_MILLI,
-                            "save_ms": c.save_ms,
-                        })
-                    ),
-                    Err(e) => eprintln!("Saving a clip failed: {e}"),
-                }
-                busy.store(false, Ordering::Release);
+    args: &RecordArgs,
+) -> Result<Option<klip_platform::GlobalShortcuts>> {
+    let mut specs = Vec::new();
+    let mut add = |id: &str, description: &str, keys: &Option<String>| {
+        if let Some(k) = keys {
+            specs.push(klip_platform::ShortcutSpec {
+                id: id.into(),
+                description: description.into(),
+                preferred_trigger: Some(k.clone()),
             });
-        if spawned.is_err() {
-            eprintln!("Saving a clip failed: no thread");
         }
     };
-    let shortcuts = klip_platform::GlobalShortcuts::bind(
-        &[klip_platform::ShortcutSpec {
-            id: commands::CLIP_SAVE.into(),
-            description: "Save a clip of the last moments".into(),
-            preferred_trigger: Some(keys.to_string()),
-        }],
-        Box::new(on_press),
-    )
-    .context("global shortcut")?;
+    add(
+        commands::CLIP_SAVE,
+        "Save a clip of the last moments",
+        &args.hotkey,
+    );
+    add(
+        commands::SESSION_TOGGLE,
+        "Start or stop recording",
+        &args.record_hotkey,
+    );
+    add(
+        commands::BOOKMARK_ADD,
+        "Bookmark this moment",
+        &args.bookmark_hotkey,
+    );
+    if specs.is_empty() {
+        return Ok(None);
+    }
+    let length = args.hotkey_length;
+    let busy: [Arc<AtomicBool>; 3] = Default::default();
+    let on_press = move |id: &str| {
+        let r = recorder.clone();
+        match id {
+            commands::CLIP_SAVE => spawn_job(&busy[0], move || match r.save_clip(length) {
+                Ok(c) => println!(
+                    "{}",
+                    json!({
+                        "event": "clip",
+                        "path": c.path.to_string_lossy(),
+                        "duration_ms": c.duration / NANOS_PER_MILLI,
+                        "save_ms": c.save_ms,
+                        "bookmarks": c.bookmarks,
+                    })
+                ),
+                Err(e) => eprintln!("Saving a clip failed: {e}"),
+            }),
+            commands::SESSION_TOGGLE => spawn_job(&busy[1], move || {
+                if r.session_running() {
+                    match r.stop_session() {
+                        Ok(s) => println!(
+                            "{}",
+                            json!({ "event": "recording_stopped", "summary": s.to_json() })
+                        ),
+                        Err(e) => eprintln!("Stopping the recording failed: {e}"),
+                    }
+                } else {
+                    match r.start_session() {
+                        Ok(p) => println!(
+                            "{}",
+                            json!({ "event": "recording_started", "path": p.to_string_lossy() })
+                        ),
+                        Err(e) => eprintln!("Starting a recording failed: {e}"),
+                    }
+                }
+            }),
+            commands::BOOKMARK_ADD => spawn_job(&busy[2], move || match r.bookmark() {
+                Ok((at, rel)) => println!(
+                    "{}",
+                    json!({ "event": "bookmark", "at_ns": at, "recording_ms": rel.map(|n| n / NANOS_PER_MILLI) })
+                ),
+                Err(e) => eprintln!("Bookmark failed: {e}"),
+            }),
+            _ => {}
+        }
+    };
+    let shortcuts = klip_platform::GlobalShortcuts::bind(&specs, Box::new(on_press))
+        .context("global shortcut")?;
     for s in shortcuts.bound() {
         if s.trigger.is_empty() {
-            eprintln!("The clip shortcut has no keys yet; set them in the desktop's settings.");
+            eprintln!(
+                "Shortcut {} has no keys yet; set them in the desktop's settings.",
+                s.id
+            );
         } else {
-            eprintln!("Clip shortcut: {}", s.trigger);
+            eprintln!("Shortcut {}: {}", s.id, s.trigger);
         }
     }
-    Ok(shortcuts)
+    Ok(Some(shortcuts))
 }
 
 fn excluded_apps(args: &RecordArgs) -> Vec<String> {
@@ -659,6 +751,18 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             .ok_or_else(|| anyhow!("no Videos folder; pass --out"))?
             .join("Klip"),
     };
+    let session_dir = args.session_dir.clone().unwrap_or_else(|| clip_dir.clone());
+    // Recordings a killed recorder left unfinished: finalise them now.
+    for r in klip_recorder::recover_recordings(&session_dir) {
+        match &r.result {
+            Ok(kept) => println!(
+                "{}",
+                json!({ "event": "recovered", "path": r.path.to_string_lossy(), "kept": kept })
+            ),
+            Err(e) => eprintln!("Could not finalise {}: {e}", r.path.display()),
+        }
+    }
+    let session_cfg = SessionConfig::new(session_dir.clone());
     let portal = match target {
         VideoTarget::Portal => Some(open_portal(args)?),
         _ => None,
@@ -694,6 +798,7 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
         },
         encoder_fallbacks: encoders,
         audio,
+        session: Some(session_cfg),
     };
     let recorder = Recorder::start(cfg).context("could not start capture")?;
     for a in recorder.encoder_attempts() {
@@ -708,9 +813,11 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
     save_encoder_cache(&cache, cache_path.as_deref());
     let recorder = Arc::new(recorder);
     let server = Server::start(recorder.clone(), Some(&discovery)).context("control channel")?;
-    let _hotkey = match &args.hotkey {
-        Some(keys) => Some(bind_hotkey(recorder.clone(), keys, args.hotkey_length)?),
-        None => None,
+    let _hotkeys = bind_hotkeys(recorder.clone(), args)?;
+    let session_path = if args.session {
+        Some(recorder.start_session().context("starting the recording")?)
+    } else {
+        None
     };
     let status = recorder.status();
     println!(
@@ -724,6 +831,8 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             "buffer_ms": args.buffer / NANOS_PER_MILLI,
             "max_buffer_bytes": max_buffer_bytes,
             "clip_dir": clip_dir.to_string_lossy(),
+            "session_dir": session_dir.to_string_lossy(),
+            "session": session_path.as_ref().map(|p| p.to_string_lossy()),
             "port": server.port(),
             "audio": status.get("audio"),
             "portal": portal_info.as_ref().map(|s| json!({
@@ -761,7 +870,12 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
         std::thread::sleep(Duration::from_millis(100));
     }
     server.shutdown();
-    recorder.stop_capture();
+    if let Some(summary) = recorder.stop_capture() {
+        println!(
+            "{}",
+            json!({ "event": "recording_stopped", "summary": summary.to_json() })
+        );
+    }
     eprintln!("Stopped.");
     Ok(())
 }
@@ -791,6 +905,40 @@ fn run() -> Result<()> {
             let r = connect(&cli, Duration::from_secs(5))?
                 .call(commands::RECORDER_STATUS, json!(null))?;
             println!("{}", serde_json::to_string_pretty(&r)?);
+            Ok(())
+        }
+        Cmd::Session { action } => {
+            let cmd = match action {
+                SessionAction::Start => commands::SESSION_START,
+                SessionAction::Stop => commands::SESSION_STOP,
+                SessionAction::Toggle => commands::SESSION_TOGGLE,
+            };
+            // Stopping finalises the file, which can take a moment for long recordings.
+            let r = connect(&cli, Duration::from_secs(150))?.call(cmd, json!(null))?;
+            println!("{r}");
+            Ok(())
+        }
+        Cmd::Bookmark => {
+            let r =
+                connect(&cli, Duration::from_secs(5))?.call(commands::BOOKMARK_ADD, json!(null))?;
+            println!("{r}");
+            Ok(())
+        }
+        Cmd::Finalize { file } => {
+            let s = klip_recorder::finalize_recording(file)
+                .with_context(|| format!("finalising {}", file.display()))?;
+            println!(
+                "{}",
+                json!({
+                    "path": file.to_string_lossy(),
+                    "already_final": s.already_final,
+                    "fragments": s.fragments,
+                    "samples": s.samples,
+                    "duration_ms": s.duration / NANOS_PER_MILLI,
+                    "bytes": s.bytes,
+                    "truncated_bytes": s.truncated,
+                })
+            );
             Ok(())
         }
         Cmd::Stop => {

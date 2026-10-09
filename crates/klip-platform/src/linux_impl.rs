@@ -28,6 +28,12 @@ fn read_hex(path: &Path) -> Option<u32> {
     u32::from_str_radix(s.trim().trim_start_matches("0x"), 16).ok()
 }
 
+/// Bytes available to unprivileged users on the file system holding `path`.
+pub fn free_disk_space(path: &Path) -> Result<u64, PlatformError> {
+    let st = rustix::fs::statvfs(path).map_err(|e| PlatformError::Os(format!("statvfs: {e}")))?;
+    Ok(st.f_bavail.saturating_mul(st.f_frsize))
+}
+
 /// CLOCK_MONOTONIC in ns: the clock of GStreamer's system clock (its default type) and of
 /// PipeWire's stream times, so frames, audio and pipelines share one timeline.
 pub fn monotonic_ns() -> i64 {

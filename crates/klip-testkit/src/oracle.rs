@@ -129,6 +129,46 @@ pub fn probe_streams(path: &Path) -> Result<Vec<StreamInfo>, OracleError> {
     Ok(s.streams)
 }
 
+#[derive(Debug, Deserialize)]
+struct Chapters {
+    #[serde(default)]
+    chapters: Vec<ChapterEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChapterEntry {
+    start_time: String,
+    #[serde(default)]
+    tags: std::collections::HashMap<String, String>,
+}
+
+/// Chapters as ffprobe reports them: (start in seconds, title).
+pub fn chapters(path: &Path) -> Result<Vec<(f64, String)>, OracleError> {
+    let out = run(
+        "ffprobe",
+        &[
+            "-v",
+            "error",
+            "-show_chapters",
+            "-of",
+            "json",
+            path_str(path)?,
+        ],
+    )?;
+    let c: Chapters =
+        serde_json::from_slice(&out).map_err(|e| OracleError::Parse("ffprobe", e.to_string()))?;
+    c.chapters
+        .into_iter()
+        .map(|ch| {
+            let start = ch
+                .start_time
+                .parse::<f64>()
+                .map_err(|e| OracleError::Parse("ffprobe", e.to_string()))?;
+            Ok((start, ch.tags.get("title").cloned().unwrap_or_default()))
+        })
+        .collect()
+}
+
 /// Presentation times (seconds) of every frame of the first video stream, in decode order.
 pub fn video_frame_times(path: &Path) -> Result<Vec<f64>, OracleError> {
     frame_times(path, "v:0")

@@ -5,6 +5,21 @@ reason)`.
 
 ## Unreleased
 
+- M5.1–M5.6 — Full-session recording + bookmarks (ADR 0013). `klip-mp4`: shared `moov`
+  code (`moov.rs`, chunk tables), `FragmentedWriter`, `scan_fragmented` (hostile-input
+  scanner), `finalize` (in place, crash-safe order, repeatable), markers as `udta/chpl`
+  chapters in clips and recordings. `klip-buffer`: `tail_from_last_keyframe`.
+  `klip-platform`: `free_disk_space`. `klip-recorder`: `session` (writer thread fed under
+  the ring lock, fragments at keyframes, sidecar with bookmarks, disk/queue limits,
+  rollover, stop cut at the video end, `recover_recordings`, `finalize_recording`),
+  recorder bookmarks, commands `session.start|stop|toggle`, `bookmark.add`, status
+  `session`. CLI: `record --session --session-dir --record-hotkey --bookmark-hotkey`,
+  `session start|stop|toggle`, `bookmark`, `finalize FILE`, recovery at start. Tests:
+  unit (truncation, interrupted finalise, mutation, recovery), hardware
+  `synthetic_session.rs`, e2e `m5_session.rs` (hard kill → playable → finalised with
+  chapters; normal stop with A/V sync). Windows gates re-run after the M4 Linux changes:
+  green. (Claude Opus 5.5: M5)
+
 - M4.4/M4.6 — Per-app PipeWire packets stamped one buffer later (they arrive one graph
   cycle before the output's mix); per-game A/V now +0.07 to −11.9 ms. M3 window/DXGI/HDR
   tests are Windows-only; `cargo xtask e2e` green on Linux. Linux manual checklist in

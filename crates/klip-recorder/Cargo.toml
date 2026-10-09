@@ -15,6 +15,7 @@ klip-control.workspace = true
 klip-media.workspace = true
 klip-mp4.workspace = true
 klip-platform.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

@@ -4,10 +4,12 @@
 //!
 //! Ring tracks: 0 is video; audio tracks follow in [`AudioConfig::track_labels`] order
 //! (the mix first). Audio is best effort: if it can't start, video records anyway and
-//! status reports why.
+//! status reports why. Full-session recording ([`session`]) taps the ring sink; bookmarks
+//! mark moments on the capture timeline for session files and clips.
 
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -23,7 +25,7 @@ use klip_capture::{
 };
 use klip_control::{CommandError, Handler, commands};
 use klip_media::{NANOS_PER_MILLI, Nanos, Packet, TrackInfo, TrackKind, nanos_to_millis};
-use klip_mp4::{Mp4Error, Mp4Options, Mp4Track, save_mp4_atomic};
+use klip_mp4::{Marker, Mp4Error, Mp4Options, Mp4Track, save_mp4_atomic};
 use serde_json::{Value, json};
 
 /// Errors from the recorder.
@@ -39,6 +41,8 @@ pub enum RecorderError {
     Io(#[from] std::io::Error),
     #[error("invalid configuration: {0}")]
     Config(String),
+    #[error("{0}")]
+    Busy(&'static str),
 }
 
 /// Recorder settings.
@@ -56,6 +60,8 @@ pub struct RecorderConfig {
     pub encoder_fallbacks: Vec<EncoderChoice>,
     /// `None`: no audio.
     pub audio: Option<AudioConfig>,
+    /// Full-session recordings; `None`: next to the clips.
+    pub session: Option<SessionConfig>,
 }
 
 /// One encoder tried while starting a recording.
@@ -94,6 +100,8 @@ const STALLED_TRACK: Nanos = 2_000_000_000;
 /// A replay ring that a capture pipeline can push into.
 pub struct RingSink {
     ring: Mutex<Ring>,
+    /// Full-session recording, if one runs. Locked after `ring` (never the other way).
+    tap: Mutex<Option<SessionTap>>,
     last_error: Mutex<Option<String>>,
     last_warning: Mutex<Option<String>>,
     rejected_unexpected: AtomicU64,
@@ -121,6 +129,7 @@ impl RingSink {
             .ok_or_else(|| RecorderError::Config("ring needs a video track".into()))?;
         Ok(RingSink {
             ring: Mutex::new(ring),
+            tap: Mutex::new(None),
             last_error: Mutex::new(None),
             last_warning: Mutex::new(None),
             rejected_unexpected: AtomicU64::new(0),
@@ -130,6 +139,62 @@ impl RingSink {
 
     fn ring(&self) -> std::sync::MutexGuard<'_, Ring> {
         self.ring.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn tap(&self) -> std::sync::MutexGuard<'_, Option<SessionTap>> {
+        self.tap.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Start feeding a session: what the ring holds from its newest video keyframe on,
+    /// then every packet the ring accepts. Both happen under the ring lock, so nothing is
+    /// missed or sent twice.
+    pub(crate) fn attach_session(&self, tap: SessionTap) {
+        let ring = self.ring();
+        let mut slot = self.tap();
+        let tail = ring.tail_from_last_keyframe();
+        for t in &tail {
+            tap.info(t.track, t.info.clone());
+        }
+        let mut order: Vec<(Nanos, usize, &Packet)> = tail
+            .iter()
+            .flat_map(|t| t.packets.iter().map(move |p| (p.dts, t.track, p)))
+            .collect();
+        order.sort_by_key(|(dts, track, _)| (*dts, *track));
+        for (_, track, p) in order {
+            tap.packet(track, p.clone());
+        }
+        *slot = Some(tap);
+    }
+
+    /// Stop feeding the session.
+    pub(crate) fn detach_session(&self) {
+        let _ring = self.ring();
+        *self.tap() = None;
+    }
+
+    /// Record everything this ring accepts from now on (starting with what it holds from
+    /// its newest video keyframe) into a new file in `cfg.dir`; ring track `i` is named
+    /// `names[i]` in the file.
+    pub fn start_session(
+        &self,
+        cfg: &SessionConfig,
+        names: Vec<String>,
+    ) -> Result<Session, RecorderError> {
+        let (session, tap) = Session::start(cfg, names)?;
+        self.attach_session(tap);
+        Ok(session)
+    }
+
+    /// Stop feeding `session`, write what it has queued and finalise its file(s). The
+    /// recording ends where the video ends now; audio (which arrives a little later) gets
+    /// up to [`AUDIO_CATCH_UP`] to reach that point, as for clips.
+    pub fn stop_session(&self, session: Session) -> SessionSummary {
+        let end = self.video_end();
+        if let Some(e) = end {
+            self.wait_for_audio(e, AUDIO_CATCH_UP);
+        }
+        self.detach_session();
+        session.stop(end)
     }
 
     /// Copy out the last `length` (cheap: payloads are refcounted).
@@ -200,8 +265,23 @@ impl RingSink {
 
 impl PacketSink for RingSink {
     fn on_track_info(&self, track: usize, info: TrackInfo) {
-        if let Err(e) = self.ring().set_track_info(track, info) {
-            self.on_error(format!("track description rejected: {e}"));
+        let mut ring = self.ring();
+        let mut tap = self.tap();
+        let copy = tap.as_ref().map(|_| info.clone());
+        let res = ring.set_track_info(track, info);
+        drop(ring);
+        match res {
+            Ok(()) => {
+                if let (Some(t), Some(info)) = (tap.as_ref(), copy)
+                    && !t.info(track, info)
+                {
+                    *tap = None;
+                }
+            }
+            Err(e) => {
+                drop(tap);
+                self.on_error(format!("track description rejected: {e}"));
+            }
         }
     }
 
@@ -213,8 +293,18 @@ impl PacketSink for RingSink {
         if bit != 0 && self.seen_tracks.fetch_or(bit, Ordering::Relaxed) & bit == 0 {
             tracing::debug!(track, pts = packet.pts, "first packet");
         }
-        match self.ring().push(track, packet) {
-            Ok(()) | Err(PushError::WaitingForKeyframe) => {}
+        let mut ring = self.ring();
+        let mut tap = self.tap();
+        let copy = tap.as_ref().map(|_| packet.clone());
+        match ring.push(track, packet) {
+            Ok(()) => {
+                if let (Some(t), Some(p)) = (tap.as_ref(), copy)
+                    && !t.packet(track, p)
+                {
+                    *tap = None;
+                }
+            }
+            Err(PushError::WaitingForKeyframe) => {}
             Err(e) => {
                 self.rejected_unexpected.fetch_add(1, Ordering::Relaxed);
                 tracing::warn!(error = %e, "packet rejected");
@@ -253,6 +343,8 @@ pub struct SavedClip {
     pub save_ms: f64,
     /// Part of `save_ms` spent waiting for audio to catch up with video.
     pub audio_wait_ms: f64,
+    /// Bookmarks inside the clip (written as chapters).
+    pub bookmarks: usize,
 }
 
 /// Save the last `length` of `sink` into `dir` as a new MP4. `names[i]` names ring track
@@ -263,6 +355,7 @@ pub fn save_from(
     dir: &Path,
     length: Nanos,
     names: &[String],
+    bookmarks: &[Nanos],
 ) -> Result<SavedClip, RecorderError> {
     let t0 = Instant::now();
     // The clip ends where it was requested; audio arrives a little later than video, so
@@ -278,7 +371,16 @@ pub fn save_from(
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let path = unique_clip_path(dir)?;
+    let path = unique_path(dir, "Klip")?;
+    let markers: Vec<Marker> = bookmarks
+        .iter()
+        .filter(|b| **b >= snap.start && **b <= snap.end)
+        .enumerate()
+        .map(|(i, at)| Marker {
+            at: *at,
+            title: format!("Bookmark {}", i.saturating_add(1)),
+        })
+        .collect();
     let mut audio_seen = false;
     let tracks: Vec<Mp4Track<'_>> = snap
         .tracks
@@ -306,10 +408,12 @@ pub fn save_from(
         &Mp4Options {
             creation_time_unix: now,
             force_co64: false,
+            markers: &markers,
         },
     )?;
     let frames = snap.tracks.first().map(|t| t.packets.len()).unwrap_or(0);
     Ok(SavedClip {
+        bookmarks: markers.len(),
         path,
         duration: summary.duration,
         bytes: summary.bytes,
@@ -321,13 +425,14 @@ pub fn save_from(
     })
 }
 
-fn unique_clip_path(dir: &Path) -> Result<PathBuf, RecorderError> {
+/// `<prefix>_YYYY-MM-DD_HH-MM-SS[_n].mp4` in `dir` that doesn't exist yet.
+pub(crate) fn unique_path(dir: &Path, prefix: &str) -> Result<PathBuf, RecorderError> {
     let stamp = jiff::Zoned::now().strftime("%Y-%m-%d_%H-%M-%S").to_string();
     for n in 1u32..1000 {
         let name = if n == 1 {
-            format!("Klip_{stamp}.mp4")
+            format!("{prefix}_{stamp}.mp4")
         } else {
-            format!("Klip_{stamp}_{n}.mp4")
+            format!("{prefix}_{stamp}_{n}.mp4")
         };
         let p = dir.join(name);
         if !p.exists() {
@@ -357,7 +462,16 @@ pub struct Recorder {
     output: (u32, u32),
     stop_requested: AtomicBool,
     save_lock: Mutex<()>,
+    session: Mutex<Option<Session>>,
+    /// Summary of the last session that stopped on its own (error, disk full).
+    ended_session: Mutex<Option<SessionSummary>>,
+    session_cfg: SessionConfig,
+    /// Bookmarks on the capture timeline, oldest first.
+    bookmarks: Mutex<VecDeque<Nanos>>,
 }
+
+/// Bookmarks kept for clips (older ones are dropped).
+const MAX_RECENT_BOOKMARKS: usize = 1000;
 
 impl std::fmt::Debug for Recorder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -539,6 +653,10 @@ impl Recorder {
         };
         let mut track_names = vec![String::new()];
         track_names.extend(audio_labels);
+        let session_cfg = cfg
+            .session
+            .clone()
+            .unwrap_or_else(|| SessionConfig::new(cfg.clip_dir.clone()));
         Ok(Recorder {
             sink,
             video,
@@ -553,6 +671,10 @@ impl Recorder {
             output,
             stop_requested: AtomicBool::new(false),
             save_lock: Mutex::new(()),
+            session: Mutex::new(None),
+            ended_session: Mutex::new(None),
+            session_cfg,
+            bookmarks: Mutex::new(VecDeque::new()),
         })
     }
 
@@ -562,7 +684,20 @@ impl Recorder {
             .save_lock
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        let clip = save_from(&self.sink, &self.cfg.clip_dir, length, &self.track_names)?;
+        let bookmarks: Vec<Nanos> = self
+            .bookmarks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .copied()
+            .collect();
+        let clip = save_from(
+            &self.sink,
+            &self.cfg.clip_dir,
+            length,
+            &self.track_names,
+            &bookmarks,
+        )?;
         tracing::info!(
             ms = clip.save_ms,
             bytes = clip.bytes,
@@ -572,6 +707,96 @@ impl Recorder {
             "clip saved"
         );
         Ok(clip)
+    }
+
+    fn session_slot(&self) -> std::sync::MutexGuard<'_, Option<Session>> {
+        self.session.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A session whose writer ended on its own: detach it and keep its summary for
+    /// status.
+    fn reap_session(&self, slot: &mut Option<Session>) {
+        if slot.as_ref().is_some_and(Session::is_finished)
+            && let Some(s) = slot.take()
+        {
+            let summary = self.sink.stop_session(s);
+            *self
+                .ended_session
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = Some(summary);
+        }
+    }
+
+    /// Start a full-session recording. Returns the file it will write.
+    pub fn start_session(&self) -> Result<PathBuf, RecorderError> {
+        let mut slot = self.session_slot();
+        self.reap_session(&mut slot);
+        if slot.is_some() {
+            return Err(RecorderError::Busy("already recording"));
+        }
+        let session = self
+            .sink
+            .start_session(&self.session_cfg, self.track_names.clone())?;
+        let path = session.path();
+        tracing::info!(path = %path.display(), "recording started");
+        *slot = Some(session);
+        Ok(path)
+    }
+
+    /// Stop the full-session recording: write what is queued, finalise the file(s).
+    pub fn stop_session(&self) -> Result<SessionSummary, RecorderError> {
+        let session = self
+            .session_slot()
+            .take()
+            .ok_or(RecorderError::Busy("not recording"))?;
+        Ok(self.sink.stop_session(session))
+    }
+
+    pub fn session_running(&self) -> bool {
+        let mut slot = self.session_slot();
+        self.reap_session(&mut slot);
+        slot.is_some()
+    }
+
+    /// Mark this moment. It goes into the recording (if one runs) and into clips that
+    /// cover it. Returns the capture running time and the time within the recording.
+    pub fn bookmark(&self) -> Result<(Nanos, Option<Nanos>), RecorderError> {
+        let at = self.timebase.now();
+        {
+            let mut b = self
+                .bookmarks
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if b.len() >= MAX_RECENT_BOOKMARKS {
+                b.pop_front();
+            }
+            b.push_back(at);
+        }
+        let slot = self.session_slot();
+        let in_recording = match slot.as_ref() {
+            Some(s) => s.bookmark(at)?,
+            None => None,
+        };
+        tracing::info!(at, "bookmark");
+        Ok((at, in_recording))
+    }
+
+    fn session_status(&self) -> Value {
+        let mut slot = self.session_slot();
+        self.reap_session(&mut slot);
+        match slot.as_ref() {
+            Some(s) => s.status(),
+            None => {
+                let ended = self
+                    .ended_session
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                match ended.as_ref() {
+                    Some(sum) => json!({ "state": "ended", "last": sum.to_json() }),
+                    None => json!({ "state": "off" }),
+                }
+            }
+        }
     }
 
     /// Status as JSON (also the `recorder.status` result).
@@ -642,6 +867,8 @@ impl Recorder {
             "last_error": self.sink.last_error(),
             "last_warning": self.sink.last_warning(),
             "audio": self.audio_status(),
+            "session": self.session_status(),
+            "bookmarks": self.bookmarks.lock().unwrap_or_else(PoisonError::into_inner).len(),
             "clock_base_ns": self.timebase.base_clock_ns(),
             "uptime_ms": u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX),
         })
@@ -691,8 +918,9 @@ impl Recorder {
         self.stop_requested.load(Ordering::Relaxed)
     }
 
-    /// Stop capturing. Buffered data stays available for saves until drop.
-    pub fn stop_capture(&self) {
+    /// Stop capturing (and the full-session recording, if one runs: its summary is
+    /// returned). Buffered data stays available for saves until drop.
+    pub fn stop_capture(&self) -> Option<SessionSummary> {
         let supervisor = self
             .supervisor
             .lock()
@@ -719,6 +947,16 @@ impl Recorder {
         if let Some(s) = session {
             s.stop();
         }
+        // Capture has delivered its last packets: write and finalise the recording.
+        if !self.session_running() {
+            return None;
+        }
+        let summary = self.stop_session().ok()?;
+        tracing::info!(
+            files = summary.files.len(),
+            "recording stopped with the recorder"
+        );
+        Some(summary)
     }
 }
 
@@ -931,7 +1169,14 @@ fn supervise(video: &VideoCtl, stop: &AtomicBool) {
     }
 }
 
+pub mod session;
 pub mod supervisor;
+
+use session::SessionTap;
+pub use session::{
+    FileReport, Recovered, Session, SessionConfig, SessionSummary, finalize_recording,
+    recover_recordings,
+};
 use supervisor::{Action, MIN_DWELL, Observation, VideoMode, decide};
 
 /// Smallest and largest clip length accepted over the control channel.
@@ -946,6 +1191,30 @@ impl Handler for Recorder {
             commands::RECORDER_STOP => {
                 self.request_stop();
                 Ok(json!({ "stopping": true }))
+            }
+            commands::SESSION_START => {
+                let path = self.start_session().map_err(command_error)?;
+                Ok(json!({ "recording": true, "path": path.to_string_lossy() }))
+            }
+            commands::SESSION_STOP => {
+                let summary = self.stop_session().map_err(command_error)?;
+                Ok(json!({ "recording": false, "summary": summary.to_json() }))
+            }
+            commands::SESSION_TOGGLE => {
+                if self.session_running() {
+                    let summary = self.stop_session().map_err(command_error)?;
+                    Ok(json!({ "recording": false, "summary": summary.to_json() }))
+                } else {
+                    let path = self.start_session().map_err(command_error)?;
+                    Ok(json!({ "recording": true, "path": path.to_string_lossy() }))
+                }
+            }
+            commands::BOOKMARK_ADD => {
+                let (at, rel) = self.bookmark().map_err(command_error)?;
+                Ok(json!({
+                    "at_ns": at,
+                    "recording_ms": rel.map(nanos_to_millis),
+                }))
             }
             commands::CLIP_SAVE => {
                 let last_ms = match args.get("last_ms") {
@@ -977,10 +1246,18 @@ impl Handler for Recorder {
                     "start_ns": clip.start,
                     "save_ms": clip.save_ms,
                     "audio_wait_ms": clip.audio_wait_ms,
+                    "bookmarks": clip.bookmarks,
                 }))
             }
             other => Err(CommandError::unknown(other)),
         }
+    }
+}
+
+fn command_error(e: RecorderError) -> CommandError {
+    match e {
+        RecorderError::Busy(m) => CommandError::new("busy", m),
+        other => CommandError::new("failed", other.to_string()),
     }
 }
 
@@ -1022,7 +1299,7 @@ mod tests {
         })
         .unwrap();
         assert!(matches!(
-            save_from(&sink, dir.path(), 1_000_000_000, &[]),
+            save_from(&sink, dir.path(), 1_000_000_000, &[], &[]),
             Err(RecorderError::Snapshot(SnapshotError::Empty))
         ));
         sink.on_track_info(0, info());
@@ -1037,8 +1314,8 @@ mod tests {
         for i in 1..=300 {
             sink.on_packet(0, packet(i));
         }
-        let a = save_from(&sink, dir.path(), 2_000_000_000, &[]).unwrap();
-        let b = save_from(&sink, dir.path(), 2_000_000_000, &[]).unwrap();
+        let a = save_from(&sink, dir.path(), 2_000_000_000, &[], &[]).unwrap();
+        let b = save_from(&sink, dir.path(), 2_000_000_000, &[], &[]).unwrap();
         assert_ne!(a.path, b.path);
         assert!(a.path.exists() && b.path.exists());
         assert_eq!(a.frames, 121, "from keyframe 180 to frame 300");
@@ -1092,7 +1369,7 @@ mod tests {
             .iter()
             .map(|s| s.to_string())
             .collect();
-        let clip = save_from(&sink, dir.path(), 1_000_000_000, &names).unwrap();
+        let clip = save_from(&sink, dir.path(), 1_000_000_000, &names, &[]).unwrap();
         assert_eq!(clip.audio_tracks, 2);
         let data = std::fs::read(&clip.path).unwrap();
         let has = |needle: &[u8]| data.windows(needle.len()).any(|w| w == needle);

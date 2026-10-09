@@ -3,7 +3,8 @@
 "Everything is a command" (ADR 0006).
 
 - `commands`: command ids shared by the UI, CLI and control channel (`clip.save`,
-  `recorder.status`, `recorder.stop`, `ping`).
+  `recorder.status`, `recorder.stop`, `ping`, `session.start`, `session.stop`,
+  `session.toggle`, `bookmark.add`).
 - `Handler`: implemented by whoever executes commands (the recorder now, the app later).
 - `Server`: listens on `127.0.0.1:<ephemeral>`, writes a discovery file
   (`%LOCALAPPDATA%\Klip\control.json` / `$XDG_RUNTIME_DIR/klip/control.json`) with the

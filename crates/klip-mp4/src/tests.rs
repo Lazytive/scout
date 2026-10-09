@@ -1,10 +1,11 @@
 use bytes::Bytes;
-use klip_media::{AudioParams, Colorimetry, TrackParams, VideoParams};
+use klip_media::{AudioParams, Codec, Colorimetry, NANOS_PER_SEC, TrackParams, VideoParams};
 
 use super::*;
+use crate::moov::{ns_to_ts, ts_to_ns};
 
 /// Tiny box parser for tests: returns (type, payload range) children of a byte range.
-fn children(data: &[u8], start: usize, end: usize) -> Vec<([u8; 4], usize, usize)> {
+pub(crate) fn children(data: &[u8], start: usize, end: usize) -> Vec<([u8; 4], usize, usize)> {
     let mut out = Vec::new();
     let mut pos = start;
     while pos + 8 <= end {
@@ -28,7 +29,7 @@ fn children(data: &[u8], start: usize, end: usize) -> Vec<([u8; 4], usize, usize
     out
 }
 
-fn find(data: &[u8], path: &str) -> (usize, usize) {
+pub(crate) fn find(data: &[u8], path: &str) -> (usize, usize) {
     let mut range = (0, data.len());
     for (depth, name) in path.split('/').enumerate() {
         let kids = children(data, range.0, range.1);
@@ -46,11 +47,11 @@ fn find(data: &[u8], path: &str) -> (usize, usize) {
     range
 }
 
-fn be32(d: &[u8], at: usize) -> u32 {
+pub(crate) fn be32(d: &[u8], at: usize) -> u32 {
     u32::from_be_bytes(d[at..at + 4].try_into().unwrap())
 }
 
-fn video_info() -> TrackInfo {
+pub(crate) fn video_info() -> TrackInfo {
     TrackInfo {
         codec: Codec::H264,
         codec_data: Bytes::from_static(&[1, 0x64, 0, 0x28, 0xFF, 0xE1, 0, 0]),
@@ -63,7 +64,7 @@ fn video_info() -> TrackInfo {
     }
 }
 
-fn audio_info() -> TrackInfo {
+pub(crate) fn audio_info() -> TrackInfo {
     TrackInfo {
         codec: Codec::Aac,
         codec_data: Bytes::from_static(&[0x11, 0x90]),
@@ -75,10 +76,10 @@ fn audio_info() -> TrackInfo {
     }
 }
 
-const FRAME: i64 = NANOS_PER_SEC / 60;
+pub(crate) const FRAME: i64 = NANOS_PER_SEC / 60;
 
 /// Video packets with unique payloads: 4-byte big-endian sample index + track tag.
-fn video_packets(n: usize, start: i64) -> Vec<Packet> {
+pub(crate) fn video_packets(n: usize, start: i64) -> Vec<Packet> {
     (0..n)
         .map(|i| {
             let mut data = (i as u32).to_be_bytes().to_vec();
@@ -95,7 +96,7 @@ fn video_packets(n: usize, start: i64) -> Vec<Packet> {
         .collect()
 }
 
-fn audio_packets(n: usize, start: i64) -> Vec<Packet> {
+pub(crate) fn audio_packets(n: usize, start: i64) -> Vec<Packet> {
     let step = NANOS_PER_SEC * 1024 / 48_000;
     (0..n)
         .map(|i| {

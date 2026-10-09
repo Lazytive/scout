@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (end of M3).
+Last updated: 2026-10-09 (end of M5).
 
 | | Milestone | State |
 |---|---|---|
@@ -9,7 +9,7 @@ Last updated: 2026-10-09 (end of M3).
 | M2 | Audio (game/per-app/mic tracks, A/V sync ≤ 1 frame) | **done**: acceptance passes |
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
-| M5 | Full-session recording + bookmarks | |
+| M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
 | M6 | Desktop app shell (Tauri) | |
 | M7 | Library | |
 | M8 | Editor, Normal mode + export presets | |
@@ -118,7 +118,39 @@ green (built in a Fedora 44 distrobox).
   press saved a valid 5.3 s clip in 4 ms (manual run; key presses can't be automated
   on Wayland without extra permissions).
 
+### Full-session recording (M5)
+
+Same machine and settings as above (Windows, `nvd3d11h264enc`, 1280x720 window at 60
+fps, game audio AAC), `cargo xtask e2e` on 2026-10-09, another game using the GPU:
+- **Killed recorder** (`m5_session.rs`): `record --session`, two bookmarks, the recorder
+  killed after 10 s (TerminateProcess). The file left on disk played in ffmpeg as it was:
+  H.264 + AAC, 540 frames in order, none unreadable, repeats only where the test game
+  itself stalled. `klip-cli finalize` turned it into a regular MP4 (`ftyp, free, (free,
+  mdat)…, moov`, no `moof`) with the same 540 frames and both bookmarks as chapters at
+  4.087 s and 7.126 s (the bookmark command answered 4086 and 7126 ms).
+- **Normal stop**: `session start` → 12 s → `session stop`: regular MP4, 12.108 s video,
+  audio ends 9 ms after it (stopping cuts both at the video's end), 710 frames in
+  order, A/V −3.1 ms (11/11 beeps; −5.3 ms in an earlier run before the stop change).
+- **Exactness** (`synthetic_session.rs`: 600 known frames → NVENC → ring → recording →
+  ffmpeg): a copy taken mid-recording (what a kill leaves) decodes as frames 0–299 with
+  none missing; finalising that copy keeps exactly those 300; the stopped recording holds
+  600/600 frames in order at 60 fps with the bookmark chapter at 2.500 s.
+- Unit tests: truncation at every byte of the last fragments, every intermediate state
+  of an interrupted finalise (gives the identical file), 3000 mutated files (no panic),
+  rollover to a new file when the video description changes, queue overflow, recovery
+  of leftover recordings (incl. empty and garbage sidecars).
+
 ## Approximate / not done yet
+
+- **Full-session recording on Linux** is untested (same code; the gates and e2e run
+  there next time). Windows hotkeys for recording/bookmark come with the app (M6); until
+  then `klip-cli session start|stop|toggle` and `klip-cli bookmark` (bindable to a
+  desktop shortcut). On Linux `--record-hotkey` and `--bookmark-hotkey` use the portal.
+- **Finished recordings are not faststart** (index at the end); sharing goes through the
+  editor's export. Most video editors ignore `chpl` chapters, so bookmarks show in VLC,
+  mpv and ffprobe now, and in Klip's editor later.
+- A power cut can lose up to ~10 s of a recording (fsync interval); a killed process at
+  most the fragment being written (≤ 1 s with our GOP).
 
 - **Audio timing references are the test game's own logs.** Video is measured against
   the moment the GPU finished a frame (the compositor shows it at the next refresh, up to
@@ -218,6 +250,20 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 5. **HDR desktop**: both monitors here run KDE in HDR mode and clips looked normal in the
    tests (the screencast is SDR); an HDR *game* on Linux (e.g. with gamescope/Proton HDR)
    is unchecked.
+
+## Manual checks for the human (M5)
+
+1. **Play a killed recording**: `klip-cli record --session --out <folder>`, record a
+   minute of anything, kill the recorder in Task Manager. Open the `Klip_Recording_…mp4`
+   in Films & TV (or Media Player), VLC and your editor *before* starting Klip again: it
+   should play (seeking may be slow in some players). Then run `klip-cli record` again
+   (it finalises leftovers and prints `"event":"recovered"`), stop it, and open the file
+   once more: it should now seek normally everywhere.
+2. **Bookmarks**: during a recording run `klip-cli bookmark` a few times; VLC
+   (Playback → Chapter) or mpv should list "Bookmark 1…n" at those moments.
+3. **Long recording**: an hour of a real game with `--session`; `klip-cli status` →
+   `session` shows size and fragments; stopping should take well under a second and the
+   file should play to the end with sound in sync.
 
 ## Known bugs
 

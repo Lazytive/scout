@@ -1,7 +1,11 @@
 # klip-mp4
 
-Writes faststart MP4 files from packets that are already encoded (no re-encode). Used for
-every clip save. Decision record: `docs/adr/0003-own-mp4-writer.md`.
+Writes MP4 files from packets that are already encoded (no re-encode): faststart files
+for clips, fragmented files for full-session recordings, and turns a fragmented recording
+into a regular MP4 in place. Decision records: `docs/adr/0003-own-mp4-writer.md`,
+`docs/adr/0013-full-session-recording.md`.
+
+## Clips (`write_mp4`, `save_mp4_atomic`)
 
 - One sequential pass: `ftyp`, `moov`, `mdat`. The `moov` is computed first because every
   sample size and timestamp is known.
@@ -24,8 +28,30 @@ every clip save. Decision record: `docs/adr/0003-own-mp4-writer.md`.
 - `save_mp4_atomic`: writes `<name>.part`, fsyncs, renames; refuses to overwrite and
   removes the temp file on failure.
 
-Tests parse the produced boxes and check offsets point at the right payloads, edit lists,
-composition offsets, `co64`, Opus `dOps`, hostile input. Real-media validation (ffprobe +
-decode) happens in the recorder's e2e tests.
+- `Mp4Options::markers`: bookmarks inside the clip become chapters (`moov/udta/chpl`,
+  version 1, 100 ns units, at most 255), shown by ffprobe/VLC/mpv.
+
+## Recordings
+- `FragmentedWriter::new(out, tracks, origin, opts)` writes `ftyp` (+`iso5`) and the init
+  `moov` (empty tables, `mvex`/`trex`); `write_fragment(parts)` writes one `moof` + `mdat`
+  (`tfhd` default-base-is-moof, `tfdt` v1, `trun` with duration/size/flags/(cts) per
+  sample) and flushes. Times are rounded from absolute timestamps against `origin`; a
+  part's `next_dts` gives its last sample an exact duration. Input is validated before
+  anything is written; after a write error the writer refuses more (`Poisoned`).
+- `scan_fragmented(reader)`: init `moov` → `TrackInfo`s (round-trips what the writer
+  wrote), complete fragments → `ScannedTrack::samples` + `runs`. Stops quietly at the
+  first incomplete or inconsistent fragment; also reads fragments and the init that
+  `finalize` already turned into `free`.
+- `finalize(path, markers)`: truncate after the last complete fragment, append a regular
+  `moov` (chunk per `trun`, empty edits, chapters), fsync, then `moof`s and the init
+  `moov` become `free`, fsync. Repeating it after an interruption gives the same file; a
+  finished file returns `already_final`.
+
+## Tests
+Unit tests parse the produced boxes and check offsets point at the right payloads, edit
+lists, composition offsets, `co64`, Opus `dOps`, chapters, hostile input; for recordings:
+data offsets and `tfdt`s, init round trip, truncation at every byte of the last
+fragments, every intermediate state of an interrupted finalise, 3000 mutated files.
+Real-media validation (ffprobe + decode) happens in the recorder's hardware tests.
 
 Layer: pure.

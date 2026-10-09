@@ -108,6 +108,7 @@ fn falls_back_to_the_next_encoder() {
         },
         encoder_fallbacks: vec![working.clone()],
         audio: None,
+        session: None,
     };
     let t = Instant::now();
     let rec = Recorder::start(cfg).unwrap();

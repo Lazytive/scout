@@ -28,6 +28,14 @@ pub mod commands {
     pub const RECORDER_STOP: &str = "recorder.stop";
     /// Liveness check; returns `{"pong":true}`.
     pub const PING: &str = "ping";
+    /// Start a full-session recording; returns `{"recording":true,"path":…}`.
+    pub const SESSION_START: &str = "session.start";
+    /// Stop it and finalise; returns `{"recording":false,"summary":{"files":[…]}}`.
+    pub const SESSION_STOP: &str = "session.stop";
+    /// Start or stop (what a hotkey does).
+    pub const SESSION_TOGGLE: &str = "session.toggle";
+    /// Mark this moment in the recording and in clips that cover it.
+    pub const BOOKMARK_ADD: &str = "bookmark.add";
 }
 
 /// Longest accepted line (bytes, including the newline).

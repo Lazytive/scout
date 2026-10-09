@@ -493,3 +493,21 @@ pub(crate) fn audio_sessions() -> Result<Vec<AudioSession>, PlatformError> {
     }
     Ok(out)
 }
+
+/// Bytes available to this user on the volume holding `path`.
+pub fn free_disk_space(path: &std::path::Path) -> Result<u64, PlatformError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    use windows::core::PCWSTR;
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut available = 0u64;
+    // SAFETY: `wide` is a NUL-terminated UTF-16 string that outlives the call; the out
+    // pointer refers to a local u64; the other outputs are optional and passed as None.
+    unsafe { GetDiskFreeSpaceExW(PCWSTR(wide.as_ptr()), Some(&mut available), None, None) }
+        .map_err(|e| PlatformError::Os(format!("GetDiskFreeSpaceExW: {e}")))?;
+    Ok(available)
+}

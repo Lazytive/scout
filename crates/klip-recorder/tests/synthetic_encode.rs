@@ -17,32 +17,19 @@
     clippy::indexing_slicing
 )]
 
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+mod common;
 
-use gstreamer as gst;
-use gstreamer::prelude::*;
-use gstreamer_app as gst_app;
+use std::sync::Arc;
+use std::time::Duration;
+
+use common::{H, Harness, W, vendors};
 use klip_buffer::RingConfig;
 use klip_capture::klip_probe::{EncoderChoice, EncoderFamily};
-use klip_capture::{CaptureSession, CaptureStats, EncodeConfig};
 use klip_media::{Codec, NANOS_PER_SEC};
 use klip_recorder::{RingSink, save_from};
-use klip_testkit::{barcode, continuity, oracle};
+use klip_testkit::{continuity, oracle};
 
-const W: usize = 640;
-const H: usize = 360;
-const FPS: u64 = 60;
 const FRAMES: u32 = 600;
-
-fn vendors() -> Vec<klip_platform::GpuVendor> {
-    klip_platform::list_gpus()
-        .unwrap()
-        .into_iter()
-        .filter(|g| !g.software)
-        .map(|g| g.vendor)
-        .collect()
-}
 
 #[test]
 #[ignore = "hardware: needs a GPU/OS H.264 encoder and ffmpeg; run via `cargo xtask e2e`"]
@@ -86,43 +73,7 @@ fn every_working_encoder_round_trips_exactly() {
 /// Encode `frames` barcoded frames (one keyframe per second) with `encoder`, save the
 /// whole ring and its last 2 s, and check every counter comes back exactly once.
 fn round_trip(encoder: EncoderChoice, frames: u32) {
-    println!("encoder: {} ({})", encoder.element, encoder.description);
     let codec = encoder.codec;
-
-    let pipeline = gst::Pipeline::new();
-    let caps = gst::Caps::builder("video/x-raw")
-        .field("format", "BGRA")
-        .field("width", W as i32)
-        .field("height", H as i32)
-        .field("framerate", gst::Fraction::new(FPS as i32, 1))
-        .build();
-    let appsrc = gst_app::AppSrc::builder()
-        .caps(&caps)
-        .format(gst::Format::Time)
-        // Not blocking: a failed pipeline stops draining the queue, and a blocked push
-        // would hang the test instead of failing it.
-        .block(false)
-        .max_bytes((W * H * 4 * 8) as u64)
-        .build();
-    // The encode chain takes D3D11 textures on Windows, system memory on Linux.
-    let upload = gst::ElementFactory::make(if cfg!(windows) {
-        "d3d11upload"
-    } else {
-        "identity"
-    })
-    .build()
-    .unwrap();
-    pipeline.add_many([appsrc.upcast_ref(), &upload]).unwrap();
-    appsrc.link(&upload).unwrap();
-    let cfg = EncodeConfig {
-        encoder: encoder.clone(),
-        bitrate_kbps: 8_000,
-        keyframe_interval: FPS as u32,
-    };
-    let chain =
-        klip_capture::build_encode_chain(&pipeline, &cfg, W as u32, H as u32, FPS as u32).unwrap();
-    upload.link(&chain.input).unwrap();
-
     let sink = Arc::new(
         RingSink::new(RingConfig {
             max_duration: 120 * NANOS_PER_SEC,
@@ -130,75 +81,13 @@ fn round_trip(encoder: EncoderChoice, frames: u32) {
         })
         .unwrap(),
     );
-    let stats = Arc::new(CaptureStats::default());
-    chain.attach(0, sink.clone(), stats.clone(), klip_capture::Timing::AsIs);
-    let session = CaptureSession::run(
-        pipeline,
-        sink.clone(),
-        stats.clone(),
-        (W as u32, H as u32),
-        None,
-    )
-    .unwrap();
-
-    let frame_ns = NANOS_PER_SEC as u64 / FPS;
-    // Real time, like a capture: the queue in front of the encoder drops frames when the
-    // encoder falls behind, which a flood of frames would provoke.
-    let t0 = Instant::now();
+    let h = Harness::start(encoder, sink.clone());
     for i in 0..frames {
-        let due = t0 + Duration::from_nanos(u64::from(i) * frame_ns);
-        if let Some(wait) = due.checked_duration_since(Instant::now()) {
-            std::thread::sleep(wait);
-        }
-        let mut buf = gst::Buffer::from_mut_slice(barcode::render_bgra(i, W, H, i % 60 == 0));
-        {
-            let b = buf.get_mut().unwrap();
-            b.set_pts(gst::ClockTime::from_nseconds(u64::from(i) * frame_ns));
-            b.set_duration(gst::ClockTime::from_nseconds(frame_ns));
-        }
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while appsrc.current_level_bytes() >= appsrc.max_bytes() {
-            assert_eq!(
-                session
-                    .stats()
-                    .errors
-                    .load(std::sync::atomic::Ordering::Relaxed),
-                0,
-                "{}: pipeline error: {:?}",
-                encoder.element,
-                sink.last_error()
-            );
-            assert!(
-                Instant::now() < deadline,
-                "{}: encoder stalled",
-                encoder.element
-            );
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        appsrc.push_buffer(buf).unwrap();
+        h.push(i);
     }
-    appsrc.end_of_stream().unwrap();
-
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while sink.stats().packets[0] < frames as usize {
-        assert!(
-            Instant::now() < deadline,
-            "encoder produced {} of {frames}",
-            sink.stats().packets[0]
-        );
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    session.stop();
+    h.finish(frames);
     let st = sink.stats();
     println!("ring: {st:?}");
-    assert_eq!(
-        stats
-            .encoder_queue_drops
-            .load(std::sync::atomic::Ordering::Relaxed),
-        0,
-        "{}: frames dropped in front of the encoder",
-        encoder.element
-    );
     assert_eq!(st.rejected, 0);
     assert_eq!(
         st.keyframes,
@@ -209,7 +98,7 @@ fn round_trip(encoder: EncoderChoice, frames: u32) {
     let dir = tempfile::tempdir().unwrap();
 
     // Whole buffer: every counter exactly once.
-    let all = save_from(&sink, dir.path(), 120 * NANOS_PER_SEC, &[]).unwrap();
+    let all = save_from(&sink, dir.path(), 120 * NANOS_PER_SEC, &[], &[]).unwrap();
     println!(
         "full save: {} frames, {} bytes, {:.2} ms",
         all.frames, all.bytes, all.save_ms
@@ -222,7 +111,7 @@ fn round_trip(encoder: EncoderChoice, frames: u32) {
     assert_eq!(report.frames, frames as usize);
 
     // Last 2 s: starts at the keyframe at or before (end - 2 s), ends at the last frame.
-    let tail = save_from(&sink, dir.path(), 2 * NANOS_PER_SEC, &[]).unwrap();
+    let tail = save_from(&sink, dir.path(), 2 * NANOS_PER_SEC, &[], &[]).unwrap();
     let counters = oracle::decode_counters(&tail.path, W, H).unwrap();
     let report = continuity::analyze(&counters);
     println!("tail: {report}");

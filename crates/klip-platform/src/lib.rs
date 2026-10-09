@@ -255,6 +255,23 @@ pub fn qpc_now_ns() -> i64 {
     }
 }
 
+/// Bytes free for this user on the volume holding `path` (which must exist).
+pub fn free_disk_space(path: &std::path::Path) -> Result<u64, PlatformError> {
+    #[cfg(windows)]
+    {
+        windows_impl::free_disk_space(path)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux_impl::free_disk_space(path)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let _ = path;
+        Err(PlatformError::Unsupported)
+    }
+}
+
 /// Whether per-process audio capture is available (Windows 10 2004+; Linux: PipeWire links
 /// app streams).
 pub fn process_loopback_supported() -> bool {

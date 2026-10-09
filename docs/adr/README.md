@@ -17,3 +17,4 @@ One file per decision: context, decision, consequences. Status is `accepted`, `p
 | [0010](0010-own-wgc-capture-and-hdr.md) | Own WGC capture on a shared D3D11 device; HDR → SDR tone-mapping | accepted (M3) |
 | [0011](0011-capture-fallbacks.md) | Capture fallbacks: window → monitor → DXGI, supervisor | accepted (M3) |
 | [0012](0012-linux-capture.md) | Linux: screen-cast portal + PipeWire, GL → NVENC, VA-API, openh264 | accepted (M4) |
+| [0013](0013-full-session-recording.md) | Full-session recording: fragmented MP4, finalise in place, bookmarks as chapters | accepted (M5) |

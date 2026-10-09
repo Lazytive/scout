@@ -1680,6 +1680,7 @@ dependencies = [
  "klip-mp4",
  "klip-platform",
  "klip-testkit",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
