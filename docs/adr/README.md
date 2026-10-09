@@ -14,3 +14,5 @@ One file per decision: context, decision, consequences. Status is `accepted`, `p
 | [0007](0007-test-strategy.md) | Test game, barcodes, ffmpeg as oracle, `xtask e2e` gate | accepted |
 | [0008](0008-audio-capture-and-sync.md) | Audio sources, track layout, one timeline for all pipelines | accepted |
 | [0009](0009-encoder-selection.md) | Encoder ranking, isolated probes, cache, runtime fallback | accepted (M3) |
+| [0010](0010-own-wgc-capture-and-hdr.md) | Own WGC capture on a shared D3D11 device; HDR → SDR tone-mapping | accepted (M3) |
+| [0011](0011-capture-fallbacks.md) | Capture fallbacks: window → monitor → DXGI, supervisor | accepted (M3) |

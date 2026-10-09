@@ -5,6 +5,33 @@ reason)`.
 
 ## Unreleased
 
+- M3.6 — Capture fallbacks (ADR 0011): recorder supervisor switches window capture to
+  its monitor on exclusive fullscreen, a stall while covering the monitor, or a capture
+  failure, back when the window leaves fullscreen, and to DXGI when monitor capture sees
+  nothing in exclusive fullscreen; restarts keep encoder and output size
+  (`VideoConfig::output`) so the buffer continues; uncapturable windows record their
+  monitor from the start. `--capture-api gst-dxgi` uses `d3d12screencapturesrc` (exact
+  SDR on HDR desktops). Test game `--freeze FROM..TO`, borderless on the `--position`
+  monitor; `tests/m3_fallback.rs`. (Claude Opus 5.5: M3)
+
+- M3.5 — HDR: on a monitor in Windows HDR mode the own capture records FP16 scRGB and
+  tone-maps to SDR in the same shader pass (SDR white = Windows' SDR content
+  brightness, GPU-measured scene peak capped at the display's peak, highlight roll-off
+  above a knee in sRGB-encoded space). `tests/m3_hdr.rs`: SDR content exact, HDR
+  highlights distinct up to the display peak. (Claude Opus 5.5: HDR games were clipped
+  to flat white)
+- M3.4 — Own WGC capture (`klip_platform::GpuCapture`, ADR 0010): D3D11 device on the
+  encoder's GPU shared with GStreamer through the gst-d3d11 C API, client-area crop /
+  scale / letterbox in one shader pass, frames stamped when they arrive, bounded by WGC's
+  `SystemRelativeTime` (measured: that is the display time, ~1 refresh later; using it
+  put video 9–13 ms late);
+  default `--capture-api auto` falls back to `d3d11screencapturesrc`. Status reports
+  `capture_api` and capture counters. (Claude Opus 5.5: M3)
+- Tests — the test game takes `--position X,Y`; e2e tests open it on a secondary monitor
+  (`KLIP_E2E_MONITOR` to choose). `KLIP_E2E_CAPTURE_API` runs the e2e tests with
+  another capture implementation; `oracle::decode_gray_frame`. (Claude Opus 5.5: the
+  human games on the primary monitor while tests run)
+
 - M3.2/M3.3 — AV1 clips: `klip_media::av1` builds the `av1C` record from the sequence
   header in the first keyframe (`av1parse` caps carry none), so NVENC AV1 records into
   MP4; AV1 had never been run end to end. (Claude Opus 5.5: found by the all-encoder

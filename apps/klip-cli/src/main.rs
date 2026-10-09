@@ -64,6 +64,25 @@ enum Cmd {
 
 /// What the game-audio track records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum CaptureApiArg {
+    Auto,
+    Klip,
+    GstWgc,
+    GstDxgi,
+}
+
+impl From<CaptureApiArg> for klip_capture::CaptureApi {
+    fn from(a: CaptureApiArg) -> Self {
+        match a {
+            CaptureApiArg::Auto => klip_capture::CaptureApi::Auto,
+            CaptureApiArg::Klip => klip_capture::CaptureApi::Klip,
+            CaptureApiArg::GstWgc => klip_capture::CaptureApi::GstWgc,
+            CaptureApiArg::GstDxgi => klip_capture::CaptureApi::GstDxgi,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 enum AudioMode {
     /// Only the captured window's process (and its children). Falls back to `system` when
     /// recording a monitor or on Windows older than 10 version 2004.
@@ -111,6 +130,11 @@ struct RecordArgs {
     out: Option<PathBuf>,
     #[arg(long)]
     no_cursor: bool,
+    /// Video capture implementation: Klip's own WGC capture (falls back to GStreamer's
+    /// when it can't start), only Klip's, GStreamer's WGC source, or GStreamer's DXGI
+    /// Desktop Duplication (monitors only).
+    #[arg(long, value_enum, default_value_t = CaptureApiArg::Auto)]
+    capture_api: CaptureApiArg,
     /// Game/system audio (default: game when recording a window, else system).
     #[arg(long, value_enum)]
     audio: Option<AudioMode>,
@@ -480,6 +504,8 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             max_width: max_w,
             max_height: max_h,
             show_cursor: !args.no_cursor,
+            api: args.capture_api.into(),
+            output: None,
         },
         encode: EncodeConfig {
             encoder,

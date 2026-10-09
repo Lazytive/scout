@@ -1336,7 +1336,10 @@ dependencies = [
 name = "klip-platform"
 version = "0.0.1"
 dependencies = [
+ "gstreamer",
+ "gstreamer-video",
  "thiserror 2.0.21",
+ "tracing",
  "windows",
  "windows-core",
 ]

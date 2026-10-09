@@ -1,14 +1,14 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (M3.1–M3.3).
+Last updated: 2026-10-09 (end of M3).
 
 | | Milestone | State |
 |---|---|---|
 | M0 | Repo, rules, gates | **done** |
 | M1 | Recorder CLI (Windows, NVENC) | **done**: acceptance passes |
 | M2 | Audio (game/per-app/mic tracks, A/V sync ≤ 1 frame) | **done**: acceptance passes |
-| M3 | All GPUs + fallbacks, HDR tone-mapping | in progress: M3.1–M3.3 done |
-| M4 | Linux (portal + PipeWire, VA-API) | |
+| M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
+| M4 | Linux (portal + PipeWire, VA-API) | next |
 | M5 | Full-session recording + bookmarks | |
 | M6 | Desktop app shell (Tauri) | |
 | M7 | Library | |
@@ -46,6 +46,22 @@ Video (M1, re-measured after the M2 timing changes):
   `d3d12h264enc`, `mfh264enc`, …); isolated probes take 0.9–1.7 s each, once per setup
   (cached); a recorder whose first encoder can't start runs with the next one
   (missing AMF → NVENC: started in 206–227 ms).
+- Own WGC capture (M3.4) with the test game at 1280x720, 60 fps capture, GPU at 83–99 %
+  from another game: 31 s clip, 1841 frames (59.25 fps), every barcode readable, none
+  out of order, repeats within what the game's own stalls explain; monitor capture works
+  (fallback test). Frames stay on the GPU (shared D3D11 device).
+- HDR (M3.5, `tests/m3_hdr.rs`, monitor in HDR mode, SDR white 140 nits, peak 648 nits):
+  an SDR game comes out exact (patches 16/64/128/192/235/255 back unchanged, checker
+  59/89 for 60/90); an HDR game with paper white = SDR white keeps its SDR parts, and its
+  80/160/320-nit patches land at 199/236/249 while 640 nits (the display's peak) and
+  brighter reach 255; the measured scene peak is 648 nits. Same on the 120/400-nit
+  monitor: 211/241/252.
+- Fallbacks (M3.6, `tests/m3_fallback.rs`, test game borderless on the secondary
+  monitor): the game stops drawing for 5 s → window capture switches to monitor capture
+  after 3 s without frames (9.3 s into the recording), restart ~0.25 s, the clip holds
+  frames from before and after the switch (counters 111–684), all readable, in order.
+  DXGI monitor capture of the game: barcodes readable, gray patches exact on the HDR
+  desktop.
 - Platform: both monitors here report HDR on (SDR white 120 / 140 nits, peak 400 / 648
   nits), the adapter that drives them, and the virtual-display copy of the GPU.
 
@@ -93,16 +109,23 @@ Audio (M2):
 - **AMF and QSV are unverified**: property names come from the GStreamer docs; no AMD or
   Intel hardware here. VA-API is M4. Hybrid-laptop ranking is by GPU vendor (two GPUs of
   one vendor can't be told apart) and untested on a real laptop.
-- **HDR content is clipped** (measured, primary monitor in HDR mode): an HDR game's
-  highlights above SDR white become flat white, and with WGC its SDR parts come out too
-  bright when the game's paper white isn't 80 nits. SDR games on an HDR desktop are
-  exact. Fix in progress (M3.4/M3.5: own FP16 WGC capture + tone-map).
+- **HDR tone curve is a choice** (knee 0.8 in sRGB-encoded space, roll-off to the
+  display's peak); it may need tuning by eye on real HDR games. The fallback source
+  (`d3d11screencapturesrc`) still clips HDR content. A window that moves to a monitor
+  with a different HDR state keeps its start monitor's settings.
+- **A/V timing under GPU load**: frames are stamped when they reach Klip (bounded by
+  WGC's time). Idle GPU: video +4.6 ms after the game's GPU-finish time, A/V −3.8 ms
+  (old source: +4.2 to +5.9 ms). With another game holding the GPU at 86–100 %,
+  composition itself runs late and every source drifts to +13–26 ms, so the ≤ 1 frame
+  sync test can fail under such load.
 - **NVENC and Media Foundation in one process** (ADR 0009): handled by starting MF first
   and ranking D3D12 before MF hardware, but a session on NVIDIA's MF encoder still breaks
   later NVENC sessions in that process (the start fallback then picks the next encoder).
 - DXGI lists the RTX 4080 SUPER twice with different LUIDs (virtual display drivers from
   Parsec / Virtual Desktop); the copy has no outputs and ranks after the real one.
-- Exclusive-fullscreen fallback: not done yet (M3.6).
+- **Exclusive fullscreen** switching is unit-tested only (an automatic test would take
+  over a monitor and the focus); DXGI captures clip HDR highlights (no tone-map on that
+  path).
 - Not measured yet: FPS cost on a real game, recorder RAM (estimate for the ring:
   `(video + audio bitrate) x 1.5 x (buffer + 1 s)` = 457 MB cap for 120 s at 20 Mbit/s +
   one AAC track).
@@ -123,6 +146,21 @@ Agents can't play games or listen. When convenient:
 4. Share a clip to Discord / a phone and check the sound plays (the Mix track).
 Do not try this in anti-cheat games until the human decides (AGENTS.md rule 8); process
 loopback is an OS API and doesn't touch the game, but that decision is theirs.
+
+## Manual checks for the human (M3)
+
+1. **HDR game** (Windows HDR on): record a game with HDR enabled in its settings, save a
+   clip, and compare it with the game on screen: bright skies/lights should keep some
+   detail instead of flat white, and dark/mid tones should look like the game. Say if
+   highlights look too dull or too harsh (the curve can be tuned).
+2. **Exclusive fullscreen**: a game set to "Fullscreen" (not borderless): start
+   `klip-cli record --window-title "<game>"`, play a minute, save a clip; it must show
+   the game, and `klip-cli status` → `video.switches` tells whether Klip switched to
+   monitor or DXGI capture.
+3. **Alt-tab** out of that game and back while recording: the clip should follow (some
+   desktop frames while tabbed out are expected).
+4. **AMD or Intel PC** (a friend's): `klip-cli probe` and a short recording; send the
+   output of `klip-cli probe` and `klip-cli status`. AMF/QSV settings are untested.
 
 ## Known bugs
 

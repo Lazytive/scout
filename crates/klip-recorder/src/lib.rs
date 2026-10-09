@@ -11,12 +11,16 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use klip_buffer::{PushError, Ring, RingConfig, Snapshot, SnapshotError};
 use klip_capture::audio::{AudioConfig, AudioSession};
 use klip_capture::klip_probe::EncoderChoice;
-use klip_capture::{CaptureError, CaptureSession, EncodeConfig, PacketSink, TimeBase, VideoConfig};
+use klip_capture::{
+    CaptureApi, CaptureError, CaptureSession, EncodeConfig, PacketSink, TimeBase, VideoConfig,
+    VideoTarget, fit_size,
+};
 use klip_control::{CommandError, Handler, commands};
 use klip_media::{NANOS_PER_MILLI, Nanos, Packet, TrackInfo, TrackKind, nanos_to_millis};
 use klip_mp4::{Mp4Error, Mp4Options, Mp4Track, save_mp4_atomic};
@@ -338,7 +342,8 @@ fn unique_clip_path(dir: &Path) -> Result<PathBuf, RecorderError> {
 /// A running recorder.
 pub struct Recorder {
     sink: Arc<RingSink>,
-    session: Mutex<Option<CaptureSession>>,
+    video: Arc<VideoCtl>,
+    supervisor: Mutex<Option<(Arc<AtomicBool>, JoinHandle<()>)>>,
     audio: Mutex<Option<AudioSession>>,
     /// Why audio isn't recording, if it was requested and failed to start.
     audio_error: Option<String>,
@@ -466,9 +471,59 @@ impl Recorder {
         // One clock and base time for every pipeline keeps audio and video in sync.
         let timebase = TimeBase::new()?;
         let mut cfg = cfg;
-        let (session, encode, encoder_attempts) = start_video(&cfg, &sink, &timebase)?;
+        let (session, encode, encoder_attempts, mode) = match start_video(&cfg, &sink, &timebase) {
+            Ok((s, e, a)) => {
+                let mode = match cfg.video.target {
+                    VideoTarget::Window(hwnd) => VideoMode::Window { hwnd },
+                    VideoTarget::Monitor(monitor) => VideoMode::Monitor { monitor },
+                    VideoTarget::PrimaryMonitor => VideoMode::Monitor { monitor: 0 },
+                };
+                (s, e, a, mode)
+            }
+            // A window that can't be captured: record the monitor it is on instead, at
+            // the size the window would have had.
+            Err(e) => match window_fallback(&cfg) {
+                Some((monitor_cfg, mode)) => {
+                    tracing::warn!(error = %e, "window capture failed; capturing its monitor");
+                    let mut c = cfg.clone();
+                    c.video = monitor_cfg;
+                    let (s, enc, a) = start_video(&c, &sink, &timebase)?;
+                    cfg.video.output = c.video.output;
+                    (s, enc, a, mode)
+                }
+                None => return Err(e),
+            },
+        };
         cfg.encode = encode;
         let output = session.output_size();
+        // Later restarts keep the encoder and the output size, so the replay track (and
+        // what's buffered) carries on.
+        cfg.video.output = Some(output);
+        let video = Arc::new(VideoCtl {
+            session: Mutex::new(Some(session)),
+            mode: Mutex::new(mode),
+            switches: Mutex::new(Vec::new()),
+            video_cfg: cfg.video.clone(),
+            encode: cfg.encode.clone(),
+            sink: sink.clone(),
+            timebase: timebase.clone(),
+            started: Instant::now(),
+        });
+        let supervisor = if matches!(mode, VideoMode::Monitor { .. }) {
+            None
+        } else {
+            let stop = Arc::new(AtomicBool::new(false));
+            let (v, st) = (video.clone(), stop.clone());
+            std::thread::Builder::new()
+                .name("klip-video-supervisor".into())
+                .spawn(move || {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        supervise(&v, &st);
+                    }));
+                })
+                .ok()
+                .map(|h| (stop, h))
+        };
         let (audio, audio_error) = match &cfg.audio {
             None => (None, None),
             Some(a) => match AudioSession::start(a, 1, sink.clone(), Some(&timebase)) {
@@ -483,7 +538,8 @@ impl Recorder {
         track_names.extend(audio_labels);
         Ok(Recorder {
             sink,
-            session: Mutex::new(Some(session)),
+            video,
+            supervisor: Mutex::new(supervisor),
             audio: Mutex::new(audio),
             audio_error,
             encoder_attempts,
@@ -518,7 +574,11 @@ impl Recorder {
     /// Status as JSON (also the `recorder.status` result).
     pub fn status(&self) -> Value {
         let s = self.sink.stats();
-        let session = self.session.lock().unwrap_or_else(PoisonError::into_inner);
+        let session = self
+            .video
+            .session
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let (packets, errors, encoder_drops) = session
             .as_ref()
             .map(|c| {
@@ -529,6 +589,27 @@ impl Recorder {
                 )
             })
             .unwrap_or((0, 0, 0));
+        let capture_api = session.as_ref().map(|c| format!("{:?}", c.api()));
+        #[cfg(windows)]
+        let gpu = session.as_ref().and_then(|c| c.gpu_stats()).map(|g| {
+            json!({
+                "frames": g.frames.load(Ordering::Relaxed),
+                "dropped_busy": g.dropped_busy.load(Ordering::Relaxed),
+                "skipped": g.skipped.load(Ordering::Relaxed),
+                "errors": g.errors.load(Ordering::Relaxed),
+                "resizes": g.resizes.load(Ordering::Relaxed),
+                "scene_peak_nits": f32::from_bits(g.scene_peak_nits.load(Ordering::Relaxed)),
+                "wgc_lead_us": {
+                    "mean": g.lead_sum_us.load(Ordering::Relaxed).checked_div(
+                        i64::try_from(g.lead_count.load(Ordering::Relaxed)).unwrap_or(0),
+                    ),
+                    "min": g.lead_min_us.load(Ordering::Relaxed),
+                    "max": g.lead_max_us.load(Ordering::Relaxed),
+                },
+            })
+        });
+        #[cfg(not(windows))]
+        let gpu: Option<Value> = None;
         drop(session);
         json!({
             "buffered_ms": nanos_to_millis(s.buffered),
@@ -552,6 +633,9 @@ impl Recorder {
             "capture_packets": packets,
             "capture_errors": errors,
             "encoder_queue_drops": encoder_drops,
+            "capture_api": capture_api,
+            "video": self.video.status(),
+            "capture": gpu,
             "last_error": self.sink.last_error(),
             "last_warning": self.sink.last_warning(),
             "audio": self.audio_status(),
@@ -606,6 +690,15 @@ impl Recorder {
 
     /// Stop capturing. Buffered data stays available for saves until drop.
     pub fn stop_capture(&self) {
+        let supervisor = self
+            .supervisor
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some((stop, handle)) = supervisor {
+            stop.store(true, Ordering::Relaxed);
+            let _ = handle.join();
+        }
         let audio = self
             .audio
             .lock()
@@ -615,6 +708,7 @@ impl Recorder {
             a.stop();
         }
         let session = self
+            .video
             .session
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -624,6 +718,218 @@ impl Recorder {
         }
     }
 }
+
+/// For a window target: capture settings for the monitor the window is on, with the
+/// output size the window would have had, and the mode that records that.
+fn window_fallback(cfg: &RecorderConfig) -> Option<(VideoConfig, VideoMode)> {
+    let VideoTarget::Window(hwnd) = cfg.video.target else {
+        return None;
+    };
+    let w = klip_platform::window_info(hwnd).ok()?;
+    if w.minimized || w.client_width == 0 || w.client_height == 0 {
+        return None;
+    }
+    let output = fit_size(
+        w.client_width,
+        w.client_height,
+        cfg.video.max_width,
+        cfg.video.max_height,
+    );
+    let video = VideoConfig {
+        target: VideoTarget::Monitor(w.monitor),
+        output: Some(output),
+        ..cfg.video.clone()
+    };
+    Some((
+        video,
+        VideoMode::WindowOnMonitor {
+            hwnd,
+            monitor: w.monitor,
+            dxgi: false,
+        },
+    ))
+}
+
+/// One capture switch, for the status.
+#[derive(Clone, Debug)]
+struct SwitchRecord {
+    at_ms: u64,
+    to: VideoMode,
+    reason: &'static str,
+    ok: bool,
+}
+
+/// The video capture, restartable by the supervisor.
+struct VideoCtl {
+    session: Mutex<Option<CaptureSession>>,
+    mode: Mutex<VideoMode>,
+    switches: Mutex<Vec<SwitchRecord>>,
+    /// Settings with the output size pinned.
+    video_cfg: VideoConfig,
+    encode: EncodeConfig,
+    sink: Arc<RingSink>,
+    timebase: TimeBase,
+    started: Instant,
+}
+
+fn mode_json(m: VideoMode) -> Value {
+    match m {
+        VideoMode::Window { hwnd } => json!({ "kind": "window", "window": hwnd }),
+        VideoMode::WindowOnMonitor {
+            hwnd,
+            monitor,
+            dxgi,
+        } => json!({
+            "kind": "window_on_monitor", "window": hwnd, "monitor": monitor, "dxgi": dxgi,
+        }),
+        VideoMode::Monitor { monitor } => json!({ "kind": "monitor", "monitor": monitor }),
+    }
+}
+
+impl VideoCtl {
+    fn status(&self) -> Value {
+        let mode = *self.mode.lock().unwrap_or_else(PoisonError::into_inner);
+        let switches: Vec<Value> = self
+            .switches
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .map(|s| json!({ "at_ms": s.at_ms, "to": mode_json(s.to), "reason": s.reason, "ok": s.ok }))
+            .collect();
+        json!({ "mode": mode_json(mode), "switches": switches })
+    }
+
+    fn config_for(&self, mode: VideoMode) -> VideoConfig {
+        let (target, api) = match mode {
+            VideoMode::Window { hwnd } => (VideoTarget::Window(hwnd), self.video_cfg.api),
+            VideoMode::WindowOnMonitor { monitor, dxgi, .. } => (
+                VideoTarget::Monitor(monitor),
+                if dxgi {
+                    CaptureApi::GstDxgi
+                } else {
+                    self.video_cfg.api
+                },
+            ),
+            VideoMode::Monitor { monitor } => (VideoTarget::Monitor(monitor), self.video_cfg.api),
+        };
+        VideoConfig {
+            target,
+            api,
+            ..self.video_cfg.clone()
+        }
+    }
+
+    /// Restart video capture in `to`; on failure go back to the current mode.
+    fn switch(&self, to: VideoMode, reason: &'static str) {
+        let from = *self.mode.lock().unwrap_or_else(PoisonError::into_inner);
+        tracing::info!(?from, ?to, reason, "switching video capture");
+        let mut guard = self.session.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(old) = guard.take() {
+            old.stop();
+        }
+        self.sink.clear_error();
+        let sink: Arc<dyn PacketSink> = self.sink.clone();
+        let started = CaptureSession::start(
+            &self.config_for(to),
+            &self.encode,
+            sink.clone(),
+            Some(&self.timebase),
+        );
+        let ok = started.is_ok();
+        match started {
+            Ok(s) => {
+                *guard = Some(s);
+                *self.mode.lock().unwrap_or_else(PoisonError::into_inner) = to;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "switch failed; going back");
+                match CaptureSession::start(
+                    &self.config_for(from),
+                    &self.encode,
+                    sink,
+                    Some(&self.timebase),
+                ) {
+                    Ok(s) => *guard = Some(s),
+                    Err(e) => tracing::error!(error = %e, "video capture could not restart"),
+                }
+            }
+        }
+        drop(guard);
+        let at_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let mut log = self.switches.lock().unwrap_or_else(PoisonError::into_inner);
+        if log.len() >= 32 {
+            log.remove(0);
+        }
+        log.push(SwitchRecord {
+            at_ms,
+            to,
+            reason,
+            ok,
+        });
+    }
+}
+
+/// Watch the capture twice a second and switch per [`supervisor::decide`].
+fn supervise(video: &VideoCtl, stop: &AtomicBool) {
+    let tick = Duration::from_millis(500);
+    let mut last_frames: Option<u64> = None;
+    let mut last_change = Instant::now();
+    let mut last_switch = Instant::now();
+    while !stop.load(Ordering::Relaxed) {
+        std::thread::sleep(tick);
+        let mode = *video.mode.lock().unwrap_or_else(PoisonError::into_inner);
+        let hwnd = match mode {
+            VideoMode::Window { hwnd } | VideoMode::WindowOnMonitor { hwnd, .. } => hwnd,
+            VideoMode::Monitor { .. } => return,
+        };
+        let (frames, failed) = {
+            let s = video.session.lock().unwrap_or_else(PoisonError::into_inner);
+            match s.as_ref() {
+                Some(c) => (c.frames_captured(), c.failed()),
+                None => (0, true),
+            }
+        };
+        if last_frames != Some(frames) {
+            last_frames = Some(frames);
+            last_change = Instant::now();
+        }
+        let window = klip_platform::window_info(hwnd).ok();
+        let monitors = klip_platform::list_monitors().unwrap_or_default();
+        let covers = window.as_ref().is_some_and(|w| {
+            monitors
+                .iter()
+                .find(|m| m.handle == w.monitor)
+                .is_some_and(|m| w.covers(m))
+        });
+        let foreground = match (window.as_ref(), klip_platform::foreground_window()) {
+            (Some(w), Some(f)) => {
+                f == hwnd || klip_platform::window_info(f).is_ok_and(|fw| fw.pid == w.pid)
+            }
+            _ => false,
+        };
+        let obs = Observation {
+            stalled: last_change.elapsed(),
+            failed,
+            window_exists: window.is_some(),
+            minimized: window.as_ref().is_some_and(|w| w.minimized),
+            covers_monitor: covers,
+            window_monitor: window.as_ref().map(|w| w.monitor),
+            foreground,
+            exclusive: foreground && klip_platform::exclusive_fullscreen_active(),
+        };
+        if let Action::Switch { to, reason } = decide(mode, &obs)
+            && last_switch.elapsed() >= MIN_DWELL
+        {
+            video.switch(to, reason);
+            last_switch = Instant::now();
+            last_frames = None;
+            last_change = Instant::now();
+        }
+    }
+}
+
+pub mod supervisor;
+use supervisor::{Action, MIN_DWELL, Observation, VideoMode, decide};
 
 /// Smallest and largest clip length accepted over the control channel.
 const MIN_CLIP_MS: u64 = 1_000;

@@ -29,7 +29,8 @@ use windows::Win32::Media::Audio::{
     IAudioSessionManager2, IMMDeviceEnumerator, MMDeviceEnumerator, eRender,
 };
 use windows::Win32::System::Com::{
-    CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
+    CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoIncrementMTAUsage, CoInitializeEx,
+    CoUninitialize,
 };
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
@@ -39,8 +40,8 @@ use windows::Win32::UI::HiDpi::{
 };
 use windows::Win32::UI::Shell::{QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetClientRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow,
-    IsWindowVisible, MONITORINFOF_PRIMARY,
+    EnumWindows, GetClientRect, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+    IsIconic, IsWindow, IsWindowVisible, MONITORINFOF_PRIMARY,
 };
 use windows::core::{BOOL, Interface};
 
@@ -364,6 +365,12 @@ fn sdr_white_levels() -> Result<HashMap<String, f32>, PlatformError> {
     Ok(map)
 }
 
+pub(crate) fn foreground_window() -> Option<u64> {
+    // SAFETY: no preconditions; returns NULL when no window has focus.
+    let h = unsafe { GetForegroundWindow() };
+    (!h.0.is_null()).then_some(h.0 as usize as u64)
+}
+
 pub(crate) fn exclusive_fullscreen_active() -> bool {
     // SAFETY: no preconditions; returns the state by value.
     unsafe { SHQueryUserNotificationState() }.is_ok_and(|s| s == QUNS_RUNNING_D3D_FULL_SCREEN)
@@ -417,6 +424,17 @@ fn com_init() -> ComGuard {
     // uninitialise.
     let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
     ComGuard(hr.is_ok())
+}
+
+/// Keep the process's multithreaded COM apartment alive for good, so WinRT objects
+/// created on any thread (capture items, frame pools) stay usable whatever that thread
+/// does with COM later. Idempotent.
+pub(crate) fn com_init_mta() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // SAFETY: no preconditions; the cookie is deliberately never released.
+        let _ = unsafe { CoIncrementMTAUsage() };
+    });
 }
 
 pub(crate) fn audio_sessions() -> Result<Vec<AudioSession>, PlatformError> {

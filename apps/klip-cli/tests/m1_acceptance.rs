@@ -18,10 +18,9 @@
 mod common;
 
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::{Duration, Instant};
 
-use common::{KillOnDrop, cli, game_exe, run_json, spawn_ready, stop_recorder};
+use common::{KillOnDrop, capture_api_args, cli, game, run_json, spawn_ready, stop_recorder};
 use klip_testkit::{continuity, oracle, sync};
 
 #[test]
@@ -35,7 +34,6 @@ fn record_buffer_and_clip_last_30s() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(30);
-    let game_exe = game_exe();
 
     let tmp = tempfile::tempdir().unwrap();
     let discovery = tmp.path().join("control.json");
@@ -45,7 +43,7 @@ fn record_buffer_and_clip_last_30s() {
     let capture_fps = 60;
 
     let (game, ready) = spawn_ready(
-        Command::new(&game_exe)
+        game()
             .args([
                 "--background",
                 "--fps",
@@ -75,6 +73,7 @@ fn record_buffer_and_clip_last_30s() {
                 &capture_fps.to_string(),
             ])
             .args(["--window-handle", &hwnd.to_string()])
+            .args(capture_api_args())
             .arg("--out")
             .arg(&clips),
         Duration::from_secs(60),

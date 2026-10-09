@@ -57,6 +57,8 @@ fn falls_back_to_the_next_encoder() {
             max_width: 1280,
             max_height: 720,
             show_cursor: false,
+            api: Default::default(),
+            output: None,
         },
         encode: EncodeConfig {
             encoder: broken,

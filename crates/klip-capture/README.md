@@ -4,36 +4,39 @@ GStreamer pipelines that capture through OS APIs and encode, delivering **encode
 packets** (`klip_media::Packet`) to a `PacketSink` (the replay ring). Design and
 measurements of the timing: ADR 0008.
 
-## Video (Windows, ADR 0002)
+## Video (Windows, ADR 0002, 0010)
 
-Built element by element (no launch strings):
+Default (`CaptureApi::Auto` / `Klip`), built element by element:
 
 ```
-d3d11screencapturesrc capture-api=wgc [window-handle + window-capture-mode=client | monitor-handle]
-  ! video/x-raw(memory:D3D11Memory),framerate=8xF/1       (polls for new WGC frames, 240–1000 Hz)
-  [probe: pts = arrival time on the TimeBase, + ReferenceTimestampMeta]
+klip_platform::GpuCapture (own WGC, D3D11 device on the encoder's GPU, shared via GstContext)
+  → shader pass: client-area crop, scale to W×H, letterbox; HDR monitor: FP16 → tone-map
+  → appsrc (D3D11Memory BGRA W×H, pts = WGC capture time on the TimeBase, + meta; leaky, 4)
   ! videorate drop-only=true ! framerate=F/1               (frame nearest each output slot)
-  [probe: pts = FrameGrid.snap(arrival)]
+  [probe: pts = FrameGrid.snap(capture time)]
   ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width=W,height=H
-  ! [d3d11download ! cudaupload]   (CUDA NVENC only; d3d11download for software encoders)
-  ! queue leaky=downstream max-size-buffers=8
-  ! <encoder> ! <parser> ! stream-format=avc|hvc1, alignment=au ! appsink
+  ! [d3d11download ! cudaupload | d3d12upload | d3d11download]   (CUDA / D3D12 / software)
+  ! queue leaky=downstream max-size-buffers=8              (drops counted: encoder_queue_drops)
+  ! <encoder> ! <parser> ! stream-format=avc|hvc1|obu-stream ! appsink
 ```
+
+Fallback (`Auto` when the own capture can't start, or `GstWgc`): the same chain fed by
+`d3d11screencapturesrc capture-api=wgc` polled at 8x the capture rate with frames
+re-stamped on arrival (it stamps frames with its own clock slots; ADR 0008).
 
 - Output size is fixed at start (`fit_size`: scale down to the preset box, keep aspect,
   even dimensions), so window resizes never change encoder caps mid-buffer.
-- Encoder settings per family (`configure_encoder`): NVENC = VBR, max 1.5x, p4,
-  high-quality tune, no B-frames, spatial AQ, GOP = 1 s. MF/AMF/QSV/VA have best-effort
-  maps; AMF/QSV/VA names get verified on that hardware in M3. Properties are set through
-  `props::set_str`, which checks the property spec first (glib setters panic otherwise).
-- Why the fast polling: the source stamps the newest frame once per slot of its own
-  frame-rate grid (with the slot time), so at the capture rate a frame could be up to a
-  frame old by a per-run amount. Polling at 8x keeps that under ~2 ms; `videorate` brings
-  the rate (and the encoder's caps) back to F.
+- Encoder settings per family (`configure_encoder`, ADR 0009): VBR at the target with
+  1.5x peaks, one IDR per second, no B-frames; NVENC p4 high-quality + spatial AQ; MF
+  `pcvbr`; D3D12 VBR; AMF/QSV from the GStreamer docs (unverified on hardware).
+  Properties are set through `props::set_str`, which checks the property spec first
+  (glib setters panic otherwise).
+- `EncodeChain::adapter_luid`: the encoder's GPU, used to put the capture device there.
 - `InputOrigin`: the first timestamp entering the encoder (pad probe). GStreamer's NVENC
   elements add 1000 hours to output timestamps (`min-pts`); `EncodeChain::attach` moves
   packets back so video shares a timeline with audio.
-- `track_info_from_caps`: codec, `codec_data` (avcC/hvcC/av1C, AAC AudioSpecificConfig),
+- `track_info_from_caps` / `track_info_with_frame`: codec, `codec_data` (avcC/hvcC, AAC
+  AudioSpecificConfig; AV1's av1C is built from the first keyframe's sequence header),
   size/colorimetry or rate/channels from parser caps.
 - The appsink callback runs under `catch_unwind`; errors and panics are counted in
   `CaptureStats` and reported to the sink; a bus thread reports pipeline errors and

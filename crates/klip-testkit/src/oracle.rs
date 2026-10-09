@@ -195,6 +195,58 @@ pub fn decode_audio_mono(path: &Path, index: usize, rate: u32) -> Result<Vec<i16
         .collect())
 }
 
+/// Decode the frame at `at_s` seconds of the first video stream as `width`x`height`
+/// 8-bit gray (luma) with ffmpeg.
+pub fn decode_gray_frame(
+    path: &Path,
+    at_s: f64,
+    width: usize,
+    height: usize,
+) -> Result<Vec<u8>, OracleError> {
+    let scale = format!("scale={width}:{height}:flags=area");
+    let out = Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-nostdin",
+            "-ss",
+            &format!("{at_s:.3}"),
+            "-i",
+        ])
+        .arg(path_str(path)?)
+        .args([
+            "-map",
+            "0:v:0",
+            "-frames:v",
+            "1",
+            "-vf",
+            &scale,
+            "-pix_fmt",
+            "gray",
+            "-f",
+            "rawvideo",
+            "-",
+        ])
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                OracleError::Missing("ffmpeg")
+            } else {
+                OracleError::Io(e)
+            }
+        })?;
+    if !out.status.success() || out.stdout.len() != width.saturating_mul(height) {
+        return Err(OracleError::Failed {
+            tool: "ffmpeg",
+            stderr: String::from_utf8_lossy(&out.stderr)
+                .chars()
+                .take(2000)
+                .collect(),
+        });
+    }
+    Ok(out.stdout)
+}
+
 /// Decode the first video stream to `width`x`height` 8-bit gray with ffmpeg (no frame
 /// rate conversion) and read the barcode of every frame.
 pub fn decode_counters(

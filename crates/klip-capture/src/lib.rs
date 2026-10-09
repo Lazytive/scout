@@ -1,9 +1,12 @@
 //! Capture + hardware-encode pipelines that deliver **encoded packets** to a sink.
 //!
-//! Windows video path (ADR 0002):
-//! `d3d11screencapturesrc (WGC) → d3d11convert → NV12 at a fixed size → queue → encoder →
-//! parser → appsink`. The output size is fixed when the session starts, so window resizes
-//! are scaled/letterboxed instead of changing the encoder's caps mid-stream.
+//! Windows video path (ADR 0002, 0010): Klip's own WGC capture
+//! (`klip_platform::GpuCapture`: frames stamped with WGC's capture time, cropped and
+//! scaled on the GPU) `→ appsrc → videorate (drop only) → d3d11convert → NV12 → queue →
+//! encoder → parser → appsink`, all on one D3D11 device shared through a `GstContext`.
+//! If that can't start, `d3d11screencapturesrc` (WGC) takes its place. The output size is
+//! fixed when the session starts, so window resizes are scaled/letterboxed instead of
+//! changing the encoder's caps mid-stream.
 //!
 //! The encode half ([`build_encode_chain`]) is public so tests and benchmarks can feed it
 //! from an `appsrc` with known frames.
@@ -76,6 +79,27 @@ pub struct VideoConfig {
     pub max_width: u32,
     pub max_height: u32,
     pub show_cursor: bool,
+    /// Which capture implementation to use.
+    pub api: CaptureApi,
+    /// Fixed output size instead of fitting the source into the max box (keeps the
+    /// encoder's output, and so the replay track, unchanged when a recording switches
+    /// between window and monitor capture).
+    pub output: Option<(u32, u32)>,
+}
+
+/// Capture implementation for video.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CaptureApi {
+    /// Klip's own WGC capture, falling back to GStreamer's WGC source.
+    #[default]
+    Auto,
+    /// Klip's own WGC capture only (`klip_platform::GpuCapture`).
+    Klip,
+    /// GStreamer's `d3d11screencapturesrc` in WGC mode.
+    GstWgc,
+    /// GStreamer's `d3d11screencapturesrc` with DXGI Desktop Duplication (monitors only;
+    /// sees exclusive-fullscreen games that WGC may not).
+    GstDxgi,
 }
 
 /// Encoder settings.
@@ -338,6 +362,23 @@ pub struct EncodeChain {
     pub origin: InputOrigin,
     /// The leaky queue in front of the encoder.
     queue: gst::Element,
+    /// The encoder element.
+    pub encoder: gst::Element,
+}
+
+impl EncodeChain {
+    /// The DXGI adapter the encoder runs on, if it reports one (`adapter-luid`).
+    pub fn adapter_luid(&self) -> Option<i64> {
+        let spec = self.encoder.find_property("adapter-luid")?;
+        if spec.value_type() != i64::static_type() {
+            return None;
+        }
+        self.encoder
+            .property_value("adapter-luid")
+            .get::<i64>()
+            .ok()
+            .filter(|l| *l != 0)
+    }
 }
 
 impl EncodeChain {
@@ -416,7 +457,7 @@ pub fn build_encode_chain(
             .static_pad("sink")
             .ok_or_else(|| CaptureError::Gst("encoder has no sink pad".into()))?,
     );
-    chain.push(encoder);
+    chain.push(encoder.clone());
     let (parser, out_caps) = parser_and_caps(cfg.encoder.codec)?;
     chain.push(make(parser)?);
     chain.push(capsfilter(out_caps)?);
@@ -433,6 +474,7 @@ pub fn build_encode_chain(
         appsink,
         origin,
         queue,
+        encoder,
     })
 }
 
@@ -700,6 +742,11 @@ pub struct CaptureSession {
     bus_thread: Option<JoinHandle<()>>,
     stats: Arc<CaptureStats>,
     output: (u32, u32),
+    /// Klip's own capture feeding the pipeline (stopped before the pipeline).
+    #[cfg(windows)]
+    gpu: Option<klip_platform::GpuCapture>,
+    /// Which implementation captures.
+    api: CaptureApi,
 }
 
 impl std::fmt::Debug for CaptureSession {
@@ -807,6 +854,71 @@ fn source_size(target: VideoTarget) -> Result<(u32, u32, VideoTarget), CaptureEr
     }
 }
 
+/// Feeds frames from Klip's own capture into the pipeline's `appsrc`, stamped on the
+/// recording's timeline.
+#[cfg(windows)]
+struct AppsrcFeed {
+    appsrc: gst_app::AppSrc,
+    /// Clock time (ns) of running time zero.
+    base_ns: i64,
+    last: Mutex<Nanos>,
+    sink: Arc<dyn PacketSink>,
+    stats: Arc<CaptureStats>,
+    ended: AtomicBool,
+}
+
+#[cfg(windows)]
+impl klip_platform::GpuFrameSink for AppsrcFeed {
+    fn frame(&self, mut buffer: gst::Buffer, qpc_ns: i64) {
+        let mut last = self.last.lock().unwrap_or_else(PoisonError::into_inner);
+        let t = qpc_ns.saturating_sub(self.base_ns);
+        // Before the recording started, or not after the previous frame: skip.
+        if t < 0 || t <= *last {
+            return;
+        }
+        *last = t;
+        drop(last);
+        let pts = gst::ClockTime::from_nseconds(u64::try_from(t).unwrap_or(0));
+        let b = buffer.make_mut();
+        b.set_pts(pts);
+        b.set_dts(gst::ClockTime::NONE);
+        b.set_duration(gst::ClockTime::NONE);
+        let caps = gst::Caps::new_empty_simple(ARRIVAL_META);
+        gst::ReferenceTimestampMeta::add(b, &caps, pts, gst::ClockTime::NONE);
+        // Flushing (not playing yet / stopping) and full-queue drops are fine to ignore.
+        let _ = self.appsrc.push_buffer(buffer);
+    }
+
+    fn ended(&self, reason: String) {
+        if !self.ended.swap(true, Ordering::Relaxed) {
+            self.stats.errors.fetch_add(1, Ordering::Relaxed);
+            self.sink.on_error(format!("capture: {reason}"));
+        }
+    }
+}
+
+/// The monitor that shows `target` (a window: the one it is mostly on, at start).
+#[cfg(windows)]
+fn target_monitor(target: VideoTarget) -> Option<klip_platform::MonitorInfo> {
+    let monitors = klip_platform::list_monitors().ok()?;
+    let handle = match target {
+        VideoTarget::PrimaryMonitor => monitors.iter().find(|m| m.primary)?.handle,
+        VideoTarget::Monitor(h) => h,
+        VideoTarget::Window(h) => klip_platform::window_info(h).ok()?.monitor,
+    };
+    monitors.into_iter().find(|m| m.handle == handle)
+}
+
+/// HDR settings for the capture when `monitor` runs in Windows HDR mode. Unknown levels
+/// default to 80 nits SDR white (Windows' minimum) and a 1000-nit peak.
+#[cfg(windows)]
+fn hdr_display(monitor: &klip_platform::MonitorInfo) -> Option<klip_platform::HdrDisplay> {
+    monitor.hdr.then(|| klip_platform::HdrDisplay {
+        sdr_white_nits: monitor.sdr_white_nits.unwrap_or(80.0),
+        peak_nits: monitor.max_nits.unwrap_or(1000.0),
+    })
+}
+
 impl CaptureSession {
     /// Build and start a screen/window capture session (Windows). Packets go to track 0.
     pub fn start(
@@ -820,11 +932,151 @@ impl CaptureSession {
             return Err(CaptureError::Config(format!("bad fps {}", video.fps)));
         }
         let (src_w, src_h, target) = source_size(video.target)?;
-        let (out_w, out_h) = fit_size(src_w, src_h, video.max_width, video.max_height);
+        let (out_w, out_h) = match video.output {
+            Some((w, h)) if w >= 64 && h >= 64 && w <= 8192 && h <= 8192 => (w & !1, h & !1),
+            Some(o) => return Err(CaptureError::Config(format!("bad output size {o:?}"))),
+            None => fit_size(src_w, src_h, video.max_width, video.max_height),
+        };
+        #[cfg(windows)]
+        if matches!(video.api, CaptureApi::Auto | CaptureApi::Klip) {
+            match Self::start_klip(
+                video,
+                encode,
+                sink.clone(),
+                timebase,
+                target,
+                (out_w, out_h),
+            ) {
+                Ok(s) => return Ok(s),
+                Err(e) if video.api == CaptureApi::Auto => {
+                    tracing::warn!(error = %e, "own capture failed; using GStreamer's WGC source");
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Self::start_gst_wgc(video, encode, sink, timebase, target, (out_w, out_h))
+    }
 
+    /// Klip's own WGC capture into an `appsrc` (see the crate docs).
+    #[cfg(windows)]
+    fn start_klip(
+        video: &VideoConfig,
+        encode: &EncodeConfig,
+        sink: Arc<dyn PacketSink>,
+        timebase: Option<&TimeBase>,
+        target: VideoTarget,
+        (out_w, out_h): (u32, u32),
+    ) -> Result<CaptureSession, CaptureError> {
+        let own_tb;
+        let tb = match timebase {
+            Some(t) => t,
+            None => {
+                own_tb = TimeBase::new()?;
+                &own_tb
+            }
+        };
+        let gpu_target = match target {
+            VideoTarget::Window(h) => klip_platform::GpuCaptureTarget::Window(h),
+            VideoTarget::Monitor(h) => klip_platform::GpuCaptureTarget::Monitor(h),
+            VideoTarget::PrimaryMonitor => {
+                return Err(CaptureError::Target("no monitor handle".into()));
+            }
+        };
         let pipeline = gst::Pipeline::with_name("klip-capture");
-        let src = make("d3d11screencapturesrc")?;
-        props::require(&src, "capture-api", "wgc").map_err(CaptureError::Config)?;
+        let appsrc = gst_app::AppSrc::builder()
+            .is_live(true)
+            .format(gst::Format::Time)
+            .do_timestamp(false)
+            .max_buffers(4)
+            .block(false)
+            .build();
+        props::set_str(appsrc.upcast_ref(), "leaky-type", "downstream");
+        let videorate = make("videorate")?;
+        // Never invent frames; keep the one nearest each output slot.
+        props::set_str(&videorate, "drop-only", "true");
+        let rate = capsfilter(&format!(
+            "video/x-raw(memory:D3D11Memory),framerate={}/1",
+            video.fps
+        ))?;
+        pipeline
+            .add_many([appsrc.upcast_ref(), &videorate, &rate])
+            .map_err(gst_err)?;
+        gst::Element::link_many([appsrc.upcast_ref(), &videorate, &rate]).map_err(gst_err)?;
+        let chain = build_encode_chain(&pipeline, encode, out_w, out_h, video.fps)?;
+        rate.link(&chain.input).map_err(gst_err)?;
+        // Capture on the encoder's GPU (no copy between GPUs); encoders that don't say
+        // which GPU they use get the monitor's.
+        let monitor = target_monitor(target);
+        let adapter_luid = chain
+            .adapter_luid()
+            .or_else(|| monitor.as_ref().and_then(|m| m.adapter_luid));
+        let hdr = monitor.as_ref().and_then(hdr_display);
+        let stats = Arc::new(CaptureStats::default());
+        let feed = Arc::new(AppsrcFeed {
+            appsrc: appsrc.clone(),
+            base_ns: i64::try_from(tb.base_clock_ns()).unwrap_or(i64::MAX),
+            last: Mutex::new(Nanos::MIN),
+            sink: sink.clone(),
+            stats: stats.clone(),
+            ended: AtomicBool::new(false),
+        });
+        let gpu = klip_platform::GpuCapture::start(
+            &klip_platform::GpuCaptureConfig {
+                target: gpu_target,
+                adapter_luid,
+                show_cursor: video.show_cursor,
+                width: out_w,
+                height: out_h,
+                hdr,
+            },
+            feed,
+        )?;
+        let mut caps = gpu.caps().clone();
+        if let Some(c) = caps.get_mut() {
+            c.set("framerate", gst::Fraction::new(0, 1));
+        }
+        appsrc.set_caps(Some(&caps));
+        pipeline.set_context(&gpu.context());
+        let pad = rate
+            .static_pad("src")
+            .ok_or_else(|| CaptureError::Gst("capsfilter has no src pad".into()))?;
+        snap_kept_frames(&pad, video.fps, stats.clone());
+        chain.attach(0, sink.clone(), stats.clone(), Timing::AsIs);
+        let mut session = Self::run(pipeline, sink, stats, (out_w, out_h), Some(tb))?;
+        session.gpu = Some(gpu);
+        session.api = CaptureApi::Klip;
+        tracing::info!(width = out_w, height = out_h, fps = video.fps, encoder = %encode.encoder.element, adapter = ?adapter_luid, hdr = hdr.is_some(), "capture started (own WGC)");
+        Ok(session)
+    }
+
+    /// GStreamer's `d3d11screencapturesrc` in WGC mode.
+    fn start_gst_wgc(
+        video: &VideoConfig,
+        encode: &EncodeConfig,
+        sink: Arc<dyn PacketSink>,
+        timebase: Option<&TimeBase>,
+        target: VideoTarget,
+        (out_w, out_h): (u32, u32),
+    ) -> Result<CaptureSession, CaptureError> {
+        let dxgi = video.api == CaptureApi::GstDxgi;
+        if dxgi && matches!(target, VideoTarget::Window(_)) {
+            return Err(CaptureError::Config(
+                "DXGI desktop duplication captures monitors only".into(),
+            ));
+        }
+        let pipeline = gst::Pipeline::with_name("klip-capture");
+        // DXGI: the D3D12 source, which samples an HDR desktop in scRGB at the SDR white
+        // level (SDR content exact; the D3D11 source's DXGI mode washes it out: measured
+        // 78/115 for 60/90 on a 140-nit SDR-white monitor). Its frames go to the D3D11
+        // chain through d3d12download.
+        let d3d12 = dxgi && gst::ElementFactory::find("d3d12screencapturesrc").is_some();
+        let src = make(if d3d12 {
+            "d3d12screencapturesrc"
+        } else {
+            "d3d11screencapturesrc"
+        })?;
+        props::require(&src, "capture-api", if dxgi { "dxgi" } else { "wgc" })
+            .map_err(CaptureError::Config)?;
         props::set_str(&src, "show-border", "false");
         props::set_str(
             &src,
@@ -850,9 +1102,15 @@ impl CaptureSession {
             .fps
             .saturating_mul(SOURCE_RATE_FACTOR)
             .clamp(SOURCE_RATE_MIN, SOURCE_RATE_MAX);
+        let memory = if d3d12 { "D3D12Memory" } else { "D3D11Memory" };
         let poll = capsfilter(&format!(
-            "video/x-raw(memory:D3D11Memory),framerate={source_rate}/1"
+            "video/x-raw(memory:{memory}),framerate={source_rate}/1"
         ))?;
+        let mut elements = vec![src.clone(), poll];
+        if d3d12 {
+            elements.push(make("d3d12download")?);
+            elements.push(capsfilter("video/x-raw(memory:D3D11Memory)")?);
+        }
         let videorate = make("videorate")?;
         // Never invent frames; keep the one nearest each output slot.
         props::set_str(&videorate, "drop-only", "true");
@@ -860,10 +1118,10 @@ impl CaptureSession {
             "video/x-raw(memory:D3D11Memory),framerate={}/1",
             video.fps
         ))?;
-        pipeline
-            .add_many([&src, &poll, &videorate, &rate])
-            .map_err(gst_err)?;
-        gst::Element::link_many([&src, &poll, &videorate, &rate]).map_err(gst_err)?;
+        elements.push(videorate);
+        elements.push(rate.clone());
+        pipeline.add_many(&elements).map_err(gst_err)?;
+        gst::Element::link_many(&elements).map_err(gst_err)?;
         let chain = build_encode_chain(&pipeline, encode, out_w, out_h, video.fps)?;
         rate.link(&chain.input).map_err(gst_err)?;
 
@@ -875,8 +1133,13 @@ impl CaptureSession {
             snap_kept_frames(&pad, video.fps, stats.clone());
         }
         chain.attach(0, sink.clone(), stats.clone(), Timing::AsIs);
-        let session = Self::run(pipeline, sink, stats, (out_w, out_h), timebase)?;
-        tracing::info!(width = out_w, height = out_h, fps = video.fps, encoder = %encode.encoder.element, "capture started");
+        let mut session = Self::run(pipeline, sink, stats, (out_w, out_h), timebase)?;
+        session.api = if dxgi {
+            CaptureApi::GstDxgi
+        } else {
+            CaptureApi::GstWgc
+        };
+        tracing::info!(width = out_w, height = out_h, fps = video.fps, encoder = %encode.encoder.element, api = ?session.api, "capture started (GStreamer source)");
         Ok(session)
     }
 
@@ -942,6 +1205,9 @@ impl CaptureSession {
             bus_thread: Some(bus_thread),
             stats,
             output,
+            #[cfg(windows)]
+            gpu: None,
+            api: CaptureApi::Auto,
         };
         session
             .pipeline
@@ -959,6 +1225,32 @@ impl CaptureSession {
         &self.stats
     }
 
+    /// The capture implementation that runs (`Auto` for pipelines built by tests).
+    pub fn api(&self) -> CaptureApi {
+        self.api
+    }
+
+    /// Frames the source has produced so far (Klip's capture: captured frames; GStreamer
+    /// sources: encoded packets). For stall detection.
+    pub fn frames_captured(&self) -> u64 {
+        #[cfg(windows)]
+        if let Some(g) = &self.gpu {
+            return g.stats().frames.load(Ordering::Relaxed);
+        }
+        self.stats.packets.load(Ordering::Relaxed)
+    }
+
+    /// The pipeline or the capture reported an error.
+    pub fn failed(&self) -> bool {
+        self.stats.errors.load(Ordering::Relaxed) > 0
+    }
+
+    /// Counters of Klip's own capture, when it runs.
+    #[cfg(windows)]
+    pub fn gpu_stats(&self) -> Option<Arc<klip_platform::GpuCaptureStats>> {
+        self.gpu.as_ref().map(klip_platform::GpuCapture::stats)
+    }
+
     /// The pipeline (for tests that drive an appsrc).
     pub fn pipeline(&self) -> &gst::Pipeline {
         &self.pipeline
@@ -970,6 +1262,9 @@ impl CaptureSession {
     }
 
     fn shutdown(&mut self) {
+        // Stop feeding before the pipeline goes down.
+        #[cfg(windows)]
+        drop(self.gpu.take());
         self.stop.store(true, Ordering::Relaxed);
         let _ = self.pipeline.set_state(gst::State::Null);
         if let Some(t) = self.bus_thread.take() {

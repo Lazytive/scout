@@ -25,6 +25,12 @@ Windows (Win32/DXGI via the `windows` crate):
   event-driven, every packet stamped with WASAPI's QPC capture time. Silence is generated
   while a stream delivers nothing; a failed or lost device becomes silence + a notice and
   is retried every 2 s. Packets that overlap generated silence are trimmed.
+- `GpuCapture` (`wgc.rs`, ADR 0010): Klip's own Windows.Graphics.Capture source for a
+  window (client area) or monitor. D3D11 device on a chosen adapter, shared with
+  GStreamer (`gst_d3d11.rs`: `GstD3D11Device` wrap, `GstContext`, D3D11 buffer pool,
+  device lock); per frame one shader pass (crop, scale, letterbox; HDR monitors: FP16
+  capture, scene-peak measurement, tone-map to SDR) into a pooled texture handed to a
+  `GpuFrameSink` with WGC's QPC capture time. Counters in `GpuCaptureStats`.
 - `qpc_now_ns` (the clock of those stamps) and `process_loopback_supported` (build 19041+,
   via `RtlGetVersion`).
 
@@ -36,5 +42,5 @@ so it is wrapped in `ManuallyDrop`; otherwise the heap is corrupted (found by
 
 Linux: returns `PlatformError::Unsupported` until M4 (portal + PipeWire live elsewhere).
 
-Only documented query APIs are used. Nothing here touches another process's memory or
-rendering (rule 1).
+Only documented OS APIs are used (WGC is the OS capture API). Nothing here touches
+another process's memory or rendering (rule 1).

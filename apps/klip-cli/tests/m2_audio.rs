@@ -27,10 +27,9 @@
 mod common;
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
-use common::{KillOnDrop, cli, game_exe, run_json, spawn_ready, stop_recorder};
+use common::{KillOnDrop, capture_api_args, cli, game, run_json, spawn_ready, stop_recorder};
 use klip_testkit::{audio, oracle, sync};
 use serde_json::Value;
 
@@ -62,7 +61,7 @@ fn record_game(clip_secs: u64, extra: &[&str]) -> Run {
     let beep_log = tmp.path().join("beeps.csv");
     let tap_log = tmp.path().join("tap.csv");
     let (game, ready) = spawn_ready(
-        Command::new(game_exe())
+        game()
             .args(["--background", "--fps", &GAME_FPS.to_string()])
             .args(["--width", "1280", "--height", "720"])
             .args(["--duration", &format!("{}s", clip_secs + 30)])
@@ -93,6 +92,7 @@ fn record_game(clip_secs: u64, extra: &[&str]) -> Run {
             ])
             .args(["--window-handle", &hwnd.to_string()])
             .args(extra)
+            .args(capture_api_args())
             .arg("--out")
             .arg(&clips),
         Duration::from_secs(60),
@@ -109,6 +109,7 @@ fn record_game(clip_secs: u64, extra: &[&str]) -> Run {
     let _ = game.0.wait();
     println!("clip: {saved}");
     println!("audio status: {}", status["audio"]);
+    println!("capture: {}", status["capture"]);
     Run {
         clip: PathBuf::from(saved["path"].as_str().unwrap()),
         saved,

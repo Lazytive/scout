@@ -7,9 +7,18 @@
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
 #[cfg(windows)]
+mod gst_d3d11;
+#[cfg(windows)]
 mod wasapi;
 #[cfg(windows)]
+mod wgc;
+#[cfg(windows)]
 mod windows_impl;
+
+#[cfg(windows)]
+pub use wgc::{
+    GpuCapture, GpuCaptureConfig, GpuCaptureStats, GpuCaptureTarget, GpuFrameSink, HdrDisplay,
+};
 
 /// Errors from OS queries.
 #[derive(Debug, thiserror::Error)]
@@ -326,6 +335,18 @@ pub fn list_monitors() -> Result<Vec<MonitorInfo>, PlatformError> {
     #[cfg(not(windows))]
     {
         Err(PlatformError::Unsupported)
+    }
+}
+
+/// The window that has the keyboard focus (HWND), if any.
+pub fn foreground_window() -> Option<u64> {
+    #[cfg(windows)]
+    {
+        windows_impl::foreground_window()
+    }
+    #[cfg(not(windows))]
+    {
+        None
     }
 }
 

@@ -85,6 +85,31 @@ struct Args {
     /// Brightness of SDR white in HDR mode, in nits.
     #[arg(long, default_value_t = 80.0)]
     paper_white: f32,
+    /// Top-left corner of the window in screen pixels, `X,Y` (e.g. on a second monitor,
+    /// so tests don't cover what you're doing on the main one).
+    #[arg(long, value_parser = parse_pos, allow_hyphen_values = true)]
+    position: Option<(i32, i32)>,
+    /// Stop drawing between these times since start, `FROM..TO` (e.g. `6s..10s`): the
+    /// window stays but shows no new frames, like a game hanging or a capture stall.
+    #[arg(long, value_parser = parse_span)]
+    freeze: Option<(Duration, Duration)>,
+}
+
+fn parse_span(s: &str) -> Result<(Duration, Duration), String> {
+    let (a, b) = s.split_once("..").ok_or("expected FROM..TO")?;
+    let (a, b) = (parse_dur(a.trim())?, parse_dur(b.trim())?);
+    if b <= a {
+        return Err("TO must be after FROM".into());
+    }
+    Ok((a, b))
+}
+
+fn parse_pos(s: &str) -> Result<(i32, i32), String> {
+    let (x, y) = s.split_once(',').ok_or("expected X,Y")?;
+    Ok((
+        x.trim().parse().map_err(|e| format!("{e}"))?,
+        y.trim().parse().map_err(|e| format!("{e}"))?,
+    ))
 }
 
 fn parse_dur(s: &str) -> Result<Duration, String> {
@@ -394,9 +419,24 @@ impl App {
             .with_inner_size(PhysicalSize::new(self.args.width, self.args.height))
             .with_resizable(false)
             .with_active(!self.args.background);
+        if let Some((x, y)) = self.args.position {
+            attrs = attrs.with_position(winit::dpi::PhysicalPosition::new(x, y));
+        }
         match self.args.mode {
             Mode::Windowed => {}
-            Mode::Borderless => attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(None))),
+            Mode::Borderless => {
+                // The monitor under --position, else the current one.
+                let monitor = self.args.position.and_then(|(x, y)| {
+                    el.available_monitors().find(|m| {
+                        let (p, s) = (m.position(), m.size());
+                        x >= p.x
+                            && y >= p.y
+                            && i64::from(x) < i64::from(p.x) + i64::from(s.width)
+                            && i64::from(y) < i64::from(p.y) + i64::from(s.height)
+                    })
+                });
+                attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(monitor)));
+            }
             Mode::Exclusive => {
                 let monitor = el
                     .primary_monitor()
@@ -451,6 +491,16 @@ impl App {
 
     fn frame(&mut self, el: &ActiveEventLoop) -> Result<()> {
         let counter = self.counter;
+        if let Some((from, to)) = self.args.freeze {
+            let now = self.start.elapsed();
+            if now >= from && now < to {
+                self.next_frame += self.period;
+                if self.next_frame < Instant::now() {
+                    self.next_frame = Instant::now() + self.period;
+                }
+                return Ok(());
+            }
+        }
         let Some(gfx) = &mut self.gfx else {
             return Ok(());
         };

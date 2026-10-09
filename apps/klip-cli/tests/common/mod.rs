@@ -58,6 +58,15 @@ pub fn cli(discovery: &Path) -> Command {
     c
 }
 
+/// Extra `record` arguments from `KLIP_E2E_CAPTURE_API` (e.g. `gst-wgc`), for A/B runs
+/// of the capture implementations.
+pub fn capture_api_args() -> Vec<String> {
+    match std::env::var("KLIP_E2E_CAPTURE_API") {
+        Ok(api) if !api.is_empty() => vec!["--capture-api".into(), api],
+        _ => Vec::new(),
+    }
+}
+
 pub fn run_json(cmd: &mut Command) -> Value {
     let out = cmd.output().unwrap();
     assert!(
@@ -83,6 +92,35 @@ impl Drop for KillOnDrop {
 }
 
 /// The test game next to the CLI binary (built by `cargo xtask e2e`).
+/// The test game, placed on a secondary monitor when there is one, so test runs don't
+/// cover the main screen (someone may be using it). `KLIP_E2E_MONITOR=<index>` picks a
+/// monitor by its `klip-cli monitors` index; `KLIP_E2E_MONITOR=primary` keeps Windows'
+/// default placement.
+pub fn game() -> Command {
+    let mut c = Command::new(game_exe());
+    let monitors = klip_platform::list_monitors().unwrap_or_default();
+    if let Some(m) = game_monitor().and_then(|i| monitors.get(i)) {
+        c.arg("--position").arg(format!(
+            "{},{}",
+            m.x.saturating_add(64),
+            m.y.saturating_add(64)
+        ));
+    }
+    c
+}
+
+/// Index (as `klip-cli monitors` lists them) of the monitor [`game`] opens the test game
+/// on; `None` for Windows' default placement.
+pub fn game_monitor() -> Option<usize> {
+    klip_platform::enable_dpi_awareness();
+    let monitors = klip_platform::list_monitors().unwrap_or_default();
+    match std::env::var("KLIP_E2E_MONITOR").ok().as_deref() {
+        Some("primary") => None,
+        Some(i) => i.parse::<usize>().ok().filter(|i| *i < monitors.len()),
+        None => monitors.iter().position(|m| !m.primary),
+    }
+}
+
 pub fn game_exe() -> PathBuf {
     let exe = exe_dir().join(if cfg!(windows) {
         "klip-testgame.exe"
