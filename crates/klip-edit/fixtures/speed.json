@@ -1,0 +1,22 @@
+{
+  "name": "2x, then 0.5x over an odd length, then 1x",
+  "project": {
+    "version": 1,
+    "source_ms": 10000,
+    "pieces": [
+      { "start_ms": 0, "end_ms": 2000, "speed": 2 },
+      { "start_ms": 2000, "end_ms": 3001, "speed": 0.5 },
+      { "start_ms": 3001, "end_ms": 10000, "speed": 1 }
+    ]
+  },
+  "expect": {
+    "output_duration_ms": 10001,
+    "segments": [
+      { "src_start_ms": 0, "src_end_ms": 2000, "speed": 2, "out_start_ms": 0, "out_end_ms": 1000 },
+      { "src_start_ms": 2000, "src_end_ms": 3001, "speed": 0.5, "out_start_ms": 1000, "out_end_ms": 3002 },
+      { "src_start_ms": 3001, "src_end_ms": 10000, "speed": 1, "out_start_ms": 3002, "out_end_ms": 10001 }
+    ],
+    "source_time": [[0, 0], [1, 2], [999, 1998], [1000, 2000], [1001, 2000], [1002, 2001], [3001, 3000], [3002, 3001], [10000, 9999], [10001, null]],
+    "output_time": [[0, 0], [1, 0], [1999, 999], [2000, 1000], [2001, 1002], [3000, 3000], [3001, 3002], [9999, 10000], [10000, null]]
+  }
+}

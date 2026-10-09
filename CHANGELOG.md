@@ -5,6 +5,17 @@ reason)`.
 
 ## Unreleased
 
+- M8.1 — Editor model: ADR 0017 (own export pipeline instead of GES, preview via Tauri
+  `asset:` with an H.264 proxy fallback for HEVC, Klip-rendered text bitmaps shared by
+  preview and export, exports in the media worker, Discord size-fit) and the pure crate
+  `klip-edit`: project schema v1 (`.klip/projects/<key>.json`; lenient load that never
+  fails, atomic save, unknown keys kept for Advanced mode), timeline math (pieces with
+  0.5/1/2 speed, output segments, output and source time both ways, split/trim/cut/
+  set_speed in output time; integer, checked), 9:16 format crop, text presets as data,
+  `Shorts` template; shared fixtures `crates/klip-edit/fixtures/*.json` for the front
+  end's port. Also: M6.12 merged into main (fast-forward, user decision); a code-review
+  backlog in `plan/IMPROVEMENTS.md` (private). (Claude Fable 5.1: M8 start)
+
 - M6.12 — The recorder runs in a child process (ADR 0016; branch
   `opus/m6.12-recorder-process`, worktree `klip-m6.12`, done in parallel with M7 and
   rebased onto it). `klip-engine`: `worker.rs` (`--klip-recorder`: start request with

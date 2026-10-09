@@ -21,3 +21,4 @@ One file per decision: context, decision, consequences. Status is `accepted`, `p
 | [0014](0014-app-architecture.md) | App architecture: settings, library, engine crates; thin Tauri shell; hotkeys, detection, storage, themes, overlay, bench method | accepted (M6) |
 | [0015](0015-library.md) | Library: plain files, rebuildable info/thumbnail caches, sprite-strip hover-scrub, thumbnails in a child process, `klipthumb` scheme | accepted (M7) |
 | [0016](0016-recorder-process.md) | Recorder in a child process of the app's executable, for the game's lifetime; overlay thumbnail via the media worker | accepted (M6.12) |
+| [0017](0017-editor-normal-mode-and-export.md) | Editor Normal mode: project file, shared timeline math, preview via `asset:` + proxy, Klip-rendered text, own export pipeline in the media worker, Discord size-fit | proposed (M8) |
