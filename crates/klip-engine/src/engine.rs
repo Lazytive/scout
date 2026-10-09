@@ -24,6 +24,7 @@ use klip_settings::{
 };
 use serde_json::{Value, json};
 
+mod overlay;
 mod setup;
 mod storage;
 
@@ -720,6 +721,9 @@ impl Handler for Inner {
                     .map(PathBuf::from)
                     .into_iter()
                     .collect();
+                if let Some(p) = saved.first() {
+                    self.thumbnail_in_background(p.clone());
+                }
                 self.cleanup_in_background(saved);
                 Ok(clip)
             }
@@ -751,6 +755,7 @@ impl Handler for Inner {
             commands::STORAGE_STATUS => self.storage_status(),
             commands::STORAGE_CLEANUP => self.cleanup(&[]),
             commands::CLIP_STAR => self.star(args),
+            commands::OVERLAY_PREVIEW => self.overlay_preview(),
             commands::OVERLAY_MENU => {
                 self.emit(&Event::QuickMenu);
                 Ok(json!({ "shown": true }))

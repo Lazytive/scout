@@ -185,6 +185,9 @@ fn ci() -> Result<()> {
 }
 
 fn e2e() -> Result<()> {
+    if npm::exists(&root()) {
+        npm::build(&root())?;
+    }
     let mut c = cargo();
     c.args([
         "build",

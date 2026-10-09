@@ -11,7 +11,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
+mod cue;
 mod ipc;
+mod overlay;
 mod tray;
 
 use std::path::PathBuf;
@@ -135,11 +137,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             show_main(app);
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![ipc::klip])
+        .invoke_handler(tauri::generate_handler![ipc::klip, ipc::overlay_close])
         .setup(move |app| {
             let (tx, rx) = std::sync::mpsc::sync_channel(klip_engine::events::QUEUE);
             let mut opts = EngineOptions::new(settings_path.clone());
@@ -152,6 +155,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 engine: Mutex::new(Some(engine)),
             });
 
+            let prefs = handler
+                .handle(commands::SETTINGS_GET, &Value::Null)
+                .ok()
+                .and_then(|v| v.get("settings").cloned())
+                .map(|s| overlay::Prefs::from_settings(&s))
+                .unwrap_or_else(|| overlay::Prefs::from_settings(&Value::Null));
+            let overlay = overlay::Overlay::create(app.handle(), prefs)?;
+            app.manage(overlay::OverlayHandle(overlay.clone()));
+
             let tray_state = Arc::new(Mutex::new(tray::TrayState::default()));
             let tray = tray::create(app.handle(), handler.clone(), tray_state.clone(), show_main)?;
 
@@ -163,6 +175,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let mut autostart: Option<bool> = None;
                     for e in rx {
                         tray::update(&tray, &tray_state, &e);
+                        overlay.on_event(&e);
                         if let klip_engine::Event::SettingsChanged { settings } = &e {
                             sync_autostart(&handle, settings, &mut autostart);
                         }
@@ -203,10 +216,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if let WindowEvent::CloseRequested { api, .. } = event
                 && window.label() == MAIN
                 && let Some(state) = window.app_handle().try_state::<AppState>()
-                && setting(&state.handler, "app", "close_to_tray", true)
             {
-                api.prevent_close();
-                let _ = window.hide();
+                if setting(&state.handler, "app", "close_to_tray", true) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                } else {
+                    // The hidden overlay window would keep the app alive otherwise.
+                    window.app_handle().exit(0);
+                }
             }
         })
         .build(tauri::generate_context!())?;

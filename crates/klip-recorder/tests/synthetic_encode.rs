@@ -110,6 +110,21 @@ fn round_trip(encoder: EncoderChoice, frames: u32) {
     assert_eq!((report.first, report.last), (Some(0), Some(frames - 1)));
     assert_eq!(report.frames, frames as usize);
 
+    // A thumbnail of the end of the clip (overlay pop-up, library).
+    let t = std::time::Instant::now();
+    let jpeg = klip_capture::thumbnail::jpeg_near_end(
+        &all.path,
+        std::time::Duration::from_millis(500),
+        320,
+    )
+    .unwrap();
+    println!("thumbnail: {} bytes in {:?}", jpeg.len(), t.elapsed());
+    assert!(jpeg.starts_with(&[0xFF, 0xD8, 0xFF]) && jpeg.ends_with(&[0xFF, 0xD9]));
+    let thumb = dir.path().join("thumb.jpg");
+    std::fs::write(&thumb, &jpeg).unwrap();
+    let s = oracle::probe_streams(&thumb).unwrap();
+    assert_eq!(s[0].width, Some(320), "{s:?}");
+
     // Last 2 s: starts at the keyframe at or before (end - 2 s), ends at the last frame.
     let tail = save_from(&sink, dir.path(), 2 * NANOS_PER_SEC, &[], &[]).unwrap();
     let counters = oracle::decode_counters(&tail.path, W, H).unwrap();

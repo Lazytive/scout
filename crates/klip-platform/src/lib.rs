@@ -450,6 +450,72 @@ pub fn move_to_trash(paths: &[std::path::PathBuf]) -> Vec<Result<(), PlatformErr
     }
 }
 
+/// Make a window an overlay: it is never activated (not by showing it, not by clicks),
+/// has no taskbar button and is not in Alt+Tab (Windows; elsewhere unsupported).
+pub fn make_overlay(window: u64) -> Result<(), PlatformError> {
+    #[cfg(windows)]
+    {
+        windows_impl::make_overlay(window)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        Err(PlatformError::Unsupported)
+    }
+}
+
+/// Show a window above all others without activating it (the game keeps the focus).
+pub fn show_no_activate(window: u64) -> Result<(), PlatformError> {
+    #[cfg(windows)]
+    {
+        windows_impl::show_no_activate(window)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        Err(PlatformError::Unsupported)
+    }
+}
+
+pub fn hide_window(window: u64) -> Result<(), PlatformError> {
+    #[cfg(windows)]
+    {
+        windows_impl::hide_window(window)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        Err(PlatformError::Unsupported)
+    }
+}
+
+/// Give a window the keyboard focus (works only while our process has it, e.g. to hand
+/// it back to the game after the quick menu).
+pub fn focus_window(window: u64) -> bool {
+    #[cfg(windows)]
+    {
+        windows_impl::focus_window(window)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        false
+    }
+}
+
+/// Whether a window is shown.
+pub fn window_visible(window: u64) -> bool {
+    #[cfg(windows)]
+    {
+        windows_impl::window_visible(window)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        false
+    }
+}
+
 /// Press and release a shortcut-spec trigger (e.g. `ALT+F10`) as if typed, system-wide.
 /// For tests and automation (Windows; elsewhere unsupported). The modifiers reach the
 /// focused app, so tests use bare keys no keyboard has (F13–F24).

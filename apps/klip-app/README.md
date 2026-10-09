@@ -28,6 +28,21 @@ will use the same tokens.
   exit the engine shuts down (a running recording is finalised).
 - `src-tauri/src/ipc.rs`: the window's one command, `klip(cmd, args)` → the engine's
   command handler on a blocking thread; errors come back as `{code, message}`.
+- `src-tauri/src/overlay.rs` (M6.9): the overlay window (`overlay.html` →
+  `src/Overlay.svelte`): transparent, always on top, click-through
+  (`set_ignore_cursor_events`), `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` and shown with
+  `SWP_NOACTIVATE` (`klip_platform::make_overlay`, `show_no_activate`), so the game keeps
+  the focus; placed in the chosen corner of the game's monitor (the monitor under the
+  game window's centre, the primary one otherwise), scaled by its DPI. Minimal: the
+  "Clip saved" card for `overlay.seconds`, the thumbnail fades in when the engine's
+  `thumbnail` event arrives. Full: the card, a recording dot while a recording runs,
+  and the quick menu on its hotkey (the only clickable, focused state; Esc, an action
+  or 15 s close it and the game gets the focus back). Off, or the game in exclusive
+  fullscreen (nothing can show over it): no window. The sound (`cue.rs`: a two-note
+  chime synthesised with cpal, no sound file) and the system notification
+  (`tauri-plugin-notification`) follow their own switches in every mode. Settings →
+  Overlay → "Show me" previews it (`overlay.preview`). Test overrides:
+  `KLIP_OVERLAY_POS=x,y`, `KLIP_NO_FOCUS=1`.
 - `src-tauri/src/tray.rs`: tray icon drawn at runtime (grey = waiting, blue = buffering,
   red dot = recording; no image asset), tooltip, menu (save clip, start/stop recording,
   bookmark, open, quit), left click opens the window.
@@ -92,7 +107,15 @@ and take their hotkeys.
   matches Dark; setting → theme mapping.
 - vitest `src/lib/settings.test.ts`: merge patches, error paths, key names, key capture
   (order, waiting on modifiers, Esc/Backspace, unsupported keys), engine errors per row.
-- Rust: tray icon pixels per state, tray state from events.
+- Rust: tray icon pixels per state, tray state from events, overlay corners and prefs,
+  the chime (length, level, no clicks).
+- e2e `src-tauri/tests/overlay.rs` (everything off-screen and silent): the pop-up shows
+  3–11 ms after the request, stays 2.00 s (setting: 2 s), is never the foreground
+  window, and the test game's frame pacing at 120 fps is unchanged (2026-10-09:
+  intervals p99 8.84 ms without, 8.77 ms with the pop-ups; max 9.4 / 10.0 ms). Off-screen
+  means the overlay never covered the game, so the effect of a window over the game on
+  VRR/independent flip is not measured here (human checklist).
+- The card with a real thumbnail was captured off-screen (`tools/window-shot.ps1`).
 - M6.8 driven in the browser with the mock (every Settings page; custom quality fields;
   live meter; a duplicate hotkey rejected on its row; the first-run steps to Finish) and
   in the real app (embedded UI captured off-screen with `tools/window-shot.ps1`; the

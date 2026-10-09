@@ -112,4 +112,10 @@ AAC chain:     audioconvert → S16LE → queue → AAC encoder bitrate → aacp
 - Diagnostics (`diag_*` tests, run by name): `tests/timestamp_lateness.rs` shows how
   `wasapi2src` and the WGC source stamp buffers relative to arrival.
 
+`thumbnail::jpeg_near_end(path, back, max_width)`: decodes the keyframe at or before
+`back` before the clip's end (decodebin: hardware decoders rank first) and encodes a JPEG
+(`jpegenc`); used for the overlay and the library. Checked for every working encoder's
+output (H.264, HEVC, AV1) in `klip-recorder`'s round-trip test: first call 0.55 s
+(decoder start-up), then 15–35 ms for a 640x360 clip.
+
 Layer: media engine (GStreamer). Linux sources (portal + PipeWire) arrive in M4.

@@ -497,6 +497,78 @@ pub(crate) fn process_usage(pid: u32) -> Result<crate::ProcessUsage, PlatformErr
     })
 }
 
+fn hwnd_of(handle: u64) -> Result<HWND, PlatformError> {
+    let ptr = usize::try_from(handle).map_err(|_| PlatformError::NoSuchWindow(handle))?;
+    let hwnd = HWND(ptr as *mut c_void);
+    // SAFETY: IsWindow accepts any value and returns FALSE for invalid handles.
+    if hwnd.0.is_null() || !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
+        return Err(PlatformError::NoSuchWindow(handle));
+    }
+    Ok(hwnd)
+}
+
+/// Overlay style: never activated (by showing or clicking), no taskbar button, not in
+/// Alt+Tab.
+pub(crate) fn make_overlay(handle: u64) -> Result<(), PlatformError> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
+        WS_EX_TOOLWINDOW,
+    };
+    let hwnd = hwnd_of(handle)?;
+    // SAFETY: valid window (checked above); reading and writing its extended style.
+    let style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) };
+    let add = (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize;
+    let remove = WS_EX_APPWINDOW.0 as isize;
+    // SAFETY: as above.
+    unsafe { SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (style | add) & !remove) };
+    Ok(())
+}
+
+/// Show above all other windows without activating it or moving the focus.
+pub(crate) fn show_no_activate(handle: u64) -> Result<(), PlatformError> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SetWindowPos,
+    };
+    let hwnd = hwnd_of(handle)?;
+    // SAFETY: valid window; position and size are kept (NOMOVE | NOSIZE).
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        )
+    }
+    .map_err(os)
+}
+
+pub(crate) fn hide_window(handle: u64) -> Result<(), PlatformError> {
+    use windows::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
+    let hwnd = hwnd_of(handle)?;
+    // SAFETY: valid window.
+    let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
+    Ok(())
+}
+
+pub(crate) fn focus_window(handle: u64) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+    let Ok(hwnd) = hwnd_of(handle) else {
+        return false;
+    };
+    // SAFETY: valid window; Windows only grants this to the foreground process.
+    unsafe { SetForegroundWindow(hwnd) }.as_bool()
+}
+
+pub(crate) fn window_visible(handle: u64) -> bool {
+    hwnd_of(handle)
+        // SAFETY: valid window.
+        .map(|h| unsafe { IsWindowVisible(h) }.as_bool())
+        .unwrap_or(false)
+}
+
 /// Uninitialises COM on drop if this thread's `CoInitializeEx` succeeded.
 struct ComGuard(bool);
 

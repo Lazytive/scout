@@ -25,6 +25,10 @@ Windows (Win32/DXGI via the `windows` crate):
   `process_path(pid)`: full executable path (`QueryFullProcessImageNameW` with
   `PROCESS_QUERY_LIMITED_INFORMATION`: no memory access, allowed even for protected
   processes). `list_windows`: all visible top-level windows (game detection).
+- Overlay windows: `make_overlay` (`WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`, no
+  `WS_EX_APPWINDOW`), `show_no_activate` (`SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE |
+  SWP_SHOWWINDOW)`), `hide_window`, `focus_window` (hand the focus back to the game),
+  `window_visible`.
 - `GlobalShortcuts` (`hotkeys_win.rs`, ADR 0014): `RegisterHotKey` on a `klip-hotkeys`
   thread with its own message loop (`MOD_NOREPEAT`); triggers in the shortcuts-spec
   format are mapped to virtual keys by `keymap.rs` (US-layout punctuation). A combination

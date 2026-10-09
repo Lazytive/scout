@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { call } from '../lib/api';
   import NumberField from '../lib/forms/NumberField.svelte';
   import Row from '../lib/forms/Row.svelte';
   import Segmented from '../lib/forms/Segmented.svelte';
@@ -17,7 +18,7 @@
     ? 'Nothing on screen; a sound and/or a notification if you turn them on below.'
     : o.mode === 'minimal'
       ? 'A small “Clip saved” card with a picture, for a few seconds. It never takes focus from the game.'
-      : 'The card, a dot while recording, and a quick menu on its hotkey.'}
+      : 'The card, a dot while recording (a window always on top of the game: it can keep G-Sync/FreeSync off while shown), and a quick menu on its hotkey.'}
 >
   <Segmented
     label="Overlay"
@@ -56,6 +57,10 @@
     />
   </Row>
 {/if}
+
+<Row label="Preview" hint="Shows the pop-up as it will look over a game.">
+  <button onclick={() => call('overlay.preview').catch(() => undefined)}>Show me</button>
+</Row>
 
 <Row label="Also">
   <Toggle label="Play a sound" checked={o.sound} onchange={(v) => save(['overlay', 'sound'], v)} />

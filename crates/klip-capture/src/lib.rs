@@ -21,6 +21,7 @@ pub mod apps;
 pub mod audio;
 mod lag;
 mod props;
+pub mod thumbnail;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::str::FromStr;

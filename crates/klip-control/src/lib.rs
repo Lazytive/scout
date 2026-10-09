@@ -67,6 +67,8 @@ pub mod commands {
     pub const HOTKEYS_RESUME: &str = "hotkeys.resume";
     /// Running programs with a window, to add as games.
     pub const GAMES_CANDIDATES: &str = "games.candidates";
+    /// Show the overlay as if a clip had been saved (settings page, tests).
+    pub const OVERLAY_PREVIEW: &str = "overlay.preview";
 }
 
 /// Longest accepted line (bytes, including the newline).

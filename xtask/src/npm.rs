@@ -87,9 +87,8 @@ fn npm(root: &Path) -> std::process::Command {
     c
 }
 
-/// Install (only when the lockfile changed), lint, type-check, test and build the front
-/// end. The build must come before the cargo gates: the Tauri crate embeds `dist/`.
-pub fn gates(root: &Path) -> Result<()> {
+/// Install the npm packages if the lockfile changed since the last install.
+fn install(root: &Path) -> Result<()> {
     let app = app_dir(root);
     let lock = app.join("package-lock.json");
     let installed = app.join("node_modules").join(".package-lock.json");
@@ -102,6 +101,21 @@ pub fn gates(root: &Path) -> Result<()> {
         c.args(["ci", "--no-audit", "--no-fund"]);
         crate::run_step("npm ci", c)?;
     }
+    Ok(())
+}
+
+/// Build the front end (the app embeds `dist/`); for `e2e`.
+pub fn build(root: &Path) -> Result<()> {
+    install(root)?;
+    let mut c = npm(root);
+    c.args(["run", "--silent", "build"]);
+    crate::run_step("front-end build", c)
+}
+
+/// Install (only when the lockfile changed), lint, type-check, test and build the front
+/// end. The build must come before the cargo gates: the Tauri crate embeds `dist/`.
+pub fn gates(root: &Path) -> Result<()> {
+    install(root)?;
     for (name, script) in [
         ("eslint", "lint"),
         ("svelte-check", "check"),

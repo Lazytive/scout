@@ -8,6 +8,12 @@ use serde_json::{Value, json};
 
 use crate::AppState;
 
+/// The overlay page closes the quick menu (the game gets its focus back).
+#[tauri::command]
+pub fn overlay_close(app: tauri::AppHandle) {
+    crate::overlay::close(&app);
+}
+
 /// The window's one command: run an engine command.
 #[tauri::command]
 pub async fn klip(

@@ -54,9 +54,13 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   them out), `hotkeys.pause` / `hotkeys.resume` (unbind while a hotkey field listens;
   back by themselves after 1 min), `games.candidates` (programs with a window to add
   as games; `games::candidates`, no window titles).
+- Overlay support (`engine/overlay.rs`): after each saved clip a `klip-thumbnail` job
+  takes a 320 px JPEG near its end (`klip_capture::thumbnail`), caches it as
+  `<clips>/.klip/thumbs/<key>.jpg` and emits `thumbnail` with a data URL;
+  `overlay.preview` emits `overlay_preview`.
 - `events`: `Event` (`ready`, `game_started/stopped`, `recorder_started/stopped/failed`,
   `clip_saved` with the game's window, `recording_started/stopped`, `bookmark`,
-  `action_failed` for hotkeys, `quick_menu`, `mic_level`, `hotkeys` with each binding's error,
+  `action_failed` for hotkeys, `quick_menu`, `mic_level`, `thumbnail`, `overlay_preview`, `hotkeys` with each binding's error,
   `settings_changed`, `storage_cleaned`, `recovered`, `warning`), fanned out to bounded queues (256 per
   subscriber; a stalled subscriber loses events, memory doesn't grow).
 - `config`: settings → `RecorderConfig`, shared with `klip-cli record`: clip and

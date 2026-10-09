@@ -87,6 +87,17 @@ pub enum Event {
     SettingsChanged {
         settings: Value,
     },
+    /// A saved clip's thumbnail (JPEG, 320 px wide), also cached for the library.
+    Thumbnail {
+        clip: String,
+        path: Option<String>,
+        data_url: String,
+    },
+    /// `overlay.preview`: show the pop-up as if a clip had been saved.
+    OverlayPreview {
+        game: Option<String>,
+        duration_ms: u64,
+    },
     /// Clips removed to stay under the storage cap.
     StorageCleaned {
         report: Value,

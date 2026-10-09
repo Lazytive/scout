@@ -5,6 +5,17 @@ reason)`.
 
 ## Unreleased
 
+- M6.9 — Overlay: separate transparent, always-on-top, click-through window that is
+  never activated (`klip-platform`: `make_overlay`, `show_no_activate`, `hide_window`,
+  `focus_window`, `window_visible`), on the game's monitor corner; Minimal card with
+  thumbnail (on by default, the maintainer's choice), Full (recording dot, quick menu),
+  Off/exclusive fullscreen → sound/notification only; synthesised chime (cpal),
+  notifications (`tauri-plugin-notification`). Thumbnails: `klip_capture::thumbnail`
+  (decodebin → JPEG), engine job + cache + `thumbnail` event; `overlay.preview` and a
+  "Show me" button. e2e `apps/klip-app/src-tauri/tests/overlay.rs` (off-screen): shows
+  in ≤ 11 ms, 2.00 s, never focused, frame pacing unchanged. `xtask e2e` builds the
+  front end first. (Claude Opus 5.5: M6)
+
 - M6.8 — Settings workspace (General, Recording, Audio, Hotkeys, Games, Storage, Overlay)
   and first-run setup in the app; form controls in the Photocraft style; strict saves
   with per-field errors. Engine: `encoders.list`, `audio.devices`, `audio.meter` +

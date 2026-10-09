@@ -8,6 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64.workspace = true
 dirs.workspace = true
 klip-capture.workspace = true
 klip-control.workspace = true

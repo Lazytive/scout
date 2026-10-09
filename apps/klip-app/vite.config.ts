@@ -7,6 +7,12 @@ export default defineConfig({
   plugins: [svelte()],
   clearScreen: false,
   server: { port: 5173, strictPort: true },
-  build: { target: 'es2022', outDir: 'dist', emptyOutDir: true },
+  build: {
+    target: 'es2022',
+    outDir: 'dist',
+    emptyOutDir: true,
+    // The main window and the overlay window (a separate, click-through window).
+    rollupOptions: { input: { main: 'index.html', overlay: 'overlay.html' } },
+  },
   test: { environment: 'node', include: ['src/**/*.test.ts'] },
 });

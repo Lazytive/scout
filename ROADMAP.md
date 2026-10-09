@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-09 (M6 in progress: M6.1–M6.8).
+Last updated: 2026-10-09 (M6 in progress: M6.1–M6.9).
 
 | | Milestone | State |
 |---|---|---|
@@ -10,7 +10,7 @@ Last updated: 2026-10-09 (M6 in progress: M6.1–M6.8).
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
-| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap, Tauri app shell, themes, Settings + first-run setup done (M6.1–M6.8); overlay, bench next |
+| M6 | Desktop app shell (Tauri) | **in progress**: settings, Windows hotkeys, game detection, engine + `klip-cli daemon`, storage cap, Tauri app shell, themes, Settings + first-run setup, overlay done (M6.1–M6.9); bench and docs next |
 | M7 | Library | |
 | M8 | Editor, Normal mode + export presets | |
 | M9 | Editor, Advanced mode | |
@@ -159,8 +159,11 @@ game audio, buffer 30 s, clip hotkey F24 (10 s):
 
 ## Approximate / not done yet
 
-- **App shell (M6)**: Home, Settings and the first-run setup work; the Library page and the
-  overlay are not there yet. The window doesn't remember its size and position. "Allow
+- **App shell (M6)**: Home, Settings, the first-run setup and the overlay work; the
+  Library page is M7. Overlay: Windows only (Linux gets the notification and sound;
+  layer-shell later); its effect on VRR/G-Sync over a real game is unmeasured (needs
+  the human or PresentMon); the quick menu takes the focus while open (the user opened
+  it), which a game in exclusive fullscreen would not survive, so it is not shown then. The window doesn't remember its size and position. "Allow
   local control" applies at the next start. Per-game profiles cover buffer, quality,
   game sound and microphone (not custom numbers or voice apps). Settings changes to quality/audio/folders apply when the next game starts
   (the running buffer isn't restarted). Voice apps that start after the game aren't
@@ -299,6 +302,13 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    left click opens the window, closing it keeps Klip in the tray, Quit in the tray menu
    ends it. Does the look match Photocraft / FilmCraft closely enough? The sun button
    switches Dark / Graphite / Light / OLED / follow system.
+5. Overlay (Minimal, the default): in a borderless/windowed game, save a clip: the card
+   appears top right of the game's monitor for ~3 s with a picture, the game keeps the
+   keyboard (keep moving while it shows), and the G-Sync/FreeSync indicator (NVIDIA
+   overlay "G-SYNC indicator" or the monitor's OSD) stays on, or tell me if it drops
+   while the card shows. In an exclusive-fullscreen game: no card, just the sound.
+   Full mode: the dot while recording; the quick-menu hotkey (set one) opens the menu,
+   Esc closes it and the game gets the focus back. Settings → Overlay → "Show me".
 4. Settings: "Start Klip with Windows" adds Klip to Task Manager's startup apps and
    unticking removes it; "Choose…" opens the folder picker; the microphone Test meter
    moves when you speak; a hotkey field takes a new combination (your old hotkeys don't
