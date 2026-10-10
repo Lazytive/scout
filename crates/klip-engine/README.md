@@ -82,6 +82,29 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   requested keys first, then the rest newest first, but only while no game is followed
   (the game stopping wakes it); failures are remembered in the index and emitted as
   `thumbs_ready` with `failed`.
+- Editor (`engine/editor.rs`, M8.4): `editor.project.get {path}` → the clip's project
+  (`.klip/projects/<key>.json` through `klip_edit::load`, or a new one), its repair
+  issues, `status` (`new` / `saved` / `repaired` / `reset`) and the clip's `SourceInfo`
+  (from the index, else a probe; the clip's length always wins over the project's);
+  `editor.project.set {path, project}` → repaired (unknown keys kept) and saved
+  atomically (≤ 1 MiB); `editor.proxy {path}` → what the preview plays: `original` for
+  an H.264 clip, else the H.264 proxy in `.klip/proxies/<key>.mp4` (`ready`, or `making`
+  with the id of the export job that makes it; `preset: "proxy"`).
+- Export (`engine/export.rs`, M8.4): `export.start {path, preset}` (`original` /
+  `youtube` / `tiktok` / `discord`) renders the saved project with `klip-export` on a
+  `klip-export-<id>` thread through its own media worker into
+  `<name> - <Preset>.mp4` next to the clip (`Library::unique_sibling`: ` (2)`, ` (3)`
+  … when taken; never overwrites) → `{id, out}`; one at a time (`busy`);
+  `export.cancel {id}` (`not_found` otherwise); `export.status` → `{active, last}`.
+  Events: `export_progress {id, key, preset, pass, frames_done, frames_total}` (at most
+  every 250 ms or on a new pass; the bus drops when flooded, so `export.status` is the
+  truth) and one `export_done {id, key, preset, ok, path, error, summary}`; a finished
+  export also emits `library_changed {reason: "exported"}` and gets thumbnails. Encoders
+  come from `config::export_encoders` (the user's recording encoder for its own codec,
+  the ranked list otherwise; H.264 required, HEVC/AV1 when present). The limit for the
+  Discord preset is `settings.export.discord_limit_mb` (decimal MB). Engine shutdown
+  cancels a running export. Projects, proxies and renders follow a clip's rename and
+  delete and are pruned with the thumbnails (`Library::{move,remove,prune}_caches`).
 - Media worker (`media_worker.rs`): library thumbnails and exports in a child process —
   the host binary re-run with `--klip-media-worker` (`worker_main()` first in `main`,
   after `klip_probe::worker_main()`), one JSON job per line (`Job`: `ThumbJob`,

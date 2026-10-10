@@ -91,6 +91,7 @@ export function mockBackend() {
     ],
     overlay: { mode: 'minimal', sound: true, notification: false, corner: 'top-right', seconds: 3, recording_dot: true },
     storage: { cap_gb: 50, over_cap: 'trash', low_disk_gb: 10 },
+    export: { discord_limit_mb: 10 },
     appearance: { theme: 'system' },
     games: { buffer: 'games', detect_stores: true, user_games: [{ exe: 'MyIndieGame.exe', name: 'My Indie Game' }], never: [], profiles: {} },
   };

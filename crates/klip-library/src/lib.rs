@@ -18,11 +18,13 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
+mod caches;
 mod index;
 mod names;
 mod query;
 mod thumbs;
 
+pub use caches::{PROJECTS_DIR, PROXIES_DIR, RENDER_DIR};
 pub use index::{ClipInfo, INDEX_FILE, Index, IndexEntry, probe_file};
 pub use names::{
     MAX_NAME_CHARS, MAX_TAG_CHARS, MAX_TAGS, check_clip_name, clean_tag, normalize_tags,
@@ -93,7 +95,7 @@ pub enum LibraryError {
     NoClip,
 }
 
-fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+pub(crate) fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     let mut s = OsString::from(path.as_os_str());
     s.push(suffix);
     PathBuf::from(s)
@@ -258,6 +260,7 @@ impl Library {
             }
         }
         self.move_thumbs(&old_key, &new_key);
+        self.move_caches(&old_key, &new_key);
         Ok(new_path)
     }
 

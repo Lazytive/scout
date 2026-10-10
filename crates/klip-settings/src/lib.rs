@@ -46,6 +46,8 @@ pub const OVERLAY_SECS: std::ops::RangeInclusive<u32> = 1..=10;
 pub const CAP_GB_MAX: u32 = 1_000_000;
 /// Low-disk warning threshold, GB (0 = off).
 pub const LOW_DISK_GB_MAX: u32 = 100_000;
+/// Discord export size limit, MB (decimal, as Discord counts).
+pub const DISCORD_LIMIT_MB: std::ops::RangeInclusive<u32> = 1..=1000;
 
 /// Something in a settings file or patch that was wrong (and, when loading, repaired).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -98,6 +100,7 @@ pub struct Settings {
     pub storage: StorageSettings,
     pub appearance: AppearanceSettings,
     pub games: GameSettings,
+    pub export: ExportSettings,
 }
 
 impl Default for Settings {
@@ -113,6 +116,7 @@ impl Default for Settings {
             storage: StorageSettings::default(),
             appearance: AppearanceSettings::default(),
             games: GameSettings::default(),
+            export: ExportSettings::default(),
         }
     }
 }
@@ -389,6 +393,22 @@ impl Default for StorageSettings {
             cap_gb: 50,
             over_cap: OverCap::Trash,
             low_disk_gb: 10,
+        }
+    }
+}
+
+/// The editor's export (ADR 0017).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ExportSettings {
+    /// The Discord preset keeps files under this many MB (10 without Nitro).
+    pub discord_limit_mb: u32,
+}
+
+impl Default for ExportSettings {
+    fn default() -> Self {
+        ExportSettings {
+            discord_limit_mb: 10,
         }
     }
 }

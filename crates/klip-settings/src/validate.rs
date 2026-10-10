@@ -7,9 +7,10 @@ use std::path::Path;
 
 use crate::preset::{BITRATE_RANGE, FPS_RANGE, HEIGHT_RANGE, Quality, WIDTH_RANGE};
 use crate::{
-    AUDIO_BITRATES, AudioSettings, BUFFER_SECS, CAP_GB_MAX, CLIP_SECS, ClipSettings, GameSettings,
-    HotkeyAction, HotkeyBinding, Issue, LOW_DISK_GB_MAX, MAX_HOTKEYS, MAX_LIST, MAX_NAME, MAX_PATH,
-    MAX_PROFILES, OVERLAY_SECS, Profile, RecordingSettings, SCHEMA_VERSION, Settings, game_key,
+    AUDIO_BITRATES, AudioSettings, BUFFER_SECS, CAP_GB_MAX, CLIP_SECS, ClipSettings,
+    DISCORD_LIMIT_MB, GameSettings, HotkeyAction, HotkeyBinding, Issue, LOW_DISK_GB_MAX,
+    MAX_HOTKEYS, MAX_LIST, MAX_NAME, MAX_PATH, MAX_PROFILES, OVERLAY_SECS, Profile,
+    RecordingSettings, SCHEMA_VERSION, Settings, game_key,
 };
 
 pub(crate) fn settings(s: &mut Settings, issues: &mut Vec<Issue>) {
@@ -34,6 +35,12 @@ pub(crate) fn settings(s: &mut Settings, issues: &mut Vec<Issue>) {
         &mut s.storage.low_disk_gb,
         &(0..=LOW_DISK_GB_MAX),
         "storage.low_disk_gb",
+        issues,
+    );
+    range(
+        &mut s.export.discord_limit_mb,
+        &DISCORD_LIMIT_MB,
+        "export.discord_limit_mb",
         issues,
     );
     games(&mut s.games, issues);

@@ -87,6 +87,18 @@ pub mod commands {
     pub const CLIP_OPEN: &str = "clip.open";
     /// Show a clip in the file manager. Args: `{"path"}`.
     pub const CLIP_REVEAL: &str = "clip.reveal";
+    /// `{path}` → the clip's editor project (new or saved), repair issues, `source`.
+    pub const EDITOR_PROJECT_GET: &str = "editor.project.get";
+    /// `{path, project}` → the project repaired and saved.
+    pub const EDITOR_PROJECT_SET: &str = "editor.project.set";
+    /// `{path}` → what the preview plays: `original` | `ready` (proxy path) | `making` (id).
+    pub const EDITOR_PROXY: &str = "editor.proxy";
+    /// `{path, preset}` → `{id, out}`; `export_progress` / `export_done` events follow.
+    pub const EXPORT_START: &str = "export.start";
+    /// `{id}` stops a running export.
+    pub const EXPORT_CANCEL: &str = "export.cancel";
+    /// → `{active, last}`.
+    pub const EXPORT_STATUS: &str = "export.status";
 }
 
 /// Longest accepted line (bytes, including the newline).

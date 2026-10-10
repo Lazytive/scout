@@ -36,6 +36,9 @@ const MAIN: &str = "main";
 pub(crate) struct AppState {
     pub(crate) handler: Arc<dyn Handler>,
     engine: Mutex<Option<Engine>>,
+    /// The file the editor's preview may read through the asset protocol (one at a
+    /// time: `ipc::editor_media` allows the next and forbids the last).
+    pub(crate) media: Mutex<Option<std::path::PathBuf>>,
 }
 
 fn setting(handler: &Arc<dyn Handler>, section: &str, key: &str, default: bool) -> bool {
@@ -150,7 +153,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![ipc::klip, ipc::overlay_close])
+        .invoke_handler(tauri::generate_handler![
+            ipc::klip,
+            ipc::overlay_close,
+            ipc::editor_media
+        ])
         // Library thumbnails for <img> tags (thumb_scheme.rs).
         .register_asynchronous_uri_scheme_protocol(
             thumb_scheme::SCHEME,
@@ -183,6 +190,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             app.manage(AppState {
                 handler: handler.clone(),
                 engine: Mutex::new(Some(engine)),
+                media: Mutex::new(None),
             });
 
             let prefs = handler

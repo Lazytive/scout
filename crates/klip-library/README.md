@@ -30,6 +30,13 @@ tags, never clips. Pure: file I/O only.
   `<key>.strip.jpg`, `%` → `%25`, `/` → `%2F`), `thumb_versions()` (one directory
   listing), `move_thumbs`, `remove_thumbs`, `prune_thumbs(keys)` (orphans and temp files
   older than an hour). Sizes: posters 320 px, strips 16 frames of 240 px.
+- Per-clip caches (`caches.rs`, M8.4): `project_path(key)` (`.klip/projects/<key>.json`,
+  the editor's project: a user's edits, kept while the clip exists), `proxy_path(key)`
+  (`.klip/proxies/<key>.mp4`), `render_dir(key)` (`.klip/render/<key>/`); keys escaped
+  like thumbnails; `move_caches` (called by `rename`), `remove_caches`, `prune_caches
+  (keys)` (only with a complete key set). `unique_sibling(clip, suffix)`: a free
+  `<name> - <suffix>.mp4` next to the clip (` (2)`, ` (3)`…; also skips a `.part` being
+  written; the name shortened to stay a valid clip name).
 - `query(files, meta, index, thumbs, q, now)` (`query.rs`): the library grid's listing:
   search words over name + game folder + tags, filters (game folder, `""` = none;
   starred; tag; since), sorts (newest, oldest, longest, shortest, largest, name), counts

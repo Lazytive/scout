@@ -3,7 +3,7 @@
 Klip's settings (ADR 0014). Pure: no OS calls besides reading and writing the file.
 
 - `Settings`: the schema v1 with defaults (`app`, `clips`, `recording`, `audio`,
-  `hotkeys`, `overlay`, `storage`, `appearance`, `games`). Every struct is
+  `hotkeys`, `overlay`, `storage`, `appearance`, `games`, `export`). Every struct is
   `#[serde(default)]`, so missing fields take their defaults. `games.detect_stores`
   (M7, default true): store-library games count; off, only `user_games` (tests use it).
 - `load(path)` never fails. Invalid JSON / UTF-8, a non-object or a file over 1 MiB →

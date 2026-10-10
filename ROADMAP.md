@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-10 (M8.3 done).
+Last updated: 2026-10-10 (M8.4 done).
 
 | | Milestone | State |
 |---|---|---|
@@ -12,7 +12,7 @@ Last updated: 2026-10-10 (M8.3 done).
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
 | M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
 | M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
-| M8 | Editor, Normal mode + export presets | **in progress**: M8.1 model crate `klip-edit`, M8.2 text rasterisation, M8.3 export pipeline `klip-export` + media-worker export job (ADR 0017 proposed) |
+| M8 | Editor, Normal mode + export presets | **in progress**: M8.1 model crate `klip-edit`, M8.2 text rasterisation, M8.3 export pipeline `klip-export` + media-worker export job, M8.4 editor/export commands + caches + asset scope (ADR 0017 proposed) |
 | M9 | Editor, Advanced mode | |
 | M10 | Themes v1 | |
 | M11 | Sharing | |

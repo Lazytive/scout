@@ -90,6 +90,9 @@ pub enum Preset {
     TikTok,
     /// H.264 + AAC 128 kbit/s under a byte limit (more passes when needed).
     Discord,
+    /// The editor's preview proxy: H.264 fitting 1280x720 (or 720x1280), ≤ 60 fps,
+    /// 8 Mbit/s. Not a user preset (`ALL` leaves it out).
+    Proxy,
 }
 
 impl Preset {
@@ -107,6 +110,7 @@ impl Preset {
             Preset::YouTube => "youtube",
             Preset::TikTok => "tiktok",
             Preset::Discord => "discord",
+            Preset::Proxy => "proxy",
         }
     }
 
@@ -117,11 +121,15 @@ impl Preset {
             Preset::YouTube => "YouTube",
             Preset::TikTok => "TikTok",
             Preset::Discord => "Discord",
+            Preset::Proxy => "Proxy",
         }
     }
 
     pub fn parse(id: &str) -> Option<Preset> {
-        Preset::ALL.into_iter().find(|p| p.id() == id)
+        Preset::ALL
+            .into_iter()
+            .chain([Preset::Proxy])
+            .find(|p| p.id() == id)
     }
 }
 
@@ -344,6 +352,19 @@ fn output_for(
                 fps: facts.fps.min(60),
                 codec: Codec::H264,
                 bitrate_kbps: 12_000,
+                max_bitrate_kbps: None,
+                audio_bps: AUDIO_BPS,
+            }
+        }
+        Preset::Proxy => {
+            let (max_w, max_h) = box_for(cw, ch, 720);
+            let (w, h) = fit_box(cw, ch, max_w, max_h);
+            Output {
+                width: w,
+                height: h,
+                fps: facts.fps.min(60),
+                codec: Codec::H264,
+                bitrate_kbps: 8_000,
                 max_bitrate_kbps: None,
                 audio_bps: AUDIO_BPS,
             }

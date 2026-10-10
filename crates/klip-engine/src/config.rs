@@ -179,6 +179,35 @@ pub fn pick_encoders(
     }
 }
 
+/// Encoders for an export, per codec: the user's chosen encoder for its own codec,
+/// the ranked (probed) list otherwise. H.264 must exist; HEVC and AV1 may be empty
+/// (`klip-export` falls back to H.264 for the source codec then).
+pub fn export_encoders(
+    settings: &Settings,
+    cache: &mut ProbeCache,
+) -> Result<klip_export::Encoders, EngineError> {
+    let requested = settings.recording.encoder.as_deref();
+    let vendors = gpu_vendors();
+    let mut out = klip_export::Encoders::default();
+    for codec in [Codec::H264, Codec::H265, Codec::Av1] {
+        let own = requested.filter(|name| {
+            klip_probe::candidates(codec, &vendors, None)
+                .iter()
+                .any(|c| c.element == *name)
+        });
+        match pick_encoders(codec, own, None, cache) {
+            Ok(list) => {
+                for c in list {
+                    out.push(c);
+                }
+            }
+            Err(e) if codec == Codec::H264 => return Err(e),
+            Err(e) => tracing::debug!(codec = codec.name(), error = %e, "no export encoder"),
+        }
+    }
+    Ok(out)
+}
+
 /// Apps left out of system audio.
 pub fn excluded_apps(audio: &AudioSettings) -> Vec<String> {
     let mut v: Vec<String> = if audio.default_excludes {

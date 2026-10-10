@@ -114,6 +114,26 @@ pub enum Event {
         strip: Option<u64>,
         failed: bool,
     },
+    /// An export (or the editor's proxy) moved on: `pass` and frames of this pass.
+    ExportProgress {
+        id: u64,
+        key: String,
+        preset: String,
+        pass: u32,
+        frames_done: u64,
+        frames_total: u64,
+    },
+    /// An export ended: `path` and `summary` (`klip_export::ExportSummary`) when `ok`,
+    /// `error` otherwise (cancel included).
+    ExportDone {
+        id: u64,
+        key: String,
+        preset: String,
+        ok: bool,
+        path: Option<String>,
+        error: Option<String>,
+        summary: Value,
+    },
     /// Recordings a killed recorder left, finalised at start.
     Recovered {
         path: String,

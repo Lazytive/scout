@@ -57,6 +57,7 @@ export interface Settings {
     recording_dot: boolean;
   };
   storage: { cap_gb: number; over_cap: 'trash' | 'delete'; low_disk_gb: number };
+  export: { discord_limit_mb: number };
   appearance: { theme: string };
   games: {
     buffer: 'games' | 'always' | 'off';
@@ -78,6 +79,7 @@ export const ranges = {
   bitrate_kbps: [1000, 200_000],
   cap_gb: [0, 1_000_000],
   low_disk_gb: [0, 100_000],
+  discord_limit_mb: [1, 1000],
 } as const;
 
 export const audioBitrates = [96, 128, 160, 192, 256, 320];

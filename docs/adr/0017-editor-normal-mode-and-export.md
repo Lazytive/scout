@@ -69,7 +69,11 @@ font files), so text drawn by the WebView would differ from machine to machine.
   system fonts). Presets are data (font size as a fraction of height, fill, outline,
   pill background, shadow, position). Preview and export show the identical pixels;
   the second half of the parity test compares the overlay region of an exported frame
-  to the PNG. (M8.2: the font is Inter 4.1 Bold/ExtraBold, outlines through `skrifa`
+  to the PNG. (M8.4: the project file lives at `.klip/projects/<key>.json` beside the
+  thumbnails, with proxies in `.klip/proxies/` and renders in `.klip/render/`, all
+  following rename/delete and pruned together; the preview's file is handed to the
+  WebView through Tauri's asset protocol with a scope of exactly one engine-named
+  file at a time.) (M8.2: the font is Inter 4.1 Bold/ExtraBold, outlines through `skrifa`
   and coverage through `ab_glyph_rasterizer`, no shaping; the bitmap is cropped to the drawn area and carries its frame position, so
   the compositor and the preview place it at `x`/`y` instead of blending a full
   frame; `cache_key` names the cached PNG.)

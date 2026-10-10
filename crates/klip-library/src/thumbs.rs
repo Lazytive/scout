@@ -55,11 +55,11 @@ impl ThumbKind {
     }
 }
 
-fn escape(key: &str) -> String {
+pub(crate) fn escape(key: &str) -> String {
     key.replace('%', "%25").replace('/', "%2F")
 }
 
-fn unescape(name: &str) -> String {
+pub(crate) fn unescape(name: &str) -> String {
     name.replace("%2F", "/").replace("%25", "%")
 }
 

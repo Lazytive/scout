@@ -99,6 +99,7 @@ fn values_are_clamped_and_normalised() {
         },
         "audio": {"bitrate_kbps": 150, "mic_device": "  "},
         "overlay": {"seconds": 0},
+        "export": {"discord_limit_mb": 0},
         "clips": {"folder": "relative/path", "recordings_folder": "   "},
         "games": {
             "user_games": [{"exe": " Game.exe ", "name": " My Game "}, {"exe": "game.EXE"}, {"exe": ""}],
@@ -116,6 +117,7 @@ fn values_are_clamped_and_normalised() {
     assert_eq!(s.audio.bitrate_kbps, 160);
     assert_eq!(s.audio.mic_device, None);
     assert_eq!(s.overlay.seconds, 1);
+    assert_eq!(s.export.discord_limit_mb, 1);
     assert_eq!(s.clips.folder, None);
     assert_eq!(s.clips.recordings_folder, None);
     assert_eq!(s.games.user_games.len(), 1);
@@ -400,6 +402,8 @@ fn arb_json() -> impl Strategy<Value = Value> {
             Just("hotkeys"),
             Just("overlay"),
             Just("storage"),
+            Just("export"),
+            Just("discord_limit_mb"),
             Just("appearance"),
             Just("games"),
             Just("buffer_secs"),

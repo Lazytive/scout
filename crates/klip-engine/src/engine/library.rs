@@ -12,7 +12,7 @@ use std::time::{Duration, SystemTime};
 
 use klip_control::CommandError;
 use klip_library::{
-    Index, Library, LibraryError, MAX_THUMB_BYTES, POSTER_WIDTH, Query, STRIP_TILE_WIDTH,
+    ClipInfo, Index, Library, LibraryError, MAX_THUMB_BYTES, POSTER_WIDTH, Query, STRIP_TILE_WIDTH,
     STRIP_TILES, ThumbKind, ThumbVersions,
 };
 use serde_json::{Value, json};
@@ -40,6 +40,17 @@ pub(super) struct LibState {
     pruned: bool,
 }
 
+impl LibState {
+    pub(super) fn root(&self) -> Option<&Path> {
+        self.root.as_deref()
+    }
+
+    /// The indexed info of `key`, if it was read.
+    pub(super) fn info_of(&self, key: &str) -> Option<ClipInfo> {
+        self.index.clips.get(key).and_then(|e| e.info.clone())
+    }
+}
+
 /// Clips waiting for thumbnails.
 #[derive(Default)]
 pub(super) struct ThumbQueue {
@@ -59,7 +70,7 @@ fn lib_err(e: LibraryError) -> CommandError {
     }
 }
 
-fn str_arg<'a>(args: &'a Value, name: &str) -> Result<&'a str, CommandError> {
+pub(super) fn str_arg<'a>(args: &'a Value, name: &str) -> Result<&'a str, CommandError> {
     args.get(name)
         .and_then(Value::as_str)
         .ok_or_else(|| CommandError::bad_args(format!("{name} must be a string")))
@@ -95,14 +106,18 @@ fn clip_path(lib: &Library, key: &str) -> PathBuf {
 }
 
 impl Inner {
-    fn clip_library(&self) -> Result<Library, CommandError> {
+    pub(super) fn clip_library(&self) -> Result<Library, CommandError> {
         config::clip_base(&self.settings())
             .map(Library::new)
             .map_err(|e| CommandError::new("failed", e.to_string()))
     }
 
     /// The clip named by `args.path`: inside the clip folder and an existing file.
-    fn clip_arg(&self, lib: &Library, path: &str) -> Result<(PathBuf, String), CommandError> {
+    pub(super) fn clip_arg(
+        &self,
+        lib: &Library,
+        path: &str,
+    ) -> Result<(PathBuf, String), CommandError> {
         let p = PathBuf::from(path);
         let key = lib.key(&p).map_err(lib_err)?;
         if !p.is_file() {
@@ -140,9 +155,11 @@ impl Inner {
         }
         if !state.pruned && files.len() < klip_library::MAX_CLIPS {
             let keys: HashSet<&str> = files.iter().map(|f| f.key.as_str()).collect();
-            let n = lib.prune_thumbs(&keys);
+            let n = lib
+                .prune_thumbs(&keys)
+                .saturating_add(lib.prune_caches(&keys));
             if n > 0 {
-                tracing::info!(removed = n, "orphaned thumbnails");
+                tracing::info!(removed = n, "orphaned thumbnails, projects and proxies");
             }
             state.pruned = true;
         }
@@ -345,6 +362,7 @@ impl Inner {
                         gone.push(key.clone());
                         bytes = bytes.saturating_add(*b);
                         lib.remove_thumbs(key);
+                        lib.remove_caches(key);
                     }
                     Err(e) => failed.push(json!({
                         "path": path.to_string_lossy(),

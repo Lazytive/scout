@@ -5,6 +5,22 @@ reason)`.
 
 ## Unreleased
 
+- M8.4 — Editor and export commands: `editor.project.get|set` (project file
+  `.klip/projects/<key>.json`, repaired, clip length wins), `editor.proxy` (H.264 clip →
+  itself; else an H.264 proxy made by an export job with the new `Preset::Proxy`, in
+  `.klip/proxies/`), `export.start|cancel|status` (one job at a time on its own
+  thread through the media worker; `<name> - <Preset>.mp4` next to the clip via
+  `Library::unique_sibling`, never overwriting; events `export_progress` throttled to
+  250 ms and `export_done`; a finished export is indexed and thumbnailed);
+  `config::export_encoders`; `settings.export.discord_limit_mb` (1–1000, default 10)
+  with UI mirrors; `klip-library` per-clip caches (projects, proxies, renders) that
+  follow rename and delete and are pruned with the thumbnails; Tauri `protocol-asset`
+  enabled with an empty scope and the `editor_media` command that allows exactly the
+  one file the engine names for the preview (and forbids the last). Engine tests on
+  temp folders: project round trip with hostile args, rename keeps the project, delete
+  removes it, an export job on an undecodable clip ends with `export_done {ok:false}`
+  and no file, the Discord limit setting. (Claude Fable 5.1: M8.4)
+
 - M8.3 — Export pipeline: `klip-export` (engine layer; `export(&ExportRequest,
   progress, cancel)`: presets Original/YouTube/TikTok/Discord, one `decodebin`
   pipeline seeked per segment at the segment's rate with `videocrop` →

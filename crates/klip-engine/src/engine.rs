@@ -24,6 +24,8 @@ use klip_settings::{
 };
 use serde_json::{Value, json};
 
+mod editor;
+mod export;
 mod host;
 mod library;
 mod overlay;
@@ -152,6 +154,8 @@ pub(crate) struct Inner {
     media_worker: Option<PathBuf>,
     /// A storage clean-up job is running.
     cleaning: AtomicBool,
+    /// The running export and the last one (lock alone, briefly).
+    exports: Mutex<export::ExportState>,
     low_disk_warned: Mutex<Option<Instant>>,
     /// Microphone meter and when it started.
     meter: Mutex<Option<(klip_platform::AudioCapture, Instant)>>,
@@ -207,6 +211,7 @@ impl Engine {
             thumbs_thread: Mutex::new(None),
             media_worker: opts.media_worker.clone(),
             cleaning: AtomicBool::new(false),
+            exports: Mutex::new(export::ExportState::default()),
             low_disk_warned: Mutex::new(None),
             meter: Mutex::new(None),
             hotkeys_paused: Mutex::new(None),
@@ -290,6 +295,7 @@ impl Engine {
         self.inner.stop.store(true, Ordering::Relaxed);
         self.inner.wake();
         self.inner.stop_thumbs();
+        self.inner.cancel_export();
         if let Some(s) = self.server.take() {
             s.shutdown();
         }
@@ -852,6 +858,12 @@ impl Handler for Inner {
             commands::CLIP_DELETE => self.clip_delete(args),
             commands::CLIP_OPEN => self.clip_open(args, false),
             commands::CLIP_REVEAL => self.clip_open(args, true),
+            commands::EDITOR_PROJECT_GET => self.editor_project_get(args),
+            commands::EDITOR_PROJECT_SET => self.editor_project_set(args),
+            commands::EDITOR_PROXY => self.editor_proxy(args),
+            commands::EXPORT_START => self.export_start(args),
+            commands::EXPORT_CANCEL => self.export_cancel(args),
+            commands::EXPORT_STATUS => self.export_status(args),
             commands::OVERLAY_PREVIEW => self.overlay_preview(),
             commands::OVERLAY_MENU => {
                 self.emit(&Event::QuickMenu);

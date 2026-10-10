@@ -101,4 +101,15 @@ export type KlipEvent =
   | { event: 'recovered'; path: string; result: unknown }
   | { event: 'warning'; message: string }
   | { event: 'library_changed'; reason: string }
+  | { event: 'export_progress'; id: number; key: string; preset: string; pass: number; frames_done: number; frames_total: number }
+  | {
+      event: 'export_done';
+      id: number;
+      key: string;
+      preset: string;
+      ok: boolean;
+      path: string | null;
+      error: string | null;
+      summary: unknown;
+    }
   | ThumbsReadyEvent;
