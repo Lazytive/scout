@@ -5,6 +5,20 @@ reason)`.
 
 ## Unreleased
 
+- M8.5 — The Editor workspace in the app (Normal mode): `src/Editor.svelte`,
+  `src/editor/{Preview,Filmstrip,ExportDialog}.svelte`, `src/lib/forms/Slider.svelte`;
+  state in `src/lib/editor.svelte.ts` (projects saved after every edit, undo/redo,
+  playhead and selection in output time, exports through the events); the timeline
+  math ported to `src/lib/timeline.ts` and checked against the shared fixtures
+  (`timeline.test.ts`), helpers in `src/lib/editor.ts` (`editor.test.ts`); the mock
+  engine's editor (`mock-editor.ts`: projects, SVG text, exports that tick and finish,
+  a Discord second pass, an occasional failure); the Library's double-click, Enter,
+  Edit button and menu open the editor; `app.page` in the store; the engine command
+  `editor.text.render` (the text layer as the export draws it, base64 PNG) for the
+  preview; `KLIP_START_PAGE=editor` + `KLIP_START_CLIP` for driving it off-screen; the
+  `diag_make_clip` diagnostic in `klip-export` writes a real clip for that. (Claude
+  Fable 5.1: M8.5)
+
 - M8.4 — Editor and export commands: `editor.project.get|set` (project file
   `.klip/projects/<key>.json`, repaired, clip length wins), `editor.proxy` (H.264 clip →
   itself; else an H.264 proxy made by an export job with the new `Preset::Proxy`, in

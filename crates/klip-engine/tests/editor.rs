@@ -257,6 +257,41 @@ fn proxy_of_an_h264_clip_is_the_clip_itself() {
 }
 
 #[test]
+fn text_layers_render_for_the_preview() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("clips").join("a.mp4");
+    clip(&path, 60);
+    let (engine, _rx) = start(settings(dir.path()));
+    let p = path.to_string_lossy().to_string();
+    let layer = json!({ "id": 1, "preset": "pill", "text": "gg wp", "position": "bottom", "start_ms": 0, "end_ms": 1000 });
+    let r = engine
+        .handle(
+            "editor.text.render",
+            &json!({ "path": p, "layer": layer, "width": 640, "height": 360 }),
+        )
+        .unwrap();
+    assert_eq!(
+        (r["frame_width"].as_u64(), r["frame_height"].as_u64()),
+        (Some(640), Some(360))
+    );
+    assert!(r["width"].as_u64().unwrap() > 0 && r["height"].as_u64().unwrap() > 0);
+    assert!(r["png"].as_str().unwrap().len() > 100);
+    for args in [
+        json!({ "path": p }),
+        json!({ "path": p, "layer": "x", "width": 640, "height": 360 }),
+        json!({ "path": p, "layer": layer, "width": 0, "height": 360 }),
+        json!({ "path": p, "layer": layer, "width": 640, "height": 5000 }),
+        json!({ "path": "nope", "layer": layer, "width": 640, "height": 360 }),
+    ] {
+        assert_eq!(
+            engine.handle("editor.text.render", &args).unwrap_err().code,
+            "bad_args",
+            "{args}"
+        );
+    }
+}
+
+#[test]
 fn export_commands_run_a_job_and_report_its_end() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("clips").join("Game").join("Clip.mp4");

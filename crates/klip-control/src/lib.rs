@@ -93,6 +93,10 @@ pub mod commands {
     pub const EDITOR_PROJECT_SET: &str = "editor.project.set";
     /// `{path}` → what the preview plays: `original` | `ready` (proxy path) | `making` (id).
     pub const EDITOR_PROXY: &str = "editor.proxy";
+    /// `{path, layer, width, height}` → the text layer drawn at that output size:
+    /// `{x, y, width, height, frame_width, frame_height, png}` (base64), the pixels the
+    /// export composites.
+    pub const EDITOR_TEXT_RENDER: &str = "editor.text.render";
     /// `{path, preset}` → `{id, out}`; `export_progress` / `export_done` events follow.
     pub const EXPORT_START: &str = "export.start";
     /// `{id}` stops a running export.

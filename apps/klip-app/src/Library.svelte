@@ -7,6 +7,7 @@
   import ClipCard from './library/ClipCard.svelte';
   import Details from './library/Details.svelte';
   import Filters from './library/Filters.svelte';
+  import { openEditor } from './lib/editor.svelte';
   import { formatBytes } from './lib/format';
   import Select from './lib/forms/Select.svelte';
   import { clickSelect, filtered, groupClips, moveKey, type LibClip, type Sort } from './lib/library';
@@ -112,7 +113,7 @@
     const sel = selectedClips();
     switch (e.key) {
       case 'Enter':
-        if (sel.length === 1 && sel[0]) void openClip(sel[0]);
+        if (sel.length === 1 && sel[0]) openEditor(sel[0]);
         break;
       case 'Delete':
         askDelete(lib.selected, e.shiftKey);
@@ -250,7 +251,7 @@
                         focused={lib.cursor === c.key}
                         showDay={g.label === null}
                         onpick={(e) => pick(c, e)}
-                        onopen={() => openClip(c)}
+                        onopen={() => openEditor(c)}
                         onmenu={(e) => openMenu(c, e)}
                         onstar={() => setStar([c], !c.starred)}
                       />
@@ -285,7 +286,8 @@
       onkeydown={(e) => e.key === 'Escape' && (menu = null)}
     >
       {#if !many}
-        <button class="flat item" role="menuitem" onclick={() => { menu = null; void openClip(c); }}>Open</button>
+        <button class="flat item" role="menuitem" onclick={() => { menu = null; openEditor(c); }}>Edit</button>
+        <button class="flat item" role="menuitem" onclick={() => { menu = null; void openClip(c); }}>Open in player</button>
         <button class="flat item" role="menuitem" onclick={() => { menu = null; void openClip(c, true); }}>Show in folder</button>
         <button class="flat item" role="menuitem" onclick={() => { menu = null; renameFocus += 1; }}>Rename<kbd>F2</kbd></button>
       {/if}

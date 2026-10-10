@@ -87,6 +87,11 @@ export function describeEvent(e: KlipEvent): { text: string; tone: Tone } | null
       };
     case 'recovered':
       return { text: 'Finished a recording left by an earlier crash', tone: 'info' };
+    case 'export_done':
+      if (e.preset === 'proxy') return null;
+      return e.ok
+        ? { text: `Exported ${e.key} (${e.preset})`, tone: 'good' }
+        : { text: `Export of ${e.key} failed: ${e.error ?? 'unknown error'}`, tone: 'bad' };
     case 'warning':
       return { text: e.message, tone: 'warn' };
     default:

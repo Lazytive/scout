@@ -3,6 +3,7 @@
 // then a game starts and the replay buffer runs; commands answer like the real engine.
 
 import { CommandError } from './api';
+import { mockEditor } from './mock-editor';
 import { mockLibrary } from './mock-library';
 import type { Settings } from './settings';
 import type { Game, KlipEvent, Status } from './types';
@@ -109,6 +110,10 @@ export function mockBackend() {
   };
   let meterTimer: ReturnType<typeof setInterval> | null = null;
   const library = mockLibrary(emit);
+  const editor = mockEditor(emit, (path) => {
+    const listing = library('library.list', { sort: 'newest' }) as { clips: { path: string }[] } | undefined;
+    return listing?.clips.find((c) => c.path === path) as Parameters<typeof mockEditor>[1] extends (p: string) => infer R ? R : never;
+  });
 
   const need = () => {
     if (!status.recording) throw new CommandError('not_ready', 'no game is running');
@@ -222,6 +227,8 @@ export function mockBackend() {
         default: {
           const r = library(cmd, args);
           if (r !== undefined) return r;
+          const e2 = editor(cmd, args as Record<string, unknown> | null);
+          if (e2 !== undefined) return e2;
           throw new CommandError('unknown_command', `mock: ${cmd}`);
         }
       }

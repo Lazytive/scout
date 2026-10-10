@@ -861,6 +861,7 @@ impl Handler for Inner {
             commands::EDITOR_PROJECT_GET => self.editor_project_get(args),
             commands::EDITOR_PROJECT_SET => self.editor_project_set(args),
             commands::EDITOR_PROXY => self.editor_proxy(args),
+            commands::EDITOR_TEXT_RENDER => self.editor_text_render(args),
             commands::EXPORT_START => self.export_start(args),
             commands::EXPORT_CANCEL => self.export_cancel(args),
             commands::EXPORT_STATUS => self.export_status(args),

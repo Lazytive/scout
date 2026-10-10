@@ -48,6 +48,26 @@ same tokens.
   thumbnails (`http://klipthumb.localhost/<poster|strip>/<key>?v=<version>` in
   WebView2): only cached thumbnails of library clips (the engine's `library.thumb` checks
   the key), ≤ 8 MiB, cacheable by URL; allowed in the CSP's `img-src` only.
+- `src/Editor.svelte` + `src/editor/*` (M8.5, ADR 0017): the Editor workspace, opened
+  from the Library (double-click, Enter, Edit). Left: format (16:9 / 9:16 with a crop
+  window to drag on the preview), Split / Cut / Keep, speed buttons on the selection,
+  text presets (a cue at the playhead; edit text, style, position, times), Game / Mic
+  sliders, the Shorts template, the mode toggle (Advanced is M9). Centre: the preview
+  (`editor/Preview.svelte`: the clip or its H.264 proxy in a `<video>` played along
+  the OUTPUT timeline, segment by segment at its speed; the engine-drawn text cues on
+  top; the strip picture stands in when the media can't play) with Play, the output
+  timecode, Undo / Redo, and the filmstrip (`editor/Filmstrip.svelte`: the clip's
+  hover-scrub tiles as the source timeline, cut parts shaded, speed badges, bookmarks,
+  trim handles, drag to select, the text cues on a lane below, drag to move). Right:
+  the edit's facts and Export… (`editor/ExportDialog.svelte`: presets, passes and
+  progress from `export_progress`, Cancel, the result with Show in folder). State in
+  `src/lib/editor.svelte.ts` (every edit is saved with `editor.project.set` after 400
+  ms; `editor_media` → `convertFileSrc` for the video; `editor.text.render` → data URLs
+  for the cues), timeline math in `src/lib/timeline.ts` (a port of `klip-edit`,
+  checked against `crates/klip-edit/fixtures` by `timeline.test.ts`), helpers in
+  `src/lib/editor.ts`, the mock in `src/lib/mock-editor.ts`. Keys: Space, S (split),
+  Delete (cut the selection / remove the cue), arrows (a frame; Shift: a second),
+  Home / End, Ctrl+Z / Ctrl+Y, Escape.
 - `src/Library.svelte` + `src/library/*` (M7): the Library workspace. Left: Browse
   (all / starred with counts, date ranges, games, tags). Centre: search (debounced),
   sort, card size S/M/L (remembered in `localStorage`), clips grouped by day for date

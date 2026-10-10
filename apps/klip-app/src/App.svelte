@@ -1,24 +1,27 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  import Editor from './Editor.svelte';
   import FirstRun from './FirstRun.svelte';
   import Home from './Home.svelte';
   import Library from './Library.svelte';
+  import { ed, openEditorByPath } from './lib/editor.svelte';
   import { formatDuration } from './lib/format';
   import ThemeMenu from './lib/ThemeMenu.svelte';
   import Settings from './Settings.svelte';
-  import { app, connect } from './lib/store.svelte';
+  import { app, connect, type Page } from './lib/store.svelte';
 
-  type Page = 'home' | 'library' | 'settings';
-  // KLIP_START_PAGE (tests): the app injects the page to open on.
-  const start = (globalThis as { __KLIP_START_PAGE__?: string }).__KLIP_START_PAGE__;
-  let page = $state<Page>(start === 'library' || start === 'settings' ? start : 'home');
+  // KLIP_START_PAGE / KLIP_START_CLIP (tests): the app injects the page (and clip) to open on.
+  const start = (globalThis as { __KLIP_START_PAGE__?: string; __KLIP_START_CLIP__?: string }).__KLIP_START_PAGE__;
+  const startClip = (globalThis as { __KLIP_START_CLIP__?: string }).__KLIP_START_CLIP__;
+  if (start === 'library' || start === 'settings') app.page = start;
 
-  const workspaces: { id: Page; label: string; soon?: boolean }[] = [
+  const workspaces = $derived<{ id: Page; label: string; soon?: boolean }[]>([
     { id: 'home', label: 'Home' },
     { id: 'library', label: 'Library' },
+    ...(ed.clip ? [{ id: 'editor' as const, label: 'Editor' }] : []),
     { id: 'settings', label: 'Settings' },
-  ];
+  ]);
 
   const st = $derived(app.status);
   const title = $derived.by(() => {
@@ -38,7 +41,10 @@
 
   onMount(() => {
     let stop: (() => void) | undefined;
-    void connect().then((s) => (stop = s));
+    void connect().then((s) => {
+      stop = s;
+      if (start === 'editor' && startClip) void openEditorByPath(startClip);
+    });
     return () => stop?.();
   });
 </script>
@@ -51,11 +57,11 @@
         {#each workspaces as w (w.id)}
           <button
             class="flat ws"
-            class:active={page === w.id}
+            class:active={app.page === w.id}
             disabled={w.soon}
             title={w.soon ? 'Coming soon' : undefined}
-            aria-current={page === w.id ? 'page' : undefined}
-            onclick={() => (page = w.id)}
+            aria-current={app.page === w.id ? 'page' : undefined}
+            onclick={() => (app.page = w.id)}
           >
             {w.label}
           </button>
@@ -72,11 +78,13 @@
   </header>
 
   <main>
-    {#if page === 'home'}
+    {#if app.page === 'home'}
       <Home />
-    {:else if page === 'library'}
+    {:else if app.page === 'library'}
       <Library />
-    {:else if page === 'settings'}
+    {:else if app.page === 'editor'}
+      <Editor />
+    {:else if app.page === 'settings'}
       <Settings />
     {/if}
   </main>

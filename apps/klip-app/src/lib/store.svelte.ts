@@ -4,6 +4,7 @@
 import { CommandError, call, onEvent, setWindowTheme } from './api';
 import { describeEvent, type Tone } from './format';
 import { patchFor, splitError, type Settings } from './settings';
+import { editorEvent } from './editor.svelte';
 import { libraryEvent } from './library.svelte';
 import { applyTheme, resolve, type ThemeSetting } from './themes';
 import type { KlipEvent, Status, StorageStatus } from './types';
@@ -17,7 +18,11 @@ export interface Activity {
 
 const MAX_ACTIVITY = 50;
 
+export type Page = 'home' | 'library' | 'editor' | 'settings';
+
 export const app = $state({
+  /** The workspace shown. */
+  page: 'home' as Page,
   status: null as Status | null,
   storage: null as StorageStatus | null,
   /** The engine's settings (`settings.get`), kept fresh from `settings_changed`. */
@@ -161,7 +166,8 @@ export async function connect(): Promise<() => void> {
       return;
     }
     libraryEvent(e);
-    if (e.event === 'thumbs_ready' || e.event === 'library_changed') return;
+    editorEvent(e);
+    if (e.event === 'thumbs_ready' || e.event === 'library_changed' || e.event === 'export_progress') return;
     log(e);
     if (e.event === 'settings_changed') useSettings(e.settings);
     void refresh();

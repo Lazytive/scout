@@ -2,6 +2,7 @@
      actions), several selected clips (bulk actions), or the library's totals. -->
 <script lang="ts">
   import { thumbUrl } from '../lib/api';
+  import { openEditor } from '../lib/editor.svelte';
   import { formatBytes, formatDuration, formatTimecode } from '../lib/format';
   import ListEditor from '../lib/forms/ListEditor.svelte';
   import { displayName, qualityLabel } from '../lib/library';
@@ -100,7 +101,8 @@
     {#if displayName(one.name) !== one.name}<p class="hint">Shown as “{displayName(one.name)}”.</p>{/if}
 
     <div class="actions">
-      <button class="primary" onclick={() => openClip(one)}>Open</button>
+      <button class="primary" onclick={() => openEditor(one)}>Edit</button>
+      <button onclick={() => openClip(one)}>Open</button>
       <button onclick={() => openClip(one, true)}>Show in folder</button>
       <button
         class="flat icon"
@@ -161,7 +163,7 @@
       {/if}
     </dl>
     <p class="path" title={lib.listing.folder}>{lib.listing.folder}</p>
-    <p class="muted hint">Select a clip to rename, tag or open it. Double-click opens it in your player.</p>
+    <p class="muted hint">Select a clip to rename, tag or edit it. Double-click opens it in the editor.</p>
   {/if}
 </div>
 

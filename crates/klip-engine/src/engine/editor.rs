@@ -8,8 +8,9 @@
 
 use std::path::{Path, PathBuf};
 
+use base64::Engine as _;
 use klip_control::CommandError;
-use klip_edit::{MAX_FILE_BYTES, Project, SourceInfo};
+use klip_edit::{MAX_FILE_BYTES, Project, SourceInfo, TextLayer};
 use klip_library::{ClipInfo, Library, probe_file};
 use serde_json::{Value, json};
 
@@ -153,6 +154,41 @@ impl Inner {
                 .map_err(|e| CommandError::new("failed", e.to_string()))?;
         }
         Self::project_json(&key, &path, &project, &issues, "saved", &source)
+    }
+
+    /// A text layer as the export draws it, for the preview: `klip_edit::render_layer`
+    /// at the output size, as a PNG (base64) with its place in the frame.
+    pub(super) fn editor_text_render(&self, args: &Value) -> Result<Value, CommandError> {
+        let lib = self.clip_library()?;
+        self.clip_arg(&lib, str_arg(args, "path")?)?;
+        let layer: TextLayer = args
+            .get("layer")
+            .cloned()
+            .filter(Value::is_object)
+            .and_then(|v| serde_json::from_value(v).ok())
+            .ok_or_else(|| CommandError::bad_args("layer must be a text layer"))?;
+        let side = |name: &str| -> Result<u32, CommandError> {
+            args.get(name)
+                .and_then(Value::as_u64)
+                .and_then(|v| u32::try_from(v).ok())
+                .filter(|v| (1..=klip_edit::text::render::MAX_FRAME_SIDE).contains(v))
+                .ok_or_else(|| CommandError::bad_args(format!("{name} must be 1..=4096")))
+        };
+        let (width, height) = (side("width")?, side("height")?);
+        let bitmap = klip_edit::render_layer(&layer, width, height)
+            .map_err(|e| CommandError::bad_args(e.to_string()))?;
+        let png = bitmap
+            .png()
+            .map_err(|e| CommandError::new("failed", e.to_string()))?;
+        Ok(json!({
+            "x": bitmap.x,
+            "y": bitmap.y,
+            "width": bitmap.width,
+            "height": bitmap.height,
+            "frame_width": bitmap.frame_width,
+            "frame_height": bitmap.frame_height,
+            "png": base64::engine::general_purpose::STANDARD.encode(png),
+        }))
     }
 
     /// What the preview plays for `path`.

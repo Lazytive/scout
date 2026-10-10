@@ -876,3 +876,21 @@ fn hostile_plans_fail_cleanly() {
     );
     assert!(!dir.path().join("out.mp4.part").exists());
 }
+
+/// Writes a 12 s barcoded clip (beeps, bookmarks) to `$KLIP_DIAG_CLIP` for driving the
+/// app by hand: `KLIP_DIAG_CLIP=<path> cargo test -p klip-export --release --test export
+/// -- --ignored diag_make_clip`.
+#[test]
+#[ignore = "diagnostic: writes a clip where KLIP_DIAG_CLIP says"]
+fn diag_make_clip() {
+    let Some(target) = std::env::var_os("KLIP_DIAG_CLIP") else {
+        eprintln!("skipped: set KLIP_DIAG_CLIP");
+        return;
+    };
+    let Some(enc) = setup() else { return };
+    let path = PathBuf::from(target);
+    let mut spec = ClipSpec::hd(12, 20_000);
+    spec.markers = vec![2.0, 7.5];
+    make_clip(&enc, &path, &spec);
+    println!("wrote {}", path.display());
+}

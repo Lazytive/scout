@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-10 (M8.4 done).
+Last updated: 2026-10-10 (M8.5 done).
 
 | | Milestone | State |
 |---|---|---|
@@ -12,7 +12,7 @@ Last updated: 2026-10-10 (M8.4 done).
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
 | M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
 | M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
-| M8 | Editor, Normal mode + export presets | **in progress**: M8.1 model crate `klip-edit`, M8.2 text rasterisation, M8.3 export pipeline `klip-export` + media-worker export job, M8.4 editor/export commands + caches + asset scope (ADR 0017 proposed) |
+| M8 | Editor, Normal mode + export presets | **in progress**: M8.1 model crate `klip-edit`, M8.2 text rasterisation, M8.3 export pipeline `klip-export` + media-worker export job, M8.4 editor/export commands + caches + asset scope, M8.5 the Editor workspace (ADR 0017 proposed) |
 | M9 | Editor, Advanced mode | |
 | M10 | Themes v1 | |
 | M11 | Sharing | |
@@ -297,6 +297,17 @@ yet; the Library's real clips are the M8.6 job.
     with the engine commands in M8.4.
   - Exports are capped at 4 hours / an estimated 4 GB because the encoded output is
     held in memory until it is written (`plan/IMPROVEMENTS.md` G1: stream it).
+- **Editor (M8.5)**:
+  - The preview plays the clip itself for H.264 (the app's WebView plays H.264 + AAC)
+    and an H.264 proxy for HEVC/AV1 clips, made by an export job on first open (a
+    720p transcode: a few seconds; "Making a preview…" meanwhile, the still frames
+    stand in). Seeks between pieces use `<video>.currentTime`, so a cut shows a short
+    stall at the boundary; frame-exact is the export's job.
+  - The text cues on the preview are the engine's bitmaps (identical pixels to the
+    export) requested after each edit (250 ms debounce, one command per layer).
+  - Trim handles move the ends of the kept range in source time; cuts in the middle
+    come from a drag selection + Cut. There is no ripple-drag of cut edges yet.
+  - Advanced mode is a disabled toggle (M9).
 - **Text (M8.2)**: no text shaping. Latin, Greek and Cyrillic (what Inter covers) render
   well; Arabic and Hebrew come out as unjoined glyphs in logical (not visual) order,
   ligatures as separate letters, emoji as the font's "no glyph" box. A second font or a

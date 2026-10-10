@@ -97,3 +97,31 @@ export function thumbUrl(kind: ThumbKind, key: string, v: number): string {
 export async function onEvent(cb: (e: KlipEvent) => void): Promise<() => void> {
   return (await getBackend()).listen(cb);
 }
+
+export interface EditorMedia {
+  status: 'original' | 'ready' | 'making';
+  path?: string;
+  id?: number;
+  key: string;
+  /** A URL the page can play (Tauri's asset protocol); absent in the mock. */
+  url?: string;
+}
+
+/**
+ * What the editor's preview plays (`editor.proxy`). In the app this goes through the
+ * Tauri command `editor_media`, which allows exactly that one file for the asset
+ * protocol and so yields a playable URL; the mock has no file to play.
+ */
+export async function editorMedia(path: string): Promise<EditorMedia> {
+  if (!inTauri) return call<EditorMedia>('editor.proxy', { path });
+  const core = await import('@tauri-apps/api/core');
+  let r: EditorMedia;
+  try {
+    r = await core.invoke<EditorMedia>('editor_media', { path });
+  } catch (e) {
+    const err = e as { code?: string; message?: string };
+    throw new CommandError(err?.code ?? 'failed', err?.message ?? String(e));
+  }
+  if (r.path && r.status !== 'making') return { ...r, url: core.convertFileSrc(r.path) };
+  return r;
+}
