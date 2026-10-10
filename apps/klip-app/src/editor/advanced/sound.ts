@@ -42,6 +42,12 @@ export function rmsDb(block: Float32Array): number {
 
 export type Bus = 'main' | 'music';
 
+/** Every live graph, for `window.__klipSound()` (a diagnostic: what plays at what gain). */
+const graphs = new Set<SoundGraph>();
+if (typeof window !== 'undefined') {
+  (window as unknown as { __klipSound?: () => unknown }).__klipSound = () => [...graphs].map((g) => g.report());
+}
+
 /** One element's way into the mix. */
 export interface Strand {
   el: HTMLMediaElement;
@@ -64,6 +70,36 @@ export class SoundGraph {
   private ducking: Ducking = { enabled: false, duck_db: -12, attack_ms: 100, release_ms: 600 };
   private duckTarget = 1;
   private master = 1;
+
+  /** Any click or key in the window may start a context the browser held back. */
+  private onGesture = (): void => {
+    if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume().catch(() => {});
+  };
+
+  constructor() {
+    graphs.add(this);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pointerdown', this.onGesture, true);
+      window.addEventListener('keydown', this.onGesture, true);
+    }
+  }
+
+  /** The context's state and each strand's gain, bus and element time. */
+  report(): unknown {
+    return {
+      state: this.ctx?.state ?? 'none',
+      duck: Math.round(this.duckGain() * 1000) / 1000,
+      strands: [...this.strands.values()].map((s) => ({
+        tag: s.el.tagName,
+        bus: s.bus,
+        voice: s.voice,
+        gain: Math.round(s.gain.gain.value * 1000) / 1000,
+        paused: s.el.paused,
+        muted: s.el.muted,
+        t: Math.round(s.el.currentTime * 1000),
+      })),
+    };
+  }
 
   /** The context, made on first use (after a user gesture: Play). */
   private context(): AudioContext | null {
@@ -185,6 +221,11 @@ export class SoundGraph {
   }
 
   close(): void {
+    graphs.delete(this);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('pointerdown', this.onGesture, true);
+      window.removeEventListener('keydown', this.onGesture, true);
+    }
     for (const el of [...this.strands.keys()]) this.detach(el);
     void this.ctx?.close().catch(() => {});
     this.ctx = null;

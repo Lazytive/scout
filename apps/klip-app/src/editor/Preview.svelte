@@ -84,8 +84,9 @@
   const usable = $derived(src !== null && !failed);
   const visible = $derived(overlays.filter((o) => playhead >= o.start_ms && playhead < o.end_ms));
 
-  // The sound: the tracks follow the video, weighed by the sliders.
-  let sound: FollowSound | null = null;
+  // The sound: the tracks follow the video, weighed by the sliders. State, so the
+  // tracks and volumes are handed to every new follower (the tracks may arrive first).
+  let sound = $state.raw<FollowSound | null>(null);
   $effect(() => {
     const v = video;
     if (!v || !usable) return;

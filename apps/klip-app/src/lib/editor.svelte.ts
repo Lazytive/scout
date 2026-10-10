@@ -539,6 +539,8 @@ async function loadTracks(path: string, key: string): Promise<void> {
     const tracks = await editorAudio(path);
     if (ed.clip?.key !== key) return;
     ed.tracks = tracks.filter((t) => !!t.url);
+    // Advanced mode's player made its elements without them: make them again.
+    ed.mediaVersion += 1;
   } catch {
     if (ed.clip?.key === key) ed.tracks = [];
   }

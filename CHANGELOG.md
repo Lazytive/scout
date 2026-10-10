@@ -5,6 +5,13 @@ reason)`.
 
 ## Unreleased
 
+- M9.5.8 — Preview sound fixes found by review: Normal mode's tracks were never
+  attached when they loaded before the `<video>` appeared (the sliders then did
+  nothing: the video played its own Mix), and Advanced mode's player kept the Mix when
+  the main clip's tracks arrived late (now a media reload). Every sound graph resumes
+  its context on any click or key, in case WebView2 started it held back.
+  `window.__klipSound()` reports each graph's state and gains (diagnostic). (Claude
+  Opus 5.5: the human asked about the preview sound)
 - M9.5.7 — Acceptance in the real app, off-screen, driven through WebView2's
   remote-debugging port: the canvas preview vs `editor.frame` at 1280x720 on a montage
   with a zoom ramp, a crossfade, a sticker and a grade: 39.9–66.8 dB (bar 35 dB);
