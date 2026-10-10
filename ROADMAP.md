@@ -13,7 +13,7 @@ Last updated: 2026-10-10 (M8 done).
 | M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
 | M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
 | M8 | Editor, Normal mode + export presets | **done on Windows** (ADR 0017 accepted): `klip-edit` model + text, `klip-export` pipeline, engine commands, the Editor workspace, e2e `m8_editor.rs`; Linux not yet run |
-| M9 | Editor, Advanced mode (incl. montage) | **started**: ADR 0018 proposed (schema v2, one compositor renderer, spike first), tasks M9.1–M9.6 planned |
+| M9 | Editor, Advanced mode (incl. montage) | **in progress**: M9.1 ADR 0018 + the compositor spike (4.6x / 8.4x realtime: extend `klip-export`), tasks M9.2–M9.6 planned |
 | M10 | Themes v1 | |
 | M11 | Sharing | |
 | M12 | Auto-clip via official integrations | |
@@ -279,6 +279,20 @@ a synthetic barcoded 1280x720@60 clip with two AAC tracks, ffmpeg as the oracle:
 So an export runs at roughly 300–500 output frames per second at 720p on this machine
 (decode + crop/scale on the CPU, NVENC encode). 1080p and 1440p sources are not measured
 yet; the Library's real clips are the M8.6 job.
+
+### Compositing spike (M9.1, `klip-export`)
+
+`cargo test -p klip-export --release --test export -- --ignored diag_compositor_spike
+--nocapture` on 2026-10-10, i7-14700KF + NVIDIA (NVENC H.264), software decoding of two
+1920x1080@60 10 s clips, the second zoomed 1x → 2x by a per-frame keyframe (pad
+width/height/xpos/ypos) and crossfaded in over 1 s (pad alpha), into the encode chain:
+
+| Compositor | 600 frames in | Realtime |
+|---|---|---|
+| `compositor` (system memory, NV12) | 2.15 s | 4.6x |
+| `d3d11compositor` (D3D11 memory) | 1.18 s | 8.4x |
+
+Both over the 2x bar in ADR 0018, so Advanced mode extends `klip-export`.
 
 ## Approximate / not done yet
 

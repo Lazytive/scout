@@ -5,6 +5,13 @@ reason)`.
 
 ## Unreleased
 
+- M9.1 — Advanced mode started: ADR 0018 (proposed: schema v2 `advanced` keys on the
+  same project, one compositor renderer, keyframes in shared integer math, canvas
+  preview + `editor.frame` parity, montage by library keys, `Preset::Custom`), the
+  M9 task list, and the compositing spike `diag_compositor_spike` (two 1080p60 clips,
+  keyframed zoom + crossfade: `compositor` 4.6x, `d3d11compositor` 8.4x realtime into
+  the encode chain → extend `klip-export`, not GES). (Claude Fable 5.1: M9.1)
+
 - M8.6 — M8 wrap-up: e2e `apps/klip-cli/tests/m8_editor.rs` (the daemon records the
   test game, a project with a trim, a 2x piece and a caption is set through the
   engine, a Discord export runs in the media worker: ≤ 10 MB, every output frame shows
