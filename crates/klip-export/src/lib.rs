@@ -11,7 +11,8 @@
 //! Nothing here panics on a hostile plan or file: the plan is validated against the
 //! probed file (size, length, an estimate of the output's bytes), every size is
 //! bounded, pipeline errors are reported, and a cancelled or failed export leaves no
-//! file behind (the MP4 is written atomically at the very end).
+//! file behind (packets are spooled next to the output, the MP4 is written to a
+//! `.part` and renamed at the very end; see [`files`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,16 +24,18 @@ use gstreamer_video::prelude::VideoFrameExt as _;
 use klip_capture::CaptureError;
 use klip_edit::{Render, TextBitmap, Volumes};
 use klip_media::{Codec, NANOS_PER_MILLI};
-use klip_mp4::{Marker, Mp4Options, Mp4Track};
+use klip_mp4::{Marker, Mp4Options};
 use klip_probe::EncoderChoice;
 use serde::{Deserialize, Serialize};
 
 pub mod compose;
 pub mod encode;
+pub mod files;
 pub mod fit;
 pub mod source;
 
 use encode::{EncodeSettings, Encoded, Encoder};
+use files::OwnedFile;
 use source::{SAMPLES_PER_MS, Source, SourceConfig};
 
 /// Default Discord upload limit, bytes.
@@ -45,10 +48,11 @@ pub const DISCORD_AUDIO_BPS: u32 = 128_000;
 pub const MAX_FPS: u32 = 240;
 /// Bitrate bounds for the Original preset (kbit/s).
 pub const ORIGINAL_KBPS: (u32, u32) = (2_000, 200_000);
-/// Longest export, ms (the encoded output is held in memory until it is written).
+/// Longest export, ms.
 pub const MAX_EXPORT_MS: u64 = 4 * 3_600_000;
-/// Largest export, bytes, estimated from the bitrates before encoding (same reason).
-pub const MAX_EXPORT_BYTES: u64 = 4 << 30;
+/// Largest export, bytes, estimated from the bitrates before encoding (a sanity bound:
+/// the packets are spooled to disk, not held in memory).
+pub const MAX_EXPORT_BYTES: u64 = 64 << 30;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExportError {
@@ -390,8 +394,7 @@ fn output_for(
     }
 }
 
-/// The plan against the file: size, length, and a rough size of the result (the
-/// encoded output lives in memory until it is written).
+/// The plan against the file: size, length, and a rough size of the result.
 fn check_plan(render: &Render, facts: &Facts, out: &Output) -> Result<(), ExportError> {
     if facts.width != render.source.width || facts.height != render.source.height {
         return Err(ExportError::Plan(format!(
@@ -415,7 +418,7 @@ fn check_plan(render: &Render, facts: &Facts, out: &Output) -> Result<(), Export
     let estimate = kbps.saturating_mul(render.output_ms) / 8;
     if estimate > MAX_EXPORT_BYTES {
         return Err(ExportError::Plan(
-            "the export would be larger than 4 GB".into(),
+            "the export would be larger than 64 GB".into(),
         ));
     }
     Ok(())
@@ -445,9 +448,13 @@ pub fn export(
     loop {
         let out = output_for(req.preset, req.render, &facts, req.encoders, fit_pass);
         check_plan(req.render, &facts, &out)?;
-        let encoded = run_pass(req, &facts, &out, pass_no, progress, cancel)?;
-        let (mp4, duration_ms) = mux(&encoded, req.render)?;
-        let mut bytes = mp4.len() as u64;
+        let spool = files::with_suffix(req.out, ".spool");
+        let encoded = run_pass(req, &facts, &out, &spool, pass_no, progress, cancel)?;
+        let (part, real_bytes, duration_ms) = mux(&encoded, req.render, req.out)?;
+        let frames = encoded.video.1.len() as u64;
+        let encoder = encoded.encoder.clone();
+        drop(encoded);
+        let mut bytes = real_bytes;
         if req.preset == Preset::Discord && pass_no == 1 && req.pretend_overshoot > 1.0 {
             bytes = (bytes as f64 * req.pretend_overshoot) as u64;
         }
@@ -475,17 +482,16 @@ pub fn export(
         if cancel.load(Ordering::Relaxed) {
             return Err(ExportError::Cancelled);
         }
-        write_atomic(req.out, &mp4)?;
-        let frames = encoded.video.1.len() as u64;
+        part.commit(req.out)?;
         return Ok(ExportSummary {
             path: req.out.to_path_buf(),
-            bytes: mp4.len() as u64,
+            bytes: real_bytes,
             duration_ms,
             width: out.width,
             height: out.height,
             fps: out.fps,
             codec: out.codec.name().to_string(),
-            encoder: encoded.encoder,
+            encoder,
             bitrate_kbps: out.bitrate_kbps,
             passes: pass_no,
             frames,
@@ -494,59 +500,28 @@ pub fn export(
     }
 }
 
-/// `data` to `path` through a `.part` file in the same folder; never overwrites, and
-/// never touches a `.part` it did not create (another export, or a killed one).
-fn write_atomic(path: &Path, data: &[u8]) -> Result<(), ExportError> {
-    use std::io::Write as _;
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".part");
-    let tmp = PathBuf::from(tmp);
-    let mut f = match std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&tmp)
-    {
-        Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(ExportError::Io(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                format!(
-                    "{} is in the way (another export, or one that was stopped)",
-                    tmp.display()
-                ),
-            )));
-        }
-        Err(e) => return Err(e.into()),
-    };
-    let r = (|| -> std::io::Result<()> {
-        f.write_all(data)?;
-        f.sync_all()?;
-        drop(f);
-        if path.exists() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "exists",
-            ));
-        }
-        std::fs::rename(&tmp, path)
-    })();
-    if r.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    match r {
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            Err(klip_mp4::Mp4Error::AlreadyExists(path.to_path_buf()).into())
-        }
-        other => Ok(other?),
-    }
-}
-
-/// The MP4 bytes of a pass and its duration.
-fn mux(encoded: &Encoded, render: &Render) -> Result<(Vec<u8>, u64), ExportError> {
-    let (vinfo, vpackets) = &encoded.video;
-    let mut tracks = vec![Mp4Track::new(vinfo, vpackets).named("Video")];
-    if let Some((ainfo, apackets)) = &encoded.audio {
-        tracks.push(Mp4Track::new(ainfo, apackets).named("Mix"));
+/// Mux a pass into `<out>.part` (removed again when the result is dropped uncommitted):
+/// the part, its size and its duration.
+fn mux(
+    encoded: &Encoded,
+    render: &Render,
+    out: &Path,
+) -> Result<(OwnedFile, u64, u64), ExportError> {
+    use std::io::{BufReader, BufWriter, Write as _};
+    let (vinfo, vsamples) = &encoded.video;
+    let mut tracks = vec![klip_mp4::SpooledTrack {
+        info: vinfo,
+        samples: vsamples,
+        name: Some("Video"),
+        enabled: true,
+    }];
+    if let Some((ainfo, asamples)) = &encoded.audio {
+        tracks.push(klip_mp4::SpooledTrack {
+            info: ainfo,
+            samples: asamples,
+            name: Some("Mix"),
+            enabled: true,
+        });
     }
     let markers: Vec<Marker> = render
         .markers
@@ -559,21 +534,31 @@ fn mux(encoded: &Encoded, render: &Render) -> Result<(Vec<u8>, u64), ExportError
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    let mut out = Vec::new();
-    let summary = klip_mp4::write_mp4(
-        &mut out,
+    let mut payload = BufReader::with_capacity(1 << 20, std::fs::File::open(encoded.spool.path())?);
+    let (part, file) = OwnedFile::create(&files::with_suffix(out, ".part"))?;
+    let mut w = BufWriter::with_capacity(1 << 20, file);
+    let summary = klip_mp4::write_mp4_spooled(
+        &mut w,
         &tracks,
         &Mp4Options {
             creation_time_unix: now,
             force_co64: false,
             markers: &markers,
         },
+        &mut payload,
     )?;
+    w.flush()?;
+    let file = w
+        .into_inner()
+        .map_err(|e| ExportError::Io(e.into_error()))?;
+    file.sync_all()?;
+    let bytes = file.metadata()?.len();
+    drop(file);
     let duration_ms = u64::try_from(summary.duration)
         .unwrap_or(0)
         .checked_div(NANOS_PER_MILLI as u64)
         .unwrap_or(0);
-    Ok((out, duration_ms))
+    Ok((part, bytes, duration_ms))
 }
 
 /// A text layer's bitmap, rendered once per pass.
@@ -582,7 +567,7 @@ struct Cue {
     bitmap: TextBitmap,
 }
 
-fn start_encoder(out: &Output, encoders: &Encoders) -> Result<Encoder, ExportError> {
+fn start_encoder(out: &Output, encoders: &Encoders, spool: &Path) -> Result<Encoder, ExportError> {
     let choices = encoders.for_codec(out.codec);
     if choices.is_empty() {
         return Err(ExportError::NoEncoder(out.codec));
@@ -598,7 +583,7 @@ fn start_encoder(out: &Output, encoders: &Encoders) -> Result<Encoder, ExportErr
             max_bitrate_kbps: out.max_bitrate_kbps,
             audio_bps: Some(out.audio_bps),
         };
-        match encode::guarded(|| Encoder::start(&settings)) {
+        match encode::guarded(|| Encoder::start(&settings, spool)) {
             Ok(e) => return Ok(e),
             Err(e) => {
                 tracing::warn!(encoder = %choice.element, error = %e, "export encoder did not start");
@@ -659,6 +644,7 @@ fn run_pass(
     req: &ExportRequest<'_>,
     facts: &Facts,
     out: &Output,
+    spool: &Path,
     pass: u32,
     progress: &mut dyn FnMut(Progress),
     cancel: &AtomicBool,
@@ -681,9 +667,10 @@ fn run_pass(
             crop: render.crop,
             out_width: out.width,
             out_height: out.height,
+            want_video: true,
         },
     )?;
-    let mut encoder = start_encoder(out, req.encoders)?;
+    let mut encoder = start_encoder(out, req.encoders, spool)?;
     let frames_total = render.frame_count(out.fps);
     let mut report = |done: u64| {
         progress(Progress {
@@ -914,25 +901,5 @@ mod tests {
     fn samples_fit_their_segment() {
         assert_eq!(fit_samples(vec![1; 10], 1).len(), SAMPLES_PER_MS);
         assert_eq!(fit_samples(vec![], 3).len(), 3 * SAMPLES_PER_MS);
-    }
-
-    #[test]
-    fn a_stray_part_file_is_left_alone() {
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("x.mp4");
-        let part = dir.path().join("x.mp4.part");
-        std::fs::write(&part, b"someone else's").unwrap();
-        let e = write_atomic(&out, b"data").unwrap_err();
-        assert!(matches!(e, ExportError::Io(_)), "{e}");
-        assert_eq!(std::fs::read(&part).unwrap(), b"someone else's");
-        std::fs::remove_file(&part).unwrap();
-        write_atomic(&out, b"data").unwrap();
-        assert_eq!(std::fs::read(&out).unwrap(), b"data");
-        assert!(!part.exists());
-        assert!(matches!(
-            write_atomic(&out, b"again").unwrap_err(),
-            ExportError::Mp4(klip_mp4::Mp4Error::AlreadyExists(_))
-        ));
-        assert!(!part.exists());
     }
 }

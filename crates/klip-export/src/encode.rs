@@ -1,13 +1,18 @@
 //! Writing the output: one GStreamer pipeline with the recorder's encode chain
 //! (`klip_capture::build_encode_chain`: the same ranked hardware encoders) fed by an
 //! `appsrc` of BGRA frames, and the recorder's AAC chain fed by an `appsrc` of S16
-//! samples. Packets are collected in memory and muxed with `klip_mp4` at the end.
+//! samples. Packet bytes go to a spool file next to the output as they come (only
+//! their metadata stays in memory, IMPROVEMENTS G1); `klip_mp4::write_mp4_spooled`
+//! muxes them at the end.
 //!
 //! The `appsrc`s are not blocking: a blocking push would never return once the
 //! pipeline has failed with its queue full. Instead the pusher waits for room itself,
 //! looking at the bus while it waits.
 
+use std::fs::File;
+use std::io::{BufWriter, Write as _};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -20,9 +25,11 @@ use klip_capture::{
     CaptureStats, EncodeConfig, PacketSink, Timing, attach_sink_with, gst_err, make,
 };
 use klip_media::{NANOS_PER_SEC, Packet, TrackInfo};
+use klip_mp4::Sample;
 use klip_probe::EncoderChoice;
 
 use crate::ExportError;
+use crate::files::OwnedFile;
 
 /// Longest wait for the encoders to flush at the end.
 const FINISH: Duration = Duration::from_secs(60);
@@ -48,21 +55,45 @@ pub struct EncodeSettings {
     pub audio_bps: Option<u32>,
 }
 
-/// The encoded result of a pass.
+/// The encoded result of a pass: sample metadata per track, bytes in `spool`.
 pub struct Encoded {
-    pub video: (TrackInfo, Vec<Packet>),
-    pub audio: Option<(TrackInfo, Vec<Packet>)>,
+    pub video: (TrackInfo, Vec<Sample>),
+    pub audio: Option<(TrackInfo, Vec<Sample>)>,
     pub encoder: String,
+    /// Removed when this is dropped.
+    pub spool: OwnedFile,
+}
+
+/// Where packet bytes go.
+#[derive(Default)]
+struct Spool {
+    out: Option<BufWriter<File>>,
+    offset: u64,
 }
 
 #[derive(Default)]
 struct Collector {
     info: Mutex<[Option<TrackInfo>; 2]>,
-    packets: Mutex<[Vec<Packet>; 2]>,
+    samples: Mutex<[Vec<Sample>; 2]>,
+    spool: Mutex<Spool>,
     errors: Mutex<Vec<String>>,
 }
 
 impl Collector {
+    /// Flush and close the spool (a file still open can't be removed on Windows).
+    fn close(&self) -> std::io::Result<()> {
+        let out = self
+            .spool
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .out
+            .take();
+        match out {
+            Some(mut w) => w.flush(),
+            None => Ok(()),
+        }
+    }
+
     fn first_error(&self) -> Option<String> {
         self.errors
             .lock()
@@ -85,13 +116,35 @@ impl PacketSink for Collector {
     }
 
     fn on_packet(&self, track: usize, packet: Packet) {
+        let mut spool = self.spool.lock().unwrap_or_else(PoisonError::into_inner);
+        let offset = spool.offset;
+        let Some(out) = spool.out.as_mut() else {
+            return;
+        };
+        let mut sample = match Sample::of(&packet) {
+            Ok(s) => s,
+            Err(e) => {
+                drop(spool);
+                self.on_error(e.to_string());
+                return;
+            }
+        };
+        sample.offset = offset;
+        if let Err(e) = out.write_all(&packet.data) {
+            spool.out = None;
+            drop(spool);
+            self.on_error(format!("the spool could not be written: {e}"));
+            return;
+        }
+        spool.offset = offset.saturating_add(u64::from(sample.size));
+        drop(spool);
         if let Some(v) = self
-            .packets
+            .samples
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get_mut(track)
         {
-            v.push(packet);
+            v.push(sample);
         }
     }
 
@@ -109,6 +162,8 @@ pub struct Encoder {
     video_src: gst_app::AppSrc,
     audio_src: Option<gst_app::AppSrc>,
     sink: Arc<Collector>,
+    /// The packet bytes; handed to [`Encoded`] by [`Encoder::finish`].
+    spool: Option<OwnedFile>,
     settings: EncodeSettings,
     /// The AAC encoder's delay: audio is pushed this much late so the shifted packets
     /// start at 0 (a negative first pts would become the file's origin).
@@ -121,6 +176,8 @@ pub struct Encoder {
 impl Drop for Encoder {
     fn drop(&mut self) {
         let _ = self.pipeline.set_state(gst::State::Null);
+        // Before `spool` removes the file.
+        let _ = self.sink.close();
     }
 }
 
@@ -138,23 +195,42 @@ fn bus_error(pipeline: &gst::Pipeline) -> Option<String> {
 }
 
 impl Encoder {
-    /// Build and start the pipeline. An encoder that fails to start is an
-    /// [`ExportError::Encoder`]; the caller may try the next choice.
-    pub fn start(settings: &EncodeSettings) -> Result<Encoder, ExportError> {
+    /// Build and start the pipeline, spooling packet bytes to `spool` (created here,
+    /// must not exist; removed again when the encoder fails or its result is dropped).
+    /// An encoder that fails to start is an [`ExportError::Encoder`]; the caller may
+    /// try the next choice.
+    pub fn start(settings: &EncodeSettings, spool: &Path) -> Result<Encoder, ExportError> {
         if settings.fps == 0 || settings.width < 2 || settings.height < 2 {
             return Err(ExportError::Plan("bad output size or rate".into()));
         }
+        let (owned, file) = OwnedFile::create(spool)?;
+        let sink = Arc::new(Collector {
+            spool: Mutex::new(Spool {
+                out: Some(BufWriter::with_capacity(1 << 20, file)),
+                offset: 0,
+            }),
+            ..Collector::default()
+        });
         let pipeline = gst::Pipeline::with_name("klip-export-encode");
-        let r = Self::build(&pipeline, settings);
+        let r = Self::build(&pipeline, settings, sink.clone());
         if r.is_err() {
             // Elements only free their resources (an NVENC session, a Media Foundation
             // transform) from NULL.
             let _ = pipeline.set_state(gst::State::Null);
+            // Closed before `owned` removes it, so the next choice can create it again.
+            let _ = sink.close();
         }
-        r
+        r.map(|mut e| {
+            e.spool = Some(owned);
+            e
+        })
     }
 
-    fn build(pipeline: &gst::Pipeline, settings: &EncodeSettings) -> Result<Encoder, ExportError> {
+    fn build(
+        pipeline: &gst::Pipeline,
+        settings: &EncodeSettings,
+        sink: Arc<Collector>,
+    ) -> Result<Encoder, ExportError> {
         let caps = gst::Caps::builder("video/x-raw")
             .field("format", "BGRA")
             .field("width", i32::try_from(settings.width).unwrap_or(i32::MAX))
@@ -198,7 +274,6 @@ impl Encoder {
             settings.fps,
         )?;
         upload.link(&chain.input).map_err(gst_err)?;
-        let sink = Arc::new(Collector::default());
         let stats = Arc::new(CaptureStats::default());
         let dyn_sink: Arc<dyn PacketSink> = sink.clone();
         chain.attach(0, dyn_sink.clone(), stats.clone(), Timing::AsIs);
@@ -249,6 +324,7 @@ impl Encoder {
             video_src,
             audio_src,
             sink,
+            spool: None,
             settings: settings.clone(),
             audio_delay_ns,
             audio_frames: 0,
@@ -355,7 +431,7 @@ impl Encoder {
     }
 
     /// End both streams, wait for the encoders to flush, and hand back the packets.
-    pub fn finish(self) -> Result<Encoded, ExportError> {
+    pub fn finish(mut self) -> Result<Encoded, ExportError> {
         let _ = self.video_src.end_of_stream();
         if let Some(a) = &self.audio_src {
             let _ = a.end_of_stream();
@@ -379,41 +455,49 @@ impl Encoder {
         if let Some(e) = self.sink.first_error() {
             return Err(ExportError::Encoder(e));
         }
+        self.sink.close()?;
         let mut info = self
             .sink
             .info
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        let mut packets = self
+        let mut samples = self
             .sink
-            .packets
+            .samples
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let video_info = info
             .get_mut(0)
             .and_then(Option::take)
             .ok_or_else(|| ExportError::Encoder("no video was encoded".into()))?;
-        let video_packets = packets.get_mut(0).map(std::mem::take).unwrap_or_default();
+        let video_samples = samples.get_mut(0).map(std::mem::take).unwrap_or_default();
         // The queue in front of the encoder blocks instead of dropping (`leaky_queue:
         // false`), so every pushed frame must be here.
         let pushed = self.frames.load(Ordering::Relaxed);
-        if video_packets.is_empty() || video_packets.len() as u64 != pushed {
+        if video_samples.is_empty() || video_samples.len() as u64 != pushed {
             return Err(ExportError::Encoder(format!(
                 "the encoder returned {} of {pushed} frames",
-                video_packets.len()
+                video_samples.len()
             )));
         }
         let audio = match (
             info.get_mut(1).and_then(Option::take),
-            packets.get_mut(1).map(std::mem::take),
+            samples.get_mut(1).map(std::mem::take),
         ) {
             (Some(i), Some(p)) if !p.is_empty() => Some((i, p)),
             _ => None,
         };
+        drop(info);
+        drop(samples);
+        let spool = self
+            .spool
+            .take()
+            .ok_or_else(|| ExportError::Encoder("the spool is gone".into()))?;
         Ok(Encoded {
-            video: (video_info, video_packets),
+            video: (video_info, video_samples),
             audio,
             encoder: self.settings.encoder.element.clone(),
+            spool,
         })
     }
 }

@@ -181,6 +181,45 @@ impl Default for Colour {
     }
 }
 
+/// Rec. 709 luma weights (what SVG's `feColorMatrix type="saturate"` uses).
+const LUMA: [f32; 3] = [0.2126, 0.7152, 0.0722];
+
+impl Colour {
+    /// The values clamped to their ranges; anything not finite is "as recorded".
+    pub fn sanitized(self) -> Colour {
+        let f = |v: f32, lo: f32, hi: f32, d: f32| if v.is_finite() { v.clamp(lo, hi) } else { d };
+        Colour {
+            brightness: f(self.brightness, -1.0, 1.0, 0.0),
+            contrast: f(self.contrast, 0.0, 2.0, 1.0),
+            saturation: f(self.saturation, 0.0, 2.0, 1.0),
+        }
+    }
+
+    pub fn is_identity(self) -> bool {
+        self.sanitized() == Colour::default()
+    }
+
+    /// The grade as one affine RGB matrix, rows `[r, g, b, offset]` on 0…255 values:
+    /// saturation about the luma, then contrast about mid-grey, then brightness as an
+    /// offset (`brightness` 1 = +255). The renderer applies it per pixel; the preview
+    /// gives the same numbers to an SVG `feColorMatrix` (offsets / 255).
+    pub fn matrix(self) -> [[f32; 4]; 3] {
+        let c = self.sanitized();
+        let (s, k) = (c.saturation, c.contrast);
+        let offset = 128.0 * (1.0 - k) + 255.0 * c.brightness;
+        let mut m = [[0.0f32; 4]; 3];
+        for (i, row) in m.iter_mut().enumerate() {
+            for (j, cell) in row.iter_mut().take(3).enumerate() {
+                let w = LUMA.get(j).copied().unwrap_or(0.0);
+                let sat = w * (1.0 - s) + if i == j { s } else { 0.0 };
+                *cell = k * sat;
+            }
+            row[3] = offset;
+        }
+        m
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MarkerKind {

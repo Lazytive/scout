@@ -1,7 +1,9 @@
-//! Reading the clip: one GStreamer pipeline (`filesrc → decodebin`), seeked once per
-//! output segment with the segment's rate. Video comes out cropped and scaled to the
-//! output size as BGRA; every audio track comes out as 48 kHz stereo S16 with its
-//! tempo already changed by `scaletempo` (pitch kept). Everything is pulled by the
+//! Reading a clip: one GStreamer pipeline (`filesrc → decodebin`), seeked once per
+//! piece of the output with the piece's rate. Video comes out cropped and scaled to the
+//! asked size as BGRA (a picture: at its own size, at most [`MAX_PICTURE`]); every audio
+//! track comes out as 48 kHz stereo S16 with its tempo already changed by `scaletempo`
+//! (pitch kept). A source opened without video (music, a sound effect) leaves the
+//! video stream undecoded. Everything is pulled by the
 //! export thread; nothing here runs on a timer, so the pipeline goes as fast as the
 //! decoder does.
 //!
@@ -41,6 +43,8 @@ const MAX_AUDIO: usize = 8;
 const TAIL_MS: u64 = 100;
 /// Longest leading audio gap filled with silence (a track that starts late).
 const MAX_LEAD_MS: u64 = 2_000;
+/// Largest side of a picture decoded at its own size (bigger ones are scaled down).
+pub const MAX_PICTURE: u32 = 4096;
 
 /// How the source is read.
 #[derive(Clone, Copy, Debug)]
@@ -48,14 +52,18 @@ pub struct SourceConfig {
     /// The clip's size as probed.
     pub src_width: u32,
     pub src_height: u32,
-    /// The kept part of the frame, in source pixels.
+    /// The kept part of the frame, in source pixels (empty: all of it).
     pub crop: Rect,
-    /// The frame size handed to the encoder.
+    /// The size frames come out at (0: the picture's own size, at most
+    /// [`MAX_PICTURE`] a side).
     pub out_width: u32,
     pub out_height: u32,
+    /// `false`: audio only (the video stream is not decoded, and not required).
+    pub want_video: bool,
 }
 
 /// One decoded frame at the output size.
+#[derive(Clone)]
 pub struct Frame {
     /// Source presentation time, ms (floor).
     pub pts_ms: u64,
@@ -118,7 +126,17 @@ fn video_branch(pipeline: &gst::Pipeline, pad: &gst::Pad, shared: &Shared) -> Re
         return Err("the decoded picture is too small".into());
     }
     // The crop was planned on the probed size; map it onto what was decoded.
-    let cfg = shared.cfg;
+    let mut cfg = shared.cfg;
+    if cfg.crop.width == 0 || cfg.crop.height == 0 {
+        cfg.crop = Rect {
+            x: 0,
+            y: 0,
+            width: dec_w,
+            height: dec_h,
+        };
+        cfg.src_width = dec_w;
+        cfg.src_height = dec_h;
+    }
     let scale = |v: u32, from: u32, to: u32| -> u32 {
         if from == 0 || from == to {
             return v;
@@ -158,12 +176,23 @@ fn video_branch(pipeline: &gst::Pipeline, pad: &gst::Pad, shared: &Shared) -> Re
     props::set_str(&scaler, "n-threads", "0");
     // Fill the (even-rounded) output exactly instead of letterboxing a 1 px difference.
     props::set_str(&scaler, "add-borders", "false");
-    let out_caps = gst::Caps::builder("video/x-raw")
-        .field("format", "BGRA")
-        .field("width", i32::try_from(cfg.out_width).unwrap_or(i32::MAX))
-        .field("height", i32::try_from(cfg.out_height).unwrap_or(i32::MAX))
-        .field("pixel-aspect-ratio", gst::Fraction::new(1, 1))
-        .build();
+    let side = |v: u32| i32::try_from(v).unwrap_or(i32::MAX);
+    let out_caps = if cfg.out_width == 0 || cfg.out_height == 0 {
+        // The picture's own size; the scaler keeps the aspect when it has to shrink.
+        gst::Caps::builder("video/x-raw")
+            .field("format", "BGRA")
+            .field("width", gst::IntRange::new(2, side(MAX_PICTURE)))
+            .field("height", gst::IntRange::new(2, side(MAX_PICTURE)))
+            .field("pixel-aspect-ratio", gst::Fraction::new(1, 1))
+            .build()
+    } else {
+        gst::Caps::builder("video/x-raw")
+            .field("format", "BGRA")
+            .field("width", side(cfg.out_width))
+            .field("height", side(cfg.out_height))
+            .field("pixel-aspect-ratio", gst::Fraction::new(1, 1))
+            .build()
+    };
     let sink = gst_app::AppSink::builder()
         .caps(&out_caps)
         .sync(false)
@@ -238,12 +267,28 @@ fn audio_branch(pipeline: &gst::Pipeline, pad: &gst::Pad, shared: &Shared) -> Re
     Ok(())
 }
 
+/// A stream nobody reads (undecoded video of an audio-only source): into a fakesink,
+/// so decodebin's queue never waits on it.
+fn discard(pipeline: &gst::Pipeline, pad: &gst::Pad) -> Result<(), String> {
+    let sink = make("fakesink").map_err(|e| e.to_string())?;
+    props::set_str(&sink, "sync", "false");
+    props::set_str(&sink, "async", "false");
+    pipeline.add(&sink).map_err(|e| e.to_string())?;
+    let sinkpad = sink.static_pad("sink").ok_or("fakesink has no sink pad")?;
+    pad.link(&sinkpad)
+        .map_err(|e| format!("link discard: {e:?}"))?;
+    sink.sync_state_with_parent().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn on_pad(pipeline: &gst::Pipeline, pad: &gst::Pad, shared: &Shared) -> Result<(), String> {
     let kind = pad
         .current_caps()
         .and_then(|c| c.structure(0).map(|s| s.name().to_string()))
         .unwrap_or_default();
-    if kind.starts_with("video/") {
+    if !shared.cfg.want_video && !kind.starts_with("audio/") {
+        discard(pipeline, pad)
+    } else if kind == "video/x-raw" {
         if shared
             .video
             .lock()
@@ -272,6 +317,11 @@ impl Source {
         let src = make("filesrc")?;
         src.set_property("location", path.to_string_lossy().as_ref());
         let decode = make("decodebin")?;
+        if !cfg.want_video {
+            // Stop at raw audio: other streams are exposed undecoded and discarded.
+            let caps = gst::Caps::builder("audio/x-raw").build();
+            decode.set_property("caps", &caps);
+        }
         pipeline.add_many([&src, &decode]).map_err(gst_err)?;
         src.link(&decode).map_err(gst_err)?;
         let shared = Arc::new(Shared {
@@ -305,12 +355,13 @@ impl Source {
             .set_state(gst::State::Paused)
             .map_err(|_| ExportError::Source("the clip could not be opened".into()))?;
         source.settle(gst::State::Paused, true)?;
-        if source
-            .shared
-            .video
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_none()
+        if cfg.want_video
+            && source
+                .shared
+                .video
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_none()
         {
             return Err(ExportError::Source("the clip has no video".into()));
         }
@@ -424,8 +475,12 @@ impl Source {
             .ok_or_else(|| ExportError::Source("the clip has no video".into()))
     }
 
-    /// The next decoded frame of the current segment; `None` at its end.
+    /// The next decoded frame of the current segment; `None` at its end (always, for
+    /// an audio-only source).
     pub fn next_frame(&self) -> Result<Option<Frame>, ExportError> {
+        if !self.shared.cfg.want_video {
+            return Ok(None);
+        }
         let sink = self.video()?;
         loop {
             match sink.try_pull_sample(Some(clock(PULL))) {

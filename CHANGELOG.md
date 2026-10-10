@@ -5,6 +5,22 @@ reason)`.
 
 ## Unreleased
 
+- M9.3 (part 3) — Exports no longer hold the encoded file in memory: the encoder's
+  packets are spooled to `<out>.spool` as they come (only sample metadata in RAM) and
+  muxed with `klip_mp4::write_mp4_spooled` into `<out>.part`, renamed at the end
+  (`klip_export::files::OwnedFile`: created with `create_new`, removed unless
+  committed, never touches a file it did not create); the size bound is now a 64 GB
+  sanity check. `source::Source` gains an audio-only mode (other streams stay
+  undecoded, into a fakesink) and a picture mode (own size, at most 4096 a side). In
+  `klip_edit::compose`: `fitted` (a layer's size before its transform: the main clip
+  fills the canvas, other videos fit inside it, pictures keep their size relative to
+  the main clip), `visible` (only the part of a placed picture that lands on the
+  canvas is drawn, so an 8x zoom never scales a frame to 8x the canvas),
+  `Composition::{source, crop}`, `max_overlap` counts pictures only (text is drawn on
+  top), `Colour::matrix` (the grade as one affine RGB matrix, shared with the preview
+  as an SVG `feColorMatrix`). The six hardware export tests pass with the spool.
+  (Claude Opus 5.5: M9.3)
+
 - M9.3 (part 2) — Groundwork for the Advanced-mode renderer. `klip_mp4::write_mp4_spooled`
   (IMPROVEMENTS G1): sample bytes stay in a spool file, only their metadata in memory,
   output byte-identical to `write_mp4`. `klip_edit::compose` gains the placement math the

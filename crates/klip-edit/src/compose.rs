@@ -12,6 +12,7 @@ use crate::advanced::{
     Colour, Ducking, Ease, Keyframe, Marker, MarkerKind, Source, SpeedPoint, TrackKind, Transform,
     TransformKey, TransitionKind, ramp,
 };
+use crate::format::Rect;
 use crate::plan::{MAX_MARKERS, SourceInfo};
 use crate::project::{MAX_SOURCE_MS, Project, Speed, Volumes};
 use crate::text::TextLayer;
@@ -105,6 +106,11 @@ pub struct Composition {
     /// The main clip's Game/Mic mix (Normal mode's sliders).
     pub main_volumes: Volumes,
     pub colour: Colour,
+    /// The main clip as probed when the composition was made.
+    pub source: SourceInfo,
+    /// The part of the main clip's frame that is kept (Normal mode's format), source
+    /// pixels: the canvas is this, scaled to the export size.
+    pub crop: Rect,
     /// Output-time markers: the clip's bookmarks that survive the edit, then the
     /// Advanced-mode markers.
     pub markers: Vec<Marker>,
@@ -317,6 +323,8 @@ pub fn compose(project: &Project, source: &SourceInfo) -> Composition {
         colour: p.advanced.colour,
         markers,
         ducking: p.advanced.ducking,
+        source: source.clone(),
+        crop: p.format.crop_rect(source.width, source.height),
     }
 }
 
@@ -337,18 +345,107 @@ fn round_half_up(v: f64) -> f64 {
     (v + 0.5).floor()
 }
 
-/// `w x h` scaled down (never up) to fit `max_w x max_h`, keeping the aspect ratio;
-/// even sides, at least 2.
-pub fn fit_in(w: u32, h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
+/// `w x h` scaled to fit `max_w x max_h` keeping the aspect ratio (up only when
+/// `upscale`); even sides, at least 2.
+fn scale_into(w: u32, h: u32, max_w: u32, max_h: u32, upscale: bool) -> (u32, u32) {
     let (w, h) = (f64::from(w.max(1)), f64::from(h.max(1)));
-    let scale = (f64::from(max_w.max(2)) / w)
-        .min(f64::from(max_h.max(2)) / h)
-        .min(1.0);
+    let mut scale = (f64::from(max_w.max(2)) / w).min(f64::from(max_h.max(2)) / h);
+    if !upscale {
+        scale = scale.min(1.0);
+    }
     let even = |v: f64| {
         let px = round_half_up(v).clamp(2.0, f64::from(u32::MAX)) as u32;
         (px & !1).max(2)
     };
     (even(w * scale), even(h * scale))
+}
+
+/// `w x h` scaled down (never up) to fit `max_w x max_h`, keeping the aspect ratio;
+/// even sides, at least 2.
+pub fn fit_in(w: u32, h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
+    scale_into(w, h, max_w, max_h, false)
+}
+
+/// A layer's picture size at zoom 1, in canvas pixels. The canvas is the main clip's
+/// crop scaled to the export size, so the main clip fills it; another video fits inside
+/// it (scaled up or down, keeping its aspect); a picture keeps its size relative to the
+/// main clip (`crop_w` source pixels across = the canvas width), shrunk to fit.
+/// `native` is the picture's own size (a video's whole frame).
+pub fn fitted(
+    kind: LayerKind,
+    main: bool,
+    native: (u32, u32),
+    crop_w: u32,
+    canvas: (u32, u32),
+) -> (u32, u32) {
+    let (out_w, out_h) = (canvas.0.max(2), canvas.1.max(2));
+    if main {
+        return (out_w, out_h);
+    }
+    match kind {
+        LayerKind::Image => {
+            let s = f64::from(out_w) / f64::from(crop_w.max(1));
+            let px = |v: u32| {
+                round_half_up(f64::from(v.max(1)) * s).clamp(1.0, f64::from(u32::MAX)) as u32
+            };
+            fit_in(px(native.0), px(native.1), out_w, out_h)
+        }
+        _ => scale_into(native.0, native.1, out_w, out_h, true),
+    }
+}
+
+/// What of a `src_w x src_h` picture placed at `p` lands on an `out_w x out_h` canvas:
+/// the source rectangle (whole pixels, at least 1) and where it goes, or `None` when
+/// nothing shows. Drawing only this part keeps a big zoom from scaling the whole
+/// picture to many times the canvas.
+pub fn visible(
+    p: Placement,
+    src_w: u32,
+    src_h: u32,
+    out_w: u32,
+    out_h: u32,
+) -> Option<(Rect, Rect)> {
+    if p.width == 0 || p.height == 0 || src_w == 0 || src_h == 0 {
+        return None;
+    }
+    let axis = |pos: i32, len: u32, src: u32, out: u32| -> Option<(u32, u32, u32, u32)> {
+        let start = i64::from(pos);
+        let end = start.saturating_add(i64::from(len));
+        let d0 = start.max(0);
+        let d1 = end.min(i64::from(out));
+        if d1 <= d0 {
+            return None;
+        }
+        let to_src = |d: i64| {
+            let v = (d.saturating_sub(start)) as f64 * f64::from(src) / f64::from(len);
+            round_half_up(v).clamp(0.0, f64::from(src)) as u32
+        };
+        let mut s0 = to_src(d0);
+        let mut s1 = to_src(d1);
+        if s1 <= s0 {
+            s1 = s0.saturating_add(1).min(src);
+            s0 = s1.saturating_sub(1);
+        }
+        let d0 = u32::try_from(d0).ok()?;
+        let d1 = u32::try_from(d1).ok()?;
+        Some((s0, s1.saturating_sub(s0), d0, d1.saturating_sub(d0)))
+    };
+    let (sx, sw, dx, dw) = axis(p.x, p.width, src_w, out_w)?;
+    let (sy, sh, dy, dh) = axis(p.y, p.height, src_h, out_h)?;
+    Some((
+        Rect {
+            x: sx,
+            y: sy,
+            width: sw,
+            height: sh,
+        },
+        Rect {
+            x: dx,
+            y: dy,
+            width: dw,
+            height: dh,
+        },
+    ))
 }
 
 /// The placement of a picture whose fitted (zoom 1) size is `fit_w x fit_h` on a
@@ -492,8 +589,8 @@ impl Composition {
             .filter(move |t| out_ms >= t.start_ms && out_ms < t.end_ms)
     }
 
-    /// The most things on screen at once (layers and text cues): what a renderer
-    /// needs in simultaneous inputs.
+    /// The most pictures on screen at once (video and image layers; text is drawn on
+    /// top separately): what a renderer needs in simultaneous inputs.
     pub fn max_overlap(&self) -> usize {
         let mut events: Vec<(u64, i32)> = Vec::new();
         for l in self
@@ -503,10 +600,6 @@ impl Composition {
         {
             events.push((l.at_ms, 1));
             events.push((l.end_ms, -1));
-        }
-        for t in &self.texts {
-            events.push((t.start_ms, 1));
-            events.push((t.end_ms, -1));
         }
         // Ends before starts at the same time: a cut is not an overlap.
         events.sort_unstable();
@@ -756,10 +849,158 @@ mod tests {
                 ..TextLayer::default()
             },
         ];
-        assert_eq!(c.max_overlap(), 3);
+        assert_eq!(c.max_overlap(), 2, "text is not counted");
         let ids: Vec<u32> = c.texts_at(1_500).map(|t| t.id).collect();
         assert_eq!(ids, vec![2]);
         assert_eq!(c.texts_at(949).count(), 0);
+    }
+
+    #[test]
+    fn fitted_sizes_follow_the_layer_kind() {
+        let canvas = (1280, 720);
+        assert_eq!(
+            fitted(LayerKind::Video, true, (1920, 1080), 1920, canvas),
+            canvas
+        );
+        // Another video fits inside, up or down.
+        assert_eq!(
+            fitted(LayerKind::Video, false, (640, 360), 1920, canvas),
+            (1280, 720)
+        );
+        assert_eq!(
+            fitted(LayerKind::Video, false, (1080, 1920), 1920, canvas),
+            (404, 720)
+        );
+        // A 512 px picture on a 1920-wide crop is 512/1920 of the canvas at any size.
+        assert_eq!(
+            fitted(LayerKind::Image, false, (512, 512), 1920, canvas),
+            (340, 340)
+        );
+        assert_eq!(
+            fitted(LayerKind::Image, false, (512, 512), 1920, (1920, 1080)),
+            (512, 512)
+        );
+        // ... and never more than the canvas.
+        assert_eq!(
+            fitted(LayerKind::Image, false, (8000, 100), 1920, canvas),
+            (1280, 16)
+        );
+        assert_eq!(fitted(LayerKind::Image, false, (0, 0), 0, (0, 0)), (2, 2));
+    }
+
+    #[test]
+    fn visible_crops_to_the_canvas() {
+        let full = Placement {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        let r = |x, y, width, height| Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        assert_eq!(
+            visible(full, 1920, 1080, 1920, 1080),
+            Some((r(0, 0, 1920, 1080), r(0, 0, 1920, 1080)))
+        );
+        // Zoom 2 about the centre: the middle half of the source fills the canvas.
+        let z = place(tf(2.0, 0.0, 0.0), 1920, 1080, 1920, 1080);
+        assert_eq!(
+            visible(z, 1920, 1080, 1920, 1080),
+            Some((r(480, 270, 960, 540), r(0, 0, 1920, 1080)))
+        );
+        // The same with a source decoded at half size.
+        assert_eq!(
+            visible(z, 960, 540, 1920, 1080),
+            Some((r(240, 135, 480, 270), r(0, 0, 1920, 1080)))
+        );
+        // Shifted half off the right edge.
+        let s = place(tf(1.0, 0.5, 0.0), 1920, 1080, 1920, 1080);
+        assert_eq!(
+            visible(s, 1920, 1080, 1920, 1080),
+            Some((r(0, 0, 960, 1080), r(960, 0, 960, 1080)))
+        );
+        // A sliver keeps at least one source pixel.
+        let thin = Placement {
+            x: 1919,
+            y: 0,
+            width: 7680,
+            height: 1080,
+        };
+        let (src, dst) = visible(thin, 10, 10, 1920, 1080).unwrap();
+        assert_eq!((src.width, dst), (1, r(1919, 0, 1, 1080)));
+        // Off the canvas, or empty.
+        let off = Placement { x: 1920, ..full };
+        assert_eq!(visible(off, 1920, 1080, 1920, 1080), None);
+        let left = Placement { x: -1920, ..full };
+        assert_eq!(visible(left, 1920, 1080, 1920, 1080), None);
+        assert_eq!(visible(Placement::default(), 10, 10, 10, 10), None);
+        assert_eq!(visible(full, 0, 10, 10, 10), None);
+        let huge = place(tf(8.0, 1.0, 1.0), u32::MAX, u32::MAX, u32::MAX, u32::MAX);
+        let (src, dst) = visible(huge, 10, 10, 1920, 1080).unwrap();
+        assert!(dst.x + dst.width <= 1920 && dst.y + dst.height <= 1080);
+        assert!(src.width >= 1 && src.x + src.width <= 10);
+    }
+
+    #[test]
+    fn colour_is_one_affine_matrix() {
+        let id = Colour::default().matrix();
+        assert_eq!(id[0], [1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(id[2], [0.0, 0.0, 1.0, 0.0]);
+        assert!(Colour::default().is_identity());
+        let apply = |m: [[f32; 4]; 3], px: [f32; 3]| -> Vec<f32> {
+            m.iter()
+                .map(|row| row[0] * px[0] + row[1] * px[1] + row[2] * px[2] + row[3])
+                .collect()
+        };
+        let grey = Colour {
+            saturation: 0.0,
+            ..Colour::default()
+        };
+        let g = apply(grey.matrix(), [255.0, 0.0, 0.0]);
+        assert!(g.iter().all(|v| (v - 0.2126 * 255.0).abs() < 1e-3), "{g:?}");
+        let bright = Colour {
+            brightness: 0.5,
+            ..Colour::default()
+        };
+        assert_eq!(
+            apply(bright.matrix(), [10.0, 20.0, 30.0]),
+            vec![137.5, 147.5, 157.5]
+        );
+        let flat = Colour {
+            contrast: 0.0,
+            ..Colour::default()
+        };
+        assert_eq!(
+            apply(flat.matrix(), [0.0, 99.0, 255.0]),
+            vec![128.0, 128.0, 128.0]
+        );
+        let junk = Colour {
+            brightness: f32::NAN,
+            contrast: 9.0,
+            saturation: f32::NEG_INFINITY,
+        };
+        assert_eq!(
+            junk.sanitized(),
+            Colour {
+                brightness: 0.0,
+                contrast: 2.0,
+                saturation: 1.0
+            }
+        );
+    }
+
+    #[test]
+    fn composition_keeps_the_crop() {
+        let mut p = Project::new(10_000);
+        p.format.kind = crate::format::FormatKind::Tall;
+        let c = compose(&p, &source());
+        assert_eq!(c.crop, p.format.crop_rect(1920, 1080));
+        assert!(c.crop.width < c.crop.height);
+        assert_eq!(c.source, source());
     }
 
     fn source() -> SourceInfo {
