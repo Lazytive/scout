@@ -1,6 +1,7 @@
 <!-- The Home workspace: a monitor of the replay buffer, an info panel and the activity /
      hotkey panel, docked like Photocraft / FilmCraft panels. -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { actionLabel, formatBytes, formatDuration, formatTimecode } from './lib/format';
   import Panel from './lib/Panel.svelte';
   import { app, run } from './lib/store.svelte';
@@ -31,8 +32,31 @@
   );
 
   const who = $derived(st?.game?.name ?? (st?.desktop ? 'Desktop' : 'No game running'));
-  const buffered = $derived(rec?.buffered_ms ?? 0);
   const capacity = $derived(rec?.buffer_ms ?? 0);
+
+  // `status` comes every 2 s (store.svelte.ts) while the buffer grows in real time, so
+  // count up locally in between instead of jumping 2 s at a time (human check,
+  // 2026-10-10): at most one poll ahead, never past the capacity, and a poll a few ms
+  // behind the count doesn't step it back (a bigger drop, e.g. a new game, does).
+  const POLL_MS = 2000;
+  let polled = $state({ ms: 0, at: 0 });
+  let now = $state(0);
+  const growing = $derived((mode === 'buffering' || mode === 'recording') && capacity > 0);
+  const buffered = $derived(
+    growing ? Math.min(capacity, polled.ms + Math.min(POLL_MS, Math.max(0, now - polled.at))) : polled.ms,
+  );
+  $effect(() => {
+    const ms = rec?.buffered_ms ?? 0;
+    const at = performance.now();
+    const shown = untrack(() => buffered);
+    polled = { ms: ms < shown && shown - ms < 500 ? shown : ms, at };
+    now = at;
+  });
+  $effect(() => {
+    if (!growing) return;
+    const timer = setInterval(() => (now = performance.now()), 200);
+    return () => clearInterval(timer);
+  });
   const fill = $derived(capacity > 0 ? Math.min(1, buffered / capacity) : 0);
 
   const clipKeys = $derived(

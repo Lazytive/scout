@@ -184,6 +184,7 @@ export function mockEditor(emit: (e: KlipEvent) => void, byPath: (path: string) 
       case 'export.status':
         return {
           active: active ? { id: active.id, key: active.key, out: active.out, preset: active.preset, pass: 1, frames_done: 0, frames_total: 0, elapsed_ms: 0 } : null,
+          proxy: null,
           last,
         };
       default:

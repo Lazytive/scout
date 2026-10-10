@@ -94,8 +94,10 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   `youtube` / `tiktok` / `discord`) renders the saved project with `klip-export` on a
   `klip-export-<id>` thread through its own media worker into
   `<name> - <Preset>.mp4` next to the clip (`Library::unique_sibling`: ` (2)`, ` (3)`
-  … when taken; never overwrites) → `{id, out}`; one at a time (`busy`);
-  `export.cancel {id}` (`not_found` otherwise); `export.status` → `{active, last}`.
+  … when taken; never overwrites) → `{id, out}`; one at a time (`busy`), while the
+  preview proxy has a slot of its own (one at a time too) so neither blocks the other;
+  `export.cancel {id}` (either kind; `not_found` otherwise); `export.status` →
+  `{active, proxy, last}`.
   Events: `export_progress {id, key, preset, pass, frames_done, frames_total}` (at most
   every 250 ms or on a new pass; the bus drops when flooded, so `export.status` is the
   truth) and one `export_done {id, key, preset, ok, path, error, summary}`; a finished

@@ -4,7 +4,8 @@
 //! runs at a time (`busy` otherwise). Progress comes as `export_progress` events (at
 //! most a few per second), the end as one `export_done`; a finished export is indexed
 //! by the library and gets its thumbnails. The editor's preview proxy is the same job
-//! with the `proxy` preset, written to `.klip/proxies/`.
+//! with the `proxy` preset, written to `.klip/proxies/`, in a slot of its own: making a
+//! preview never blocks an export, nor an export a preview (human check, 2026-10-10).
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -46,7 +47,7 @@ impl ExportKind {
     }
 }
 
-/// The export that runs now.
+/// A job that runs now.
 struct Active {
     id: u64,
     key: String,
@@ -57,28 +58,96 @@ struct Active {
     started: Instant,
 }
 
-/// Export state behind `Inner::exports`.
+impl Active {
+    fn status(&self) -> Value {
+        json!({
+            "id": self.id,
+            "key": self.key,
+            "out": self.out.to_string_lossy(),
+            "preset": self.preset,
+            "pass": self.progress.pass,
+            "frames_done": self.progress.frames_done,
+            "frames_total": self.progress.frames_total,
+            "elapsed_ms": self.started.elapsed().as_millis() as u64,
+        })
+    }
+}
+
+/// Export state behind `Inner::exports`: one user export and one preview proxy at a
+/// time, side by side.
 #[derive(Default)]
 pub(super) struct ExportState {
+    /// The user export that runs now.
     active: Option<Active>,
+    /// The preview proxy being made now.
+    proxy: Option<Active>,
     /// The last finished export (what `export_done` said).
     last: Option<Value>,
     next_id: u64,
+}
+
+impl ExportState {
+    fn slot(&mut self, kind: ExportKind) -> &mut Option<Active> {
+        match kind {
+            ExportKind::Preset(_) => &mut self.active,
+            ExportKind::Proxy => &mut self.proxy,
+        }
+    }
+
+    fn running(&self) -> impl Iterator<Item = &Active> {
+        self.active.iter().chain(self.proxy.iter())
+    }
+
+    fn find_mut(&mut self, id: u64) -> Option<&mut Active> {
+        [&mut self.active, &mut self.proxy]
+            .into_iter()
+            .find_map(|s| s.as_mut().filter(|a| a.id == id))
+    }
+
+    /// Take `kind`'s slot for a new job (`busy` while that kind runs); the job's id.
+    fn claim(
+        &mut self,
+        kind: ExportKind,
+        make: impl FnOnce(u64) -> Active,
+    ) -> Result<u64, CommandError> {
+        if self.slot(kind).is_some() {
+            return Err(busy(kind));
+        }
+        self.next_id = self.next_id.saturating_add(1);
+        let id = self.next_id;
+        *self.slot(kind) = Some(make(id));
+        Ok(id)
+    }
+
+    /// Free the slot of job `id`, whichever kind it is.
+    fn release(&mut self, id: u64) {
+        for slot in [&mut self.active, &mut self.proxy] {
+            if slot.as_ref().is_some_and(|a| a.id == id) {
+                *slot = None;
+            }
+        }
+    }
+}
+
+fn busy(kind: ExportKind) -> CommandError {
+    match kind {
+        ExportKind::Preset(_) => CommandError::new("busy", "an export is already running"),
+        ExportKind::Proxy => CommandError::new("busy", "a preview is already being made"),
+    }
 }
 
 impl Inner {
     /// The id of a running export of `key` with `preset`, if any.
     pub(super) fn export_running_for(&self, key: &str, preset: &str) -> Option<u64> {
         let st = lock(&self.exports);
-        st.active
-            .as_ref()
-            .filter(|a| a.key == key && a.preset == preset)
+        st.running()
+            .find(|a| a.key == key && a.preset == preset)
             .map(|a| a.id)
     }
 
-    /// Stop a running export (engine shutdown).
+    /// Stop the running jobs (engine shutdown).
     pub(super) fn cancel_export(&self) {
-        if let Some(a) = &lock(&self.exports).active {
+        for a in lock(&self.exports).running() {
             a.cancel.store(true, Ordering::Relaxed);
         }
     }
@@ -102,30 +171,22 @@ impl Inner {
             .and_then(Value::as_u64)
             .ok_or_else(|| CommandError::bad_args("id must be a number"))?;
         let st = lock(&self.exports);
-        match &st.active {
-            Some(a) if a.id == id => {
+        match st.running().find(|a| a.id == id) {
+            Some(a) => {
                 a.cancel.store(true, Ordering::Relaxed);
                 Ok(json!({ "id": id }))
             }
-            _ => Err(CommandError::new("not_found", "no such export")),
+            None => Err(CommandError::new("not_found", "no such export")),
         }
     }
 
     pub(super) fn export_status(&self, _args: &Value) -> Result<Value, CommandError> {
         let st = lock(&self.exports);
-        let active = st.active.as_ref().map(|a| {
-            json!({
-                "id": a.id,
-                "key": a.key,
-                "out": a.out.to_string_lossy(),
-                "preset": a.preset,
-                "pass": a.progress.pass,
-                "frames_done": a.progress.frames_done,
-                "frames_total": a.progress.frames_total,
-                "elapsed_ms": a.started.elapsed().as_millis() as u64,
-            })
-        });
-        Ok(json!({ "active": active, "last": st.last }))
+        Ok(json!({
+            "active": st.active.as_ref().map(Active::status),
+            "proxy": st.proxy.as_ref().map(Active::status),
+            "last": st.last,
+        }))
     }
 
     /// Start a job for `key`: the project rendered with a preset next to the clip, or
@@ -138,8 +199,8 @@ impl Inner {
         key: String,
         info: &ClipInfo,
     ) -> Result<(u64, PathBuf), CommandError> {
-        if lock(&self.exports).active.is_some() {
-            return Err(CommandError::new("busy", "an export is already running"));
+        if lock(&self.exports).slot(kind).is_some() {
+            return Err(busy(kind));
         }
         let source = source_of(info);
         let (render, out) = match kind {
@@ -170,24 +231,15 @@ impl Inner {
         };
         let preset = kind.preset();
         let cancel = Arc::new(AtomicBool::new(false));
-        let id = {
-            let mut st = lock(&self.exports);
-            if st.active.is_some() {
-                return Err(CommandError::new("busy", "an export is already running"));
-            }
-            st.next_id = st.next_id.saturating_add(1);
-            let id = st.next_id;
-            st.active = Some(Active {
-                id,
-                key: key.clone(),
-                out: out.clone(),
-                preset: preset.id(),
-                cancel: cancel.clone(),
-                progress: Progress::default(),
-                started: Instant::now(),
-            });
-            id
-        };
+        let id = lock(&self.exports).claim(kind, |id| Active {
+            id,
+            key: key.clone(),
+            out: out.clone(),
+            preset: preset.id(),
+            cancel: cancel.clone(),
+            progress: Progress::default(),
+            started: Instant::now(),
+        })?;
         let job = ExportJob {
             id,
             clip,
@@ -206,7 +258,7 @@ impl Inner {
             .name(format!("klip-export-{id}"))
             .spawn(move || export_thread(&me, exe, job, kind, key, root, cancel));
         if let Err(e) = spawned {
-            lock(&self.exports).active = None;
+            lock(&self.exports).release(id);
             return Err(CommandError::new(
                 "failed",
                 format!("no thread for the export: {e}"),
@@ -219,7 +271,7 @@ impl Inner {
     fn export_progress(&self, id: u64, p: Progress, last_emit: &mut Instant, force: bool) {
         let (key, preset, pass_changed) = {
             let mut st = lock(&self.exports);
-            let Some(a) = st.active.as_mut().filter(|a| a.id == id) else {
+            let Some(a) = st.find_mut(id) else {
                 return;
             };
             let changed = a.progress.pass != p.pass;
@@ -287,9 +339,7 @@ fn export_thread(
     });
     {
         let mut st = lock(&inner.exports);
-        if st.active.as_ref().is_some_and(|a| a.id == id) {
-            st.active = None;
-        }
+        st.release(id);
         st.last = Some(done.clone());
     }
     tracing::info!(id, %key, preset = preset.id(), ok, "export finished");
@@ -310,5 +360,48 @@ fn export_thread(
         if let Some(new_key) = path.as_deref().and_then(|p| lib.key(Path::new(p)).ok()) {
             inner.queue_new_clip(&root, new_key);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn job(id: u64) -> Active {
+        Active {
+            id,
+            key: "Game/Clip.mp4".into(),
+            out: PathBuf::from("Clip - Discord.mp4"),
+            preset: "discord",
+            cancel: Arc::new(AtomicBool::new(false)),
+            progress: Progress::default(),
+            started: Instant::now(),
+        }
+    }
+
+    #[test]
+    fn a_proxy_and_an_export_run_side_by_side() {
+        let mut st = ExportState::default();
+        let export = ExportKind::Preset(Preset::Discord);
+        // The preview proxy of an HEVC clip is being made: an export still starts.
+        let proxy = st.claim(ExportKind::Proxy, job).unwrap();
+        let first = st.claim(export, job).unwrap();
+        assert_ne!(proxy, first);
+        assert_eq!(st.running().count(), 2);
+        // One of each kind at a time.
+        let e = st.claim(export, job).unwrap_err();
+        assert_eq!(
+            (e.code, e.message.as_str()),
+            ("busy", "an export is already running")
+        );
+        assert_eq!(st.claim(ExportKind::Proxy, job).unwrap_err().code, "busy");
+        // Freeing one leaves the other running.
+        st.release(proxy);
+        assert!(st.proxy.is_none());
+        assert_eq!(st.active.as_ref().map(|a| a.id), Some(first));
+        assert!(st.claim(ExportKind::Proxy, job).is_ok());
+        st.release(first);
+        assert!(st.active.is_none());
+        assert!(st.claim(export, job).is_ok());
     }
 }

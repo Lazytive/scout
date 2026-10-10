@@ -430,6 +430,8 @@ export function editorEvent(e: KlipEvent): void {
       return;
     }
     ed.exporting = null;
+    // A refusal from while it ran ("an export is already running") is stale now.
+    ed.exportError = null;
     ed.exportResult = { id: e.id, preset: e.preset, ok: e.ok, path: e.path, error: e.error, summary: e.summary };
     if (e.ok) refreshSoon(300);
   }

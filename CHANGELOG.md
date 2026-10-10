@@ -5,6 +5,13 @@ reason)`.
 
 ## Unreleased
 
+- M8.7 — Fixes from the M8 human checks: the editor's preview proxy gets an export
+  slot of its own (`ExportState::{active, proxy}`, `export.status` → `{active, proxy,
+  last}`), so opening an HEVC clip no longer refuses an export with "an export is
+  already running", nor an export the preview; the editor clears that refusal when the
+  export ends. The Home monitor's buffer counter counts up every second between the
+  2 s status polls instead of jumping 2 s. (Claude Opus 5.5: the human hit both)
+
 - M9.2 — Schema v2: `klip_edit::advanced` (the `advanced` object: tracks of placed
   clips with keyframed transform/opacity/volume and speed ramps, transitions, colour,
   markers, ducking; lenient per-entry parse, idempotent repair with caps;
