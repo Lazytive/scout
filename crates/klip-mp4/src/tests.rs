@@ -482,3 +482,64 @@ fn audio_tracks_are_named_grouped_and_only_the_mix_enabled() {
         0
     );
 }
+
+/// Packets spooled to a file in arrival order (audio and video interleaved as they
+/// came) write the same bytes as the in-memory writer.
+#[test]
+fn spooled_writer_matches_the_in_memory_one() {
+    let vi = video_info();
+    let ai = audio_info();
+    let v = video_packets(90, 2_000_000_000);
+    let a = audio_packets(60, 2_000_000_000);
+    let marks = [Marker {
+        at: 2_500_000_000,
+        title: "half".into(),
+    }];
+    let opts = Mp4Options {
+        creation_time_unix: 1_700_000_000,
+        force_co64: false,
+        markers: &marks,
+    };
+    let (want, _) = write(&[Mp4Track::new(&vi, &v), Mp4Track::new(&ai, &a)], opts);
+    // The spool: whatever order the encoders produced, offsets recorded.
+    let mut spool: Vec<u8> = Vec::new();
+    let mut vs = Vec::new();
+    let mut r#as = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < v.len() || j < a.len() {
+        let take_video = j >= a.len() || (i < v.len() && i % 3 != 2);
+        let (p, list) = if take_video {
+            i += 1;
+            (&v[i - 1], &mut vs)
+        } else {
+            j += 1;
+            (&a[j - 1], &mut r#as)
+        };
+        let mut s = Sample::of(p).unwrap();
+        s.offset = spool.len() as u64;
+        spool.extend_from_slice(&p.data);
+        list.push(s);
+    }
+    let tracks = [
+        SpooledTrack {
+            info: &vi,
+            samples: &vs,
+            name: None,
+            enabled: true,
+        },
+        SpooledTrack {
+            info: &ai,
+            samples: &r#as,
+            name: None,
+            enabled: true,
+        },
+    ];
+    let mut got = Vec::new();
+    let s = write_mp4_spooled(&mut got, &tracks, &opts, &mut std::io::Cursor::new(&spool)).unwrap();
+    assert_eq!(got, want);
+    assert_eq!(s.bytes as usize, got.len());
+    // A short spool is an error, not a truncated file.
+    let short = &spool[..spool.len() - 1];
+    let mut out = Vec::new();
+    assert!(write_mp4_spooled(&mut out, &tracks, &opts, &mut std::io::Cursor::new(short)).is_err());
+}

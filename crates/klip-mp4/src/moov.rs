@@ -4,7 +4,7 @@
 use klip_media::{Codec, NANOS_PER_SEC, Nanos, Packet, TrackInfo, TrackParams};
 
 use crate::boxes::BoxBuf;
-use crate::{MAX_TRACK_NAME_BYTES, Mp4Error, Mp4Track};
+use crate::{MAX_TRACK_NAME_BYTES, Mp4Error, Sample};
 
 pub(crate) const MOVIE_TIMESCALE: u32 = 1000;
 pub(crate) const VIDEO_TIMESCALE: u32 = 90_000;
@@ -105,17 +105,24 @@ impl<'a> TrackPlan<'a> {
     }
 
     /// Plan for the packets of a clip track. Chunks are filled in by the layout.
-    pub(crate) fn from_packets(index: usize, t: &Mp4Track<'a>) -> Result<TrackPlan<'a>, Mp4Error> {
-        let mut plan = TrackPlan::empty(index, t.info, t.name, t.enabled)?;
-        let first = t.packets.first().ok_or(Mp4Error::EmptyTrack(index))?;
+    /// A plan from sample metadata (sizes and times), the bytes living elsewhere.
+    pub(crate) fn from_samples(
+        index: usize,
+        info: &'a TrackInfo,
+        name: Option<&'a str>,
+        enabled: bool,
+        samples: &[Sample],
+    ) -> Result<TrackPlan<'a>, Mp4Error> {
+        let mut plan = TrackPlan::empty(index, info, name, enabled)?;
+        let first = samples.first().ok_or(Mp4Error::EmptyTrack(index))?;
         let timescale = plan.timescale;
-        let n = t.packets.len();
+        let n = samples.len();
         let mut dts_ts = Vec::with_capacity(n);
         plan.cts_offsets.reserve(n);
         plan.sizes.reserve(n);
         plan.sync.reserve(n);
         let mut prev_dts = first.dts;
-        for p in t.packets {
+        for p in samples {
             if p.dts < prev_dts {
                 return Err(Mp4Error::NonMonotonic(index));
             }
@@ -128,7 +135,7 @@ impl<'a> TrackPlan<'a> {
             let cts = ns_to_ts(p.pts.saturating_sub(p.dts), timescale);
             plan.cts_offsets
                 .push(i32::try_from(cts).map_err(|_| Mp4Error::TooLarge("composition offset"))?);
-            plan.sizes.push(sample_size(p)?);
+            plan.sizes.push(p.size);
             plan.sync.push(p.keyframe);
         }
         plan.durations.reserve(n);
@@ -144,7 +151,7 @@ impl<'a> TrackPlan<'a> {
                 .push(u32::try_from(d).map_err(|_| Mp4Error::TooLarge("sample duration"))?);
         }
         // The last sample keeps its own duration, else the previous one, else a default.
-        let last_pkt_duration = t.packets.last().map(|p| p.duration).unwrap_or(0);
+        let last_pkt_duration = samples.last().map(|p| p.duration).unwrap_or(0);
         let last = if last_pkt_duration > 0 {
             u32::try_from(ns_to_ts(last_pkt_duration, timescale))
                 .map_err(|_| Mp4Error::TooLarge("sample duration"))?

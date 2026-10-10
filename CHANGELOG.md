@@ -5,6 +5,22 @@ reason)`.
 
 ## Unreleased
 
+- M9.3 (part 2) — Groundwork for the Advanced-mode renderer. `klip_mp4::write_mp4_spooled`
+  (IMPROVEMENTS G1): sample bytes stay in a spool file, only their metadata in memory,
+  output byte-identical to `write_mp4`. `klip_edit::compose` gains the placement math the
+  renderer and the preview share (`fit_in`: never upscales, even sides; `place`: zoom
+  about the centre, shift by a fraction of the canvas, `floor(v + 0.5)` rounding like
+  JavaScript, hostile values clamped), `Layer::pieces` (constant-rate spans at speed
+  points, capped length), `Layer::max_zoom`, `Composition::{frame_out_ms, frame_count,
+  texts_at, max_overlap}`, with tests. The `gstreamer-controller` dependency Fable had
+  added is dropped: the renderer composes in-process (see the M9.3 renderer entry).
+  (Claude Fable 5.1 wrote most of it before the usage limit; Claude Opus 5.5 applied the
+  last patch, added the tests and committed: M9.3)
+
+- M9.3 (part 1) — `klip_edit::compose`: a project in either mode as layers on the output
+  timeline (Normal mode's segments as track 0, Advanced tracks above, transitions as
+  overlaps and opacity ramps, markers from bookmarks). (Claude Fable 5.1: M9.3)
+
 - M8.7 — Fixes from the M8 human checks: the editor's preview proxy gets an export
   slot of its own (`ExportState::{active, proxy}`, `export.status` → `{active, proxy,
   last}`), so opening an HEVC clip no longer refuses an export with "an export is

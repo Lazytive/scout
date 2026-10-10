@@ -20,7 +20,7 @@ mod moov;
 mod read;
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use klip_media::{Nanos, Packet, TrackInfo};
@@ -151,11 +151,112 @@ pub struct Mp4Summary {
     pub samples: usize,
 }
 
+/// A sample whose bytes live outside the packet (in a spool file): what
+/// [`write_mp4_spooled`] needs to know about each packet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Sample {
+    pub pts: Nanos,
+    pub dts: Nanos,
+    /// Duration, or 0 when unknown.
+    pub duration: Nanos,
+    pub keyframe: bool,
+    pub size: u32,
+    /// Where the bytes start in the spool.
+    pub offset: u64,
+}
+
+impl Sample {
+    /// The metadata of a packet (`offset` 0).
+    pub fn of(p: &Packet) -> Result<Sample, Mp4Error> {
+        Ok(Sample {
+            pts: p.pts,
+            dts: p.dts,
+            duration: p.duration,
+            keyframe: p.keyframe,
+            size: u32::try_from(p.data.len()).map_err(|_| Mp4Error::TooLarge("sample size"))?,
+            offset: 0,
+        })
+    }
+}
+
+/// A track whose sample bytes sit in a spool (see [`write_mp4_spooled`]).
+#[derive(Clone, Copy, Debug)]
+pub struct SpooledTrack<'a> {
+    pub info: &'a TrackInfo,
+    /// Samples in decode order.
+    pub samples: &'a [Sample],
+    pub name: Option<&'a str>,
+    pub enabled: bool,
+}
+
+/// What both writers work from.
+struct Desc<'a> {
+    info: &'a TrackInfo,
+    name: Option<&'a str>,
+    enabled: bool,
+    samples: Vec<Sample>,
+}
+
 /// Write an MP4 to `out`. Tracks keep their order; give video first.
 pub fn write_mp4<W: Write>(
     out: &mut W,
     tracks: &[Mp4Track<'_>],
     opts: &Mp4Options<'_>,
+) -> Result<Mp4Summary, Mp4Error> {
+    let descs = tracks
+        .iter()
+        .map(|t| {
+            Ok(Desc {
+                info: t.info,
+                name: t.name,
+                enabled: t.enabled,
+                samples: t.packets.iter().map(Sample::of).collect::<Result<_, _>>()?,
+            })
+        })
+        .collect::<Result<Vec<_>, Mp4Error>>()?;
+    write_inner(out, &descs, opts, |w, ti, si, _| {
+        let p = tracks
+            .get(ti)
+            .and_then(|t| t.packets.get(si))
+            .ok_or(Mp4Error::Internal("sample index"))?;
+        w.write_all(&p.data)?;
+        Ok(())
+    })
+}
+
+/// [`write_mp4`] for packets whose bytes were spooled to `payload` as they were
+/// produced (an export that must not hold the whole file in memory): each sample is
+/// read back from its `offset`. The result is byte for byte what `write_mp4` writes.
+pub fn write_mp4_spooled<W: Write, R: Read + Seek>(
+    out: &mut W,
+    tracks: &[SpooledTrack<'_>],
+    opts: &Mp4Options<'_>,
+    payload: &mut R,
+) -> Result<Mp4Summary, Mp4Error> {
+    let descs: Vec<Desc<'_>> = tracks
+        .iter()
+        .map(|t| Desc {
+            info: t.info,
+            name: t.name,
+            enabled: t.enabled,
+            samples: t.samples.to_vec(),
+        })
+        .collect();
+    write_inner(out, &descs, opts, |w, _, _, s| {
+        payload.seek(SeekFrom::Start(s.offset))?;
+        let copied = std::io::copy(&mut payload.take(u64::from(s.size)), w)?;
+        if copied != u64::from(s.size) {
+            return Err(Mp4Error::Malformed("the spool is short".into()));
+        }
+        Ok(())
+    })
+}
+
+fn write_inner<W: Write>(
+    out: &mut W,
+    tracks: &[Desc<'_>],
+    opts: &Mp4Options<'_>,
+    mut emit: impl FnMut(&mut W, usize, usize, &Sample) -> Result<(), Mp4Error>,
 ) -> Result<Mp4Summary, Mp4Error> {
     if tracks.is_empty() {
         return Err(Mp4Error::NoTracks);
@@ -163,18 +264,18 @@ pub fn write_mp4<W: Write>(
     let mut plans = tracks
         .iter()
         .enumerate()
-        .map(|(i, t)| TrackPlan::from_packets(i, t))
+        .map(|(i, t)| TrackPlan::from_samples(i, t.info, t.name, t.enabled, &t.samples))
         .collect::<Result<Vec<_>, _>>()?;
     group_audio_tracks(&mut plans);
 
     // Align tracks on the earliest presentation time.
     let origin = tracks
         .iter()
-        .filter_map(|t| t.packets.first().map(|p| p.pts))
+        .filter_map(|t| t.samples.first().map(|p| p.pts))
         .min()
         .ok_or(Mp4Error::NoTracks)?;
     for (plan, t) in plans.iter_mut().zip(tracks) {
-        let first_pts = t.packets.first().map(|p| p.pts).unwrap_or(origin);
+        let first_pts = t.samples.first().map(|p| p.pts).unwrap_or(origin);
         plan.empty_edit = first_pts.saturating_sub(origin).max(0);
     }
     let duration = plans.iter().map(TrackPlan::total_ns).max().unwrap_or(0);
@@ -183,7 +284,7 @@ pub fn write_mp4<W: Write>(
     // Interleave samples by decode time (stable on track order).
     let mut order: Vec<(Nanos, usize, usize)> = Vec::new();
     for (ti, t) in tracks.iter().enumerate() {
-        for (si, p) in t.packets.iter().enumerate() {
+        for (si, p) in t.samples.iter().enumerate() {
             order.push((p.dts, ti, si));
         }
     }
@@ -191,10 +292,8 @@ pub fn write_mp4<W: Write>(
 
     let data_size = tracks
         .iter()
-        .flat_map(|t| t.packets.iter())
-        .try_fold(0u64, |acc, p| {
-            acc.checked_add(u64::try_from(p.data.len()).ok()?)
-        })
+        .flat_map(|t| t.samples.iter())
+        .try_fold(0u64, |acc, p| acc.checked_add(u64::from(p.size)))
         .ok_or(Mp4Error::TooLarge("media data"))?;
     let infos: Vec<&TrackInfo> = tracks.iter().map(|t| t.info).collect();
     let ftyp = build_ftyp(&infos, false);
@@ -246,11 +345,11 @@ pub fn write_mp4<W: Write>(
         out.write_all(b"mdat")?;
     }
     for &(_, ti, si) in &order {
-        let p = tracks
+        let s = tracks
             .get(ti)
-            .and_then(|t| t.packets.get(si))
+            .and_then(|t| t.samples.get(si))
             .ok_or(Mp4Error::Internal("sample index"))?;
-        out.write_all(&p.data)?;
+        emit(out, ti, si, s)?;
     }
     out.flush()?;
 
@@ -268,19 +367,19 @@ pub fn write_mp4<W: Write>(
 /// One sample per chunk: chunk offsets follow the interleave order from `data_start`.
 fn layout_chunks(
     plans: &mut [TrackPlan<'_>],
-    tracks: &[Mp4Track<'_>],
+    tracks: &[Desc<'_>],
     order: &[(Nanos, usize, usize)],
     data_start: u64,
 ) -> Result<(), Mp4Error> {
     for (plan, t) in plans.iter_mut().zip(tracks) {
-        plan.chunks = vec![(0, 1); t.packets.len()];
+        plan.chunks = vec![(0, 1); t.samples.len()];
     }
     let mut pos = data_start;
     for &(_, ti, si) in order {
         let size = tracks
             .get(ti)
-            .and_then(|t| t.packets.get(si))
-            .map(|p| p.data.len())
+            .and_then(|t| t.samples.get(si))
+            .map(|p| p.size)
             .ok_or(Mp4Error::Internal("sample index"))?;
         let slot = plans
             .get_mut(ti)
@@ -288,7 +387,7 @@ fn layout_chunks(
             .ok_or(Mp4Error::Internal("chunk index"))?;
         slot.0 = pos;
         pos = pos
-            .checked_add(u64::try_from(size).map_err(|_| Mp4Error::TooLarge("sample"))?)
+            .checked_add(u64::from(size))
             .ok_or(Mp4Error::TooLarge("file"))?;
     }
     Ok(())
