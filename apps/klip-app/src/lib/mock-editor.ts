@@ -3,10 +3,16 @@
  * repaired roughly like the engine (clip length wins, speeds and volumes clamped),
  * text bitmaps as SVG data URLs, exports that tick `export_progress` and end with
  * `export_done` (the "Discord" preset takes two passes, "youtube" fails once in a while
- * so the dialog's error path can be seen).
+ * so the dialog's error path can be seen). Advanced mode (M9.4 commands): montages
+ * (`editor.montage`, `clips` in the reply), `editor.frame` as an SVG picture of what is
+ * on screen, history snapshots on every save, Custom exports; no audio or files to
+ * play (`editor.audio` / `editor.files` answer with none).
  */
 
 import { CommandError } from './api';
+import { readAdvanced } from './advanced';
+import { compose, visibleAt } from './compose';
+import type { SourceInfo } from './editor';
 import type { LibClip } from './library';
 import type { Project, Speed } from './timeline';
 import { asProject, newProject, outputDurationMs } from './timeline';
@@ -14,7 +20,9 @@ import type { KlipEvent } from './types';
 
 type Args = Record<string, unknown> | null | undefined;
 
-const PRESETS = ['original', 'youtube', 'tiktok', 'discord'];
+const PRESETS = ['original', 'youtube', 'tiktok', 'discord', 'custom'];
+const CODECS = ['h264', 'hevc', 'av1'];
+const MAX_SNAPSHOTS = 30;
 
 function repair(raw: unknown, durationMs: number): { project: Project; issues: { path: string; message: string }[] } {
   const p = asProject(raw);
@@ -69,8 +77,12 @@ function textSvg(text: string, preset: string, width: number, height: number): {
   return { x, y, w, h, url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}` };
 }
 
-export function mockEditor(emit: (e: KlipEvent) => void, byPath: (path: string) => LibClip | undefined) {
+export function mockEditor(emit: (e: KlipEvent) => void, allClips: () => LibClip[]) {
+  const byPath = (path: string) => allClips().find((c) => c.path === path);
+  const byKey = (key: string) => allClips().find((c) => c.key === key);
   const projects = new Map<string, Project>();
+  const history = new Map<string, { id: number; project: Project }[]>();
+  let lastSnapshot = 0;
   let nextId = 0;
   let active: { id: number; key: string; preset: string; out: string; timer: ReturnType<typeof setInterval> } | null = null;
   let last: unknown = null;
@@ -82,13 +94,25 @@ export function mockEditor(emit: (e: KlipEvent) => void, byPath: (path: string) 
     if (!clip) throw new CommandError('bad_args', 'no such clip');
     return clip;
   };
-  const sourceOf = (clip: LibClip) => ({
+  const sourceOf = (clip: LibClip): SourceInfo => ({
     width: clip.info?.width ?? 1920,
     height: clip.info?.height ?? 1080,
     duration_ms: clip.info?.duration_ms ?? 30_000,
     fps: clip.info?.fps ?? 60,
     bookmarks_ms: clip.info?.bookmarks_ms ?? [],
+    events: [],
   });
+  /** The other library clips a project places, as the engine lists them. */
+  const placed = (project: Project) => {
+    const keys = new Set<string>();
+    for (const t of readAdvanced(project).tracks) for (const c of t.clips) if (c.source.kind === 'library') keys.add(c.source.key);
+    return [...keys].map((key) => {
+      const c = byKey(key);
+      return c ? { key, name: c.name, status: 'ok', source: sourceOf(c) } : { key, name: key, status: 'missing', source: null };
+    });
+  };
+  const infos = (project: Project): [string, SourceInfo][] =>
+    placed(project).flatMap((c) => (c.source ? [[c.key, c.source] as [string, SourceInfo]] : []));
   const reply = (clip: LibClip, project: Project, issues: unknown[], status: string) => ({
     key: clip.key,
     path: clip.path,
@@ -96,7 +120,32 @@ export function mockEditor(emit: (e: KlipEvent) => void, byPath: (path: string) 
     issues,
     status,
     source: sourceOf(clip),
+    clips: placed(project),
   });
+  const snapshot = (clip: LibClip, previous: Project | undefined) => {
+    if (!previous) return;
+    const list = history.get(clip.key) ?? [];
+    lastSnapshot = Math.max(Date.now(), lastSnapshot + 1);
+    list.unshift({ id: lastSnapshot, project: previous });
+    history.set(clip.key, list.slice(0, MAX_SNAPSHOTS));
+  };
+  /** What `editor.frame` shows: each visible layer's name on its own hue, as an SVG. */
+  const frameSvg = (clip: LibClip, project: Project, outMs: number, width: number) => {
+    const comp = compose(project, sourceOf(clip), infos(project));
+    const height = Math.max(2, Math.round((width * comp.crop.height) / Math.max(1, comp.crop.width)) & ~1);
+    const rows = visibleAt(comp, outMs).map((l, i) => {
+      const s = l.source;
+      const name = s.kind === 'library' ? (byKey(s.key)?.name ?? s.key) : s.kind === 'main' ? clip.name : s.path;
+      const hue = (l.id * 67) % 360;
+      const text = name.replace(/[<&>]/g, ' ');
+      return (
+        `<rect x="${i * 8}" y="${i * 8}" width="${width - i * 16}" height="${height - i * 16}" fill="hsl(${hue} 45% 30%)" opacity="0.8"/>` +
+        `<text x="${width / 2}" y="${24 + i * 22}" fill="#fff" font-family="sans-serif" font-size="16" text-anchor="middle">${text}</text>`
+      );
+    });
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#000"/>${rows.join('')}</svg>`;
+    return { url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`, width, height };
+  };
 
   return (cmd: string, args: Args): unknown => {
     switch (cmd) {
@@ -112,8 +161,74 @@ export function mockEditor(emit: (e: KlipEvent) => void, byPath: (path: string) 
         const raw = args?.project;
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new CommandError('bad_args', 'project must be an object');
         const { project, issues } = repair(raw, sourceOf(clip).duration_ms);
+        const previous = projects.get(clip.path);
+        if (JSON.stringify(previous) !== JSON.stringify(project)) snapshot(clip, previous);
         projects.set(clip.path, project);
         return reply(clip, project, issues, 'saved');
+      }
+      case 'editor.montage': {
+        const clip = clipOf(args);
+        const add = args?.add;
+        if (!Array.isArray(add) || add.length === 0 || add.length > 256) throw new CommandError('bad_args', 'add must be a list of 1…256 clips');
+        const project = projects.get(clip.path) ?? newProject(sourceOf(clip).duration_ms);
+        const end = compose(project, sourceOf(clip), infos(project)).duration_ms;
+        const next = asProject(JSON.parse(JSON.stringify(project)));
+        const adv = readAdvanced(next);
+        let track = adv.tracks.find((t) => t.kind === 'video');
+        if (!track) {
+          track = { id: adv.tracks.reduce((m, t) => Math.max(m, t.id), 0) + 1, kind: 'video', name: 'Montage', muted: false, clips: [] };
+          adv.tracks.push(track);
+        }
+        let id = adv.tracks.reduce((m, t) => t.clips.reduce((n, c) => Math.max(n, c.id), m), 0) + 1;
+        let at = end;
+        for (const p of add) {
+          const other = typeof p === 'string' ? byPath(p) : undefined;
+          if (!other) throw new CommandError('bad_args', 'no such clip');
+          const len = sourceOf(other).duration_ms;
+          const source = other.key === clip.key ? { kind: 'main' as const } : { kind: 'library' as const, key: other.key };
+          track.clips.push({ id: id++, source, in_ms: 0, out_ms: len, at_ms: at, transform: [], opacity: [], volume: [], speed: [] });
+          at += len;
+        }
+        next.advanced = adv;
+        snapshot(clip, project);
+        projects.set(clip.path, next);
+        return reply(clip, next, [], 'saved');
+      }
+      case 'editor.frame': {
+        const clip = clipOf(args);
+        const outMs = args?.out_ms;
+        const width = args?.width;
+        if (typeof outMs !== 'number') throw new CommandError('bad_args', 'out_ms must be a number');
+        if (typeof width !== 'number' || width < 16 || width > 4096) throw new CommandError('bad_args', 'width must be 16…4096');
+        const project = args?.project ? asProject(args.project) : (projects.get(clip.path) ?? newProject(sourceOf(clip).duration_ms));
+        const f = frameSvg(clip, project, outMs, Math.trunc(width));
+        return { jpeg: null, url: f.url, width: f.width, height: f.height, out_ms: outMs };
+      }
+      case 'editor.history.list': {
+        const clip = clipOf(args);
+        const list = history.get(clip.key) ?? [];
+        return {
+          key: clip.key,
+          snapshots: list.map((h) => ({ id: h.id, saved_unix_ms: h.id, bytes: JSON.stringify(h.project).length })),
+        };
+      }
+      case 'editor.history.restore': {
+        const clip = clipOf(args);
+        const list = history.get(clip.key) ?? [];
+        const found = list.find((h) => h.id === args?.id);
+        if (!found) throw new CommandError('not_found', 'no such snapshot');
+        snapshot(clip, projects.get(clip.path));
+        projects.set(clip.path, found.project);
+        return reply(clip, found.project, [], 'saved');
+      }
+      case 'editor.audio': {
+        const clip = clipOf(args);
+        // The browser can't play a path: no tracks, the preview stays silent.
+        return { status: 'ready', key: clip.key, tracks: [] };
+      }
+      case 'editor.files': {
+        clipOf(args);
+        return { files: [] };
       }
       case 'editor.proxy': {
         const clip = clipOf(args);
@@ -134,6 +249,18 @@ export function mockEditor(emit: (e: KlipEvent) => void, byPath: (path: string) 
         const clip = clipOf(args);
         const preset = args?.preset;
         if (typeof preset !== 'string' || !PRESETS.includes(preset)) throw new CommandError('bad_args', 'unknown preset');
+        if (preset === 'custom') {
+          const c = args?.custom as Record<string, unknown> | undefined;
+          const num = (k: string, lo: number, hi: number) => {
+            const v = c?.[k];
+            if (typeof v !== 'number' || !Number.isInteger(v) || v < lo || v > hi) throw new CommandError('bad_args', `custom.${k} must be ${lo}…${hi}`);
+          };
+          num('width', 2, 4096);
+          num('height', 2, 4096);
+          num('fps', 1, 240);
+          num('bitrate_kbps', 100, 200_000);
+          if (typeof c?.codec !== 'string' || !CODECS.includes(c.codec)) throw new CommandError('bad_args', 'custom.codec must be h264, hevc or av1');
+        }
         if (active) throw new CommandError('busy', 'an export is already running');
         const id = ++nextId;
         const label = preset[0]!.toUpperCase() + preset.slice(1);

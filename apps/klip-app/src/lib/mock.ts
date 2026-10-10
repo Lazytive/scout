@@ -5,6 +5,7 @@
 import { CommandError } from './api';
 import { mockEditor } from './mock-editor';
 import { mockLibrary } from './mock-library';
+import type { LibClip } from './library';
 import type { Settings } from './settings';
 import type { Game, KlipEvent, Status } from './types';
 
@@ -110,9 +111,9 @@ export function mockBackend() {
   };
   let meterTimer: ReturnType<typeof setInterval> | null = null;
   const library = mockLibrary(emit);
-  const editor = mockEditor(emit, (path) => {
-    const listing = library('library.list', { sort: 'newest' }) as { clips: { path: string }[] } | undefined;
-    return listing?.clips.find((c) => c.path === path) as Parameters<typeof mockEditor>[1] extends (p: string) => infer R ? R : never;
+  const editor = mockEditor(emit, () => {
+    const listing = library('library.list', { sort: 'newest' }) as { clips: LibClip[] } | undefined;
+    return listing?.clips ?? [];
   });
 
   const need = () => {

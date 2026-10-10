@@ -5,6 +5,12 @@ reason)`.
 
 ## Unreleased
 
+- M9.5.2 — The mock engine (`npm run dev`) knows the M9.4 commands: `editor.montage`,
+  `clips` in the project replies, `editor.frame` (an SVG of the layers on screen),
+  `editor.history.list|restore` (a snapshot per changed save, 30 kept), Custom
+  `export.start` with the engine's ranges, and `editor.audio`/`editor.files` answering
+  with nothing to play. (Claude Opus 5.5: M9.5.2, so the Advanced workspace can be
+  built and checked in the browser)
 - M9.5.1 — Advanced mode's shared math on the front end: `keyframes.ts` gets the
   placement math (`fitIn`/`fitContain`/`fitted`/`place`/`visible`, f32 values widened
   like Rust) and the colour grade (`colourMatrix`, `svgColourMatrix`); `compose.ts`
