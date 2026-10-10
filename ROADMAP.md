@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-10 (M8 done).
+Last updated: 2026-10-10 (M9 done).
 
 | | Milestone | State |
 |---|---|---|
@@ -13,7 +13,7 @@ Last updated: 2026-10-10 (M8 done).
 | M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
 | M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
 | M8 | Editor, Normal mode + export presets | **done on Windows** (ADR 0017 accepted): `klip-edit` model + text, `klip-export` pipeline, engine commands, the Editor workspace, e2e `m8_editor.rs`; Linux not yet run |
-| M9 | Editor, Advanced mode (incl. montage) | **in progress**: M9.1 ADR 0018 + spike, M9.2 schema v2, M9.3 the composition renderer (montages, transitions, zoom, stickers, colour, ducking, Custom export; 10-minute montage 10.3x realtime, < 800 MB); M9.4–M9.6 next |
+| M9 | Editor, Advanced mode (incl. montage) | **done on Windows** (ADR 0018 accepted): schema v2, the composition renderer (montages, transitions, zoom, stickers, colour, ducking, Custom export; 10-minute montage 10.3x realtime, < 800 MB), `editor.frame`/montage projects, the Advanced workspace with a canvas preview and Web Audio sound (≥ 39.9 dB vs the export), e2e `m9_montage.rs`; human checklist steps 2–10 open; Linux not yet run |
 | M10 | Themes v1 | |
 | M11 | Sharing | |
 | M12 | Auto-clip via official integrations | |
@@ -340,6 +340,23 @@ contrast 1.1 / saturation 1.3.
 | `editor.audio` through the engine (`klip-engine`, not hardware) | names `Game`/`Microphone`, one audio track per file, length 2.0 s as made, not remade when asked again, remade when the clip changes, follows a rename |
 | Shared math, Rust vs vitest | `placement.json` (fit, fitted, place, visible, colour matrix) and `compose.json` (three projects: Normal cut, montage with crossfade/dip/ramp/sticker/sound/music/markers, edge cases): identical |
 
+### A montage of recorded clips (M9.6, e2e `m9_montage.rs`)
+
+Measured 2026-10-10, same machine (NVENC H.264, the user's PC in use), through the
+daemon: the test game at 1280x720 recorded for 16 s, two 6 s clips saved 8 s apart
+(400 frames each, ~2.26 MB). The montage: the first clip trimmed to 1–5 s (Normal
+mode), the second added with `editor.montage` and split in two (0–2.5 s, then 3–5.5 s
+crossfading in over 500 ms and zoomed 2x from 1.5 s in), Custom export 1280x720@60
+H.264 12 Mbit/s.
+
+| Check | Result |
+|---|---|
+| Export | 510 frames (8.5 s) in **1.2 s** encode, **2.2 s** wall incl. starting the media worker; 4.4 MB |
+| Frames on the plan (`compose_with`, barcodes via ffmpeg) | **420/420** plain frames = the plan's source frame (0 wrong, 0 unreadable) across both clips; **30** crossfade frames, **60** zoomed, as planned |
+| Crossfade, middle frame (alpha 0.5) vs the mix of the two source frames | **43.6 dB** (each side alone 20.9 / 21.1 dB) |
+| Zoom, a 2x frame vs the source frame the plan names, doubled about the centre | **43.7 dB** (the unzoomed frame 14.9 dB) |
+| Library | the export listed beside its clips, 8.5 s, H.264, one audio track; the montage follows a rename of its second clip |
+
 ## Approximate / not done yet
 
 - **The Advanced preview (M9.5)**:
@@ -378,7 +395,8 @@ contrast 1.1 / saturation 1.3.
     later optimisation. A zoom animation builds a new converter every frame.
   - Ducking listens to microphone tracks and sound/voice-over layers only; game audio
     never ducks the music (by design, ADR 0018).
-  - Not run yet: AV1/HEVC Custom exports, montages from real recorded clips (M9.6), Linux.
+  - Not run yet: AV1/HEVC Custom exports, Linux. Montages of recorded clips: e2e
+    `m9_montage.rs` (test-game clips); the human's own clips are checklist step 10.
 
 - **Export (M8.3)**:
   - Discord's first pass lands well under the limit (17–57 % on the barcode clip: VBR
@@ -642,7 +660,7 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 5. **Close the app while an export runs**: the file must not appear half-written
    (there is no `.part` left behind; the export is cancelled).
 
-## Manual checks for the human (M9.5, the Advanced editor)
+## Manual checks for the human (M9, the Advanced editor and montages)
 
 Use the release app (`target\release\Start Klip.cmd`) and two of your own clips.
 
@@ -674,6 +692,11 @@ Use the release app (`target\release\Start Klip.cmd`) and two of your own clips.
    size (check the file's properties).
 9. **J / K / L.** With the timeline focused: L plays, L again plays 2x, K stops, J goes
    backwards. Tell me if anything feels sluggish (how long a montage, how many clips).
+10. **A montage of your own games.** Take the montage from steps 3–4 (two of your real
+    clips, a crossfade, a zoom) and export it with **YouTube**. Open the file in your
+    usual video player: the join must blend, the zoom must be there, both clips' sound
+    must play, and it must appear in the Library next to your first clip. Tell me how
+    long the export took and how long the montage is.
 
 ## Known bugs
 

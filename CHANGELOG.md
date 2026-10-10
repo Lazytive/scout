@@ -5,6 +5,14 @@ reason)`.
 
 ## Unreleased
 
+- M9.6 — M9 wrap-up: e2e `apps/klip-cli/tests/m9_montage.rs` (the daemon records two
+  clips of the test game; Normal trim, `editor.montage`, a split with a crossfade and a
+  2x zoom; Custom export; every frame checked against `compose_with`: 420/420 plain
+  frames right, crossfade 43.6 dB vs the mix, zoom 43.7 dB vs the doubled centre; the
+  Library lists it; the montage follows a rename). The daemon helpers the e2e tests
+  copied (`Events`, `spawn_daemon`, `call`) live in `tests/common` now (m7, m8 use
+  them). ADR 0018 accepted; ROADMAP (numbers, checklist step 10), STATUS. (Claude
+  Opus 5.5: M9 acceptance)
 - M9.5 — The human checked the release build: the preview plays sound and the Game/Mic
   sliders change it (M9.5 checklist step 1; the M8 bug is closed). ROADMAP and STATUS
   updated. (Claude Opus 5.5: recording the human's check)

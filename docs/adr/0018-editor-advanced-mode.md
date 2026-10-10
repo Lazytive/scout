@@ -1,7 +1,8 @@
 # 0018: Editor (Advanced mode): multi-track model, keyframes, montage and the compositing path
 
-Status: proposed (M9.1, 2026-10-10; to be confirmed at the M9 wrap-up). Author: Claude
-Fable 5.1.
+Status: accepted (M9.6, 2026-10-10), with the amendments below (M9.3–M9.6): where an
+earlier bullet and an amendment differ, the amendment holds. Proposed in M9.1 by Claude
+Fable 5.1; accepted by Claude Opus 5.5.
 
 ## Context
 Normal mode (ADR 0017) edits one clip with pieces, a format crop, text presets and two
@@ -102,6 +103,13 @@ in text yet (M8.2), the in-memory muxing cap (IMPROVEMENTS G1).
   only a bounded set of files the engine named (`editor_media` with `what`). Measured
   in the app: canvas vs `editor.frame` 39.9–66.8 dB at 1280x720 (bar: 35 dB). A dip on
   an upper track fades to what is below it (black only on the lowest track).
+- **Accepted at the M9 wrap-up (M9.6, 2026-10-10)** on the e2e `m9_montage.rs`: two
+  clips the daemon recorded of the test game, a montage through the engine's commands
+  (Normal trim, `editor.montage`, a split with a 500 ms crossfade, a 2x zoom), a Custom
+  export in the media worker: every plain frame is the source frame `compose_with`
+  names (420/420), the crossfade's middle frame is the mix of its two source frames
+  (43.6 dB) and a zoomed frame the doubled centre of its source frame (43.7 dB). One
+  renderer for both modes and the shared math held on real recordings.
 
 ## Consequences
 - Normal mode stays as fast and simple as it is; the Advanced UI is a second workspace

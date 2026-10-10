@@ -9,11 +9,12 @@
     clippy::indexing_slicing
 )]
 
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -89,6 +90,80 @@ impl Drop for KillOnDrop {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
+}
+
+/// The daemon's stdout events, with the ones a wait skipped kept for later waits.
+pub struct Events {
+    rx: mpsc::Receiver<Value>,
+    backlog: VecDeque<Value>,
+}
+
+impl Events {
+    /// The first event matching `pred` (from the backlog first). A `recorder_failed`
+    /// on the way fails the test.
+    pub fn wait_for(&mut self, timeout: Duration, pred: impl Fn(&Value) -> bool) -> Value {
+        if let Some(i) = self.backlog.iter().position(&pred) {
+            return self.backlog.remove(i).unwrap();
+        }
+        let deadline = Instant::now() + timeout;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            let e = self.rx.recv_timeout(left).unwrap_or_else(|_| {
+                panic!(
+                    "no matching event within {timeout:?}; backlog {:?}",
+                    self.backlog
+                )
+            });
+            assert!(e["event"] != "recorder_failed", "{e}");
+            if pred(&e) {
+                return e;
+            }
+            self.backlog.push_back(e);
+        }
+    }
+
+    pub fn named(&mut self, name: &str, timeout: Duration) -> Value {
+        self.wait_for(timeout, |e| e["event"] == name)
+    }
+}
+
+/// Start `klip-cli daemon …` and follow its events.
+pub fn spawn_daemon(cmd: &mut Command) -> (KillOnDrop, Events) {
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if let Ok(v) = serde_json::from_str::<Value>(&line) {
+                let _ = tx.send(v);
+            }
+        }
+    });
+    (
+        KillOnDrop(child),
+        Events {
+            rx,
+            backlog: VecDeque::new(),
+        },
+    )
+}
+
+/// `klip-cli call <cmd> <args>` against the daemon; its JSON reply.
+pub fn call(discovery: &Path, cmd: &str, args: Value) -> Value {
+    let out = cli(discovery)
+        .args(["call", cmd, &args.to_string()])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{cmd}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).unwrap()
 }
 
 /// The test game, placed on a secondary monitor when there is one, so test runs don't

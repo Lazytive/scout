@@ -15,84 +15,13 @@
 
 mod common;
 
-use std::collections::VecDeque;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
-use common::{KillOnDrop, cli, game, spawn_ready};
+use common::{KillOnDrop, call, cli, game, spawn_daemon, spawn_ready};
 use klip_testkit::oracle;
 use serde_json::{Value, json};
-
-struct Events {
-    rx: Receiver<Value>,
-    backlog: VecDeque<Value>,
-}
-
-impl Events {
-    fn wait_for(&mut self, timeout: Duration, pred: impl Fn(&Value) -> bool) -> Value {
-        if let Some(i) = self.backlog.iter().position(&pred) {
-            return self.backlog.remove(i).unwrap();
-        }
-        let deadline = Instant::now() + timeout;
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            let e = self
-                .rx
-                .recv_timeout(left)
-                .unwrap_or_else(|_| panic!("no matching event within {timeout:?}"));
-            let kind = e["event"].as_str().unwrap_or_default();
-            assert!(kind != "recorder_failed", "{e}");
-            if pred(&e) {
-                return e;
-            }
-            self.backlog.push_back(e);
-        }
-    }
-
-    fn named(&mut self, name: &str, timeout: Duration) -> Value {
-        self.wait_for(timeout, |e| e["event"] == name)
-    }
-}
-
-fn spawn_daemon(cmd: &mut Command) -> (KillOnDrop, Events) {
-    let mut child = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .unwrap();
-    let stdout = child.stdout.take().unwrap();
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if let Ok(v) = serde_json::from_str::<Value>(&line) {
-                let _ = tx.send(v);
-            }
-        }
-    });
-    (
-        KillOnDrop(child),
-        Events {
-            rx,
-            backlog: VecDeque::new(),
-        },
-    )
-}
-
-fn call(discovery: &Path, cmd: &str, args: Value) -> Value {
-    let out = cli(discovery)
-        .args(["call", cmd, &args.to_string()])
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{cmd}: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    serde_json::from_slice(&out.stdout).unwrap()
-}
 
 /// Width and height from a JPEG's start-of-frame marker.
 fn jpeg_size(d: &[u8]) -> (u32, u32) {
