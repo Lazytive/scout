@@ -105,6 +105,10 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   Discord preset is `settings.export.discord_limit_mb` (decimal MB). Engine shutdown
   cancels a running export. Projects, proxies and renders follow a clip's rename and
   delete and are pruned with the thumbnails (`Library::{move,remove,prune}_caches`).
+- Tests that make the engine probe encoders (an export, the setup) call
+  `config::test_overrides(Some(<temp file>), true)` first: probe results go to that file
+  instead of the user's cache and probing runs in-process (a test binary has no probe
+  worker; isolated probes would all "fail" and be remembered as such).
 - Media worker (`media_worker.rs`): library thumbnails and exports in a child process —
   the host binary re-run with `--klip-media-worker` (`worker_main()` first in `main`,
   after `klip_probe::worker_main()`), one JSON job per line (`Job`: `ThumbJob`,

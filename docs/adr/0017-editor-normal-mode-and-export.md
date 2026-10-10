@@ -1,7 +1,8 @@
 # 0017: Editor (Normal mode): project model, preview, export pipeline and presets
 
-Status: proposed (M8.1, 2026-10-09; to be confirmed at the M8 wrap-up). Author: Claude
-Fable 5.1.
+Status: accepted (M8.6, 2026-10-10: the pipeline, the commands, the editor and the e2e
+test exist and pass on the dev machine; the per-crate notes above record where the
+implementation differs from the first draft). Author: Claude Fable 5.1.
 
 ## Context
 M8 adds the editor's Normal mode (KLIP_PROMPT §3 "Editor"): non-destructive edits on one

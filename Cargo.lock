@@ -2821,6 +2821,7 @@ dependencies = [
  "dirs 7.0.0",
  "klip-capture",
  "klip-control",
+ "klip-edit",
  "klip-engine",
  "klip-media",
  "klip-platform",

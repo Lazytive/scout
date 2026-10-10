@@ -4,8 +4,11 @@ A free, open-source game clipper for Windows and Linux: an always-on replay buff
 saves the last moments of your game to a plain MP4 with one key, using your GPU's hardware
 encoder (NVIDIA, AMD, Intel). No account, no telemetry. "Klip" is a working name.
 
-**Status: early development.** What exists today is a recorder CLI on Windows with NVENC
-and audio (game, apps, microphone) in sync with the video.
+**Status: early development.** What exists today, on Windows: the recorder (a CLI and the
+desktop app: tray, overlay, settings, game detection, full-session recording) with
+NVENC and audio (game, apps, microphone) in sync with the video, the Library, and the
+Editor's Normal mode (trim, cut, speed, text, 16:9 / 9:16, volumes, export presets with a
+Discord size fit).
 See [ROADMAP.md](ROADMAP.md) for what works and what's measured.
 
 ## Anti-cheat safety

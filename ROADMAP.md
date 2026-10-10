@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-10 (M8.5 done).
+Last updated: 2026-10-10 (M8 done).
 
 | | Milestone | State |
 |---|---|---|
@@ -12,7 +12,7 @@ Last updated: 2026-10-10 (M8.5 done).
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
 | M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
 | M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
-| M8 | Editor, Normal mode + export presets | **in progress**: M8.1 model crate `klip-edit`, M8.2 text rasterisation, M8.3 export pipeline `klip-export` + media-worker export job, M8.4 editor/export commands + caches + asset scope, M8.5 the Editor workspace (ADR 0017 proposed) |
+| M8 | Editor, Normal mode + export presets | **done on Windows** (ADR 0017 accepted): `klip-edit` model + text, `klip-export` pipeline, engine commands, the Editor workspace, e2e `m8_editor.rs`; Linux not yet run |
 | M9 | Editor, Advanced mode | |
 | M10 | Themes v1 | |
 | M11 | Sharing | |
@@ -274,6 +274,7 @@ a synthetic barcoded 1280x720@60 clip with two AAC tracks, ffmpeg as the oracle:
 | Discord on a 1920x1080 clip at a 400 kB limit | 151 | ~0.5 s | steps down to 852x480 at 30 fps, every frame = the plan's source frame |
 | Bookmarks through trim + cut + 2x/0.5x | – | – | 3 of 4 survive as chapters at the mapped output times (1 ms), the cut one is gone |
 | Beeps through the same cuts, and 0.5x / 2x whole-clip | – | – | onsets at the mapped times within 10 ms (1x: 1 ms; 0.5x: a stretched attack reads ~35 ms early) |
+| Through the daemon (e2e `m8_editor.rs`): a 10 s clip the daemon recorded of the test game, trim + a 2x piece + a caption, Discord | 390 | encode 1.0 s; 5.2 s wall incl. starting the media worker and the probe | 3.3 MB; 390/390 frames = the plan's source frame, 0 unreadable; listed in the Library beside the clip |
 
 So an export runs at roughly 300–500 output frames per second at 720p on this machine
 (decode + crop/scale on the CPU, NVENC encode). 1080p and 1440p sources are not measured
@@ -524,6 +525,24 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 5. Put a few MP4s from another program (OBS, ShadowPlay, phone) in the clip folder: they
    show up with length, resolution and pictures; a broken file shows "No preview".
 6. Ctrl/Shift-click and Shift+arrows select several clips; Ctrl+A; the right-click menu.
+
+## Manual checks for the human (M8)
+
+1. **Open a real clip of yours in the editor** (Library → double-click): scrub, split,
+   cut a middle piece, 2x a selection, add a Caption, drag the 9:16 window, then
+   Export → YouTube. Play the file in your player: the cuts, the speed and the caption
+   must match what the preview showed. Tell me how long the export took for how long a
+   clip (shown in the dialog's summary and in the Home activity).
+2. **An HEVC clip** (record with the HEVC codec in Settings → Recording, or any HEVC
+   file dropped in the clip folder): opening it in the editor shows "Making a preview…"
+   first (the H.264 proxy); after that the video plays. Report how long it took.
+3. **Discord**: export a 30–60 s clip with the Discord preset and upload it to a
+   Discord server without Nitro. It must be accepted (≤ 10 MB) and look watchable; if
+   Discord's limit on your account differs, set Settings → Export → Discord size.
+4. **A clip with Game + Microphone tracks**: set Mic to 0 % and export; the result
+   should have no voice. Set Game to 0 %: only voice.
+5. **Close the app while an export runs**: the file must not appear half-written
+   (there is no `.part` left behind; the export is cancelled).
 
 ## Known bugs
 

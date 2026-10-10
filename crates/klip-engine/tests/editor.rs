@@ -37,6 +37,9 @@ fn settings(dir: &Path) -> PathBuf {
 }
 
 fn start(path: PathBuf) -> (Engine, Receiver<Event>) {
+    // Never touch the user's encoder cache, and probe in this process: the test binary
+    // has no probe worker (every isolated probe would "fail" and be remembered).
+    klip_engine::config::test_overrides(Some(path.with_file_name("encoders.json")), true);
     let (tx, rx) = std::sync::mpsc::sync_channel(klip_engine::events::QUEUE);
     let mut opts = EngineOptions::new(path);
     opts.events = Some(tx);

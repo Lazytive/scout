@@ -5,6 +5,14 @@ reason)`.
 
 ## Unreleased
 
+- M8.6 — M8 wrap-up: e2e `apps/klip-cli/tests/m8_editor.rs` (the daemon records the
+  test game, a project with a trim, a 2x piece and a caption is set through the
+  engine, a Discord export runs in the media worker: ≤ 10 MB, every output frame shows
+  the plan's source frame, the Library lists the export beside its clip, the project
+  follows a rename and a delete removes both); ADR 0017 accepted; ROADMAP (M8 done,
+  measured export numbers, a human checklist), READMEs, STATUS. (Claude Fable 5.1:
+  M8.6)
+
 - M8.5 — The Editor workspace in the app (Normal mode): `src/Editor.svelte`,
   `src/editor/{Preview,Filmstrip,ExportDialog}.svelte`, `src/lib/forms/Slider.svelte`;
   state in `src/lib/editor.svelte.ts` (projects saved after every edit, undo/redo,

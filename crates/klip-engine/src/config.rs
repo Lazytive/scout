@@ -70,8 +70,39 @@ pub fn gpu_vendors() -> Vec<GpuVendor> {
     }
 }
 
+/// What tests change about probing (see [`test_overrides`]).
+#[derive(Clone, Debug, Default)]
+struct Overrides {
+    cache: Option<PathBuf>,
+    in_process: bool,
+}
+
+static OVERRIDES: std::sync::Mutex<Overrides> = std::sync::Mutex::new(Overrides {
+    cache: None,
+    in_process: false,
+});
+
+fn overrides() -> Overrides {
+    OVERRIDES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// For tests: remember probe results in `cache` instead of the user's file, and probe
+/// in this process (a test binary has no probe worker: every isolated probe would
+/// "fail" and be remembered as such). Call before `Engine::start`.
+pub fn test_overrides(cache: Option<PathBuf>, in_process: bool) {
+    *OVERRIDES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Overrides { cache, in_process };
+}
+
 /// Where probe results are remembered between runs.
 pub fn encoder_cache_path() -> Option<PathBuf> {
+    if let Some(p) = overrides().cache {
+        return Some(p);
+    }
     dirs::cache_dir().map(|d| d.join("Klip").join("encoders.json"))
 }
 
@@ -132,8 +163,13 @@ pub fn target_refresh(target: VideoTarget) -> Option<u32> {
 }
 
 /// Probes run in a child copy of this binary, so a misbehaving driver can't take the
-/// recorder down and in-process state can't skew the result.
+/// recorder down and in-process state can't skew the result. `KLIP_PROBE_IN_PROCESS=1`
+/// (tests: a test binary has no probe worker, every isolated probe would "fail" and
+/// be remembered as such) probes in this process instead.
 pub fn prober() -> klip_probe::Prober {
+    if overrides().in_process {
+        return klip_probe::Prober::InProcess;
+    }
     match std::env::current_exe() {
         Ok(exe) => klip_probe::Prober::Isolated(exe),
         Err(_) => klip_probe::Prober::InProcess,
