@@ -1,12 +1,13 @@
-//! Klip's export pipeline (ADR 0017): a `klip_edit::Render` plan plus a preset → an MP4
-//! next to the clip. Decoding, cropping and scaling happen in one GStreamer pipeline
-//! ([`source`]), text and volumes on the CPU ([`compose`]), encoding in another
-//! pipeline with the recorder's hardware encoder chain ([`encode`]); Discord's size
-//! limit is met by re-encoding at a lower bitrate ([`fit`]).
+//! Klip's export pipeline (ADR 0017, ADR 0018): a `klip_edit::Composition` (a project in
+//! either mode) plus a preset → an MP4 next to the clip. [`render`] plays every layer
+//! from its own decoding pipeline ([`source`]), composes each output frame in this
+//! process ([`canvas`]), mixes the sound with volume keyframes and ducking ([`mixer`]),
+//! and feeds another pipeline with the recorder's hardware encoder chain ([`encode`]);
+//! Discord's size limit is met by re-encoding at a lower bitrate ([`fit`]).
 //!
-//! Frame mapping: output frame `i` at `fps` shows the source frame with the largest
-//! presentation time ≤ `Render::frame_source_ms(i)`: the same integer math as the
-//! preview, so a cut lands on the same frame in both.
+//! Frame mapping: output frame `i` at `fps` shows, per layer, the source frame with the
+//! largest presentation time ≤ `Layer::source_ms(i·1000/fps)`: the same integer math
+//! as the preview, so a cut lands on the same frame in both.
 //!
 //! Nothing here panics on a hostile plan or file: the plan is validated against the
 //! probed file (size, length, an estimate of the output's bytes), every size is
@@ -22,21 +23,26 @@ use gstreamer as gst;
 use gstreamer_video as gst_video;
 use gstreamer_video::prelude::VideoFrameExt as _;
 use klip_capture::CaptureError;
-use klip_edit::{Render, TextBitmap, Volumes};
+use klip_edit::advanced::Source as Media;
+use klip_edit::compose::LayerKind;
+use klip_edit::{Composition, TextBitmap};
 use klip_media::{Codec, NANOS_PER_MILLI};
 use klip_mp4::{Marker, Mp4Options};
 use klip_probe::EncoderChoice;
 use serde::{Deserialize, Serialize};
 
+pub mod canvas;
 pub mod compose;
 pub mod encode;
 pub mod files;
 pub mod fit;
+pub mod mixer;
+pub mod render;
 pub mod source;
 
 use encode::{EncodeSettings, Encoded, Encoder};
 use files::OwnedFile;
-use source::{SAMPLES_PER_MS, Source, SourceConfig};
+use render::MediaFile;
 
 /// Default Discord upload limit, bytes.
 pub const DISCORD_LIMIT_BYTES: u64 = 10_000_000;
@@ -48,6 +54,12 @@ pub const DISCORD_AUDIO_BPS: u32 = 128_000;
 pub const MAX_FPS: u32 = 240;
 /// Bitrate bounds for the Original preset (kbit/s).
 pub const ORIGINAL_KBPS: (u32, u32) = (2_000, 200_000);
+/// Bitrate bounds for a Custom export (kbit/s).
+pub const CUSTOM_KBPS: (u32, u32) = (100, 200_000);
+/// Longest side of an export.
+pub const MAX_SIDE: u32 = 4096;
+/// Most files one export reads.
+pub const MAX_MEDIA: usize = 64;
 /// Longest export, ms.
 pub const MAX_EXPORT_MS: u64 = 4 * 3_600_000;
 /// Largest export, bytes, estimated from the bitrates before encoding (a sanity bound:
@@ -62,6 +74,9 @@ pub enum ExportError {
     Plan(String),
     #[error("the clip cannot be read: {0}")]
     Source(String),
+    /// A file of the edit is gone (named: "the clip X", "the picture Y").
+    #[error("{0} is missing")]
+    Missing(String),
     #[error("no working {} encoder", .0.name())]
     NoEncoder(Codec),
     #[error("encoding failed: {0}")]
@@ -97,6 +112,8 @@ pub enum Preset {
     /// The editor's preview proxy: H.264 fitting 1280x720 (or 720x1280), ≤ 60 fps,
     /// 8 Mbit/s. Not a user preset (`ALL` leaves it out).
     Proxy,
+    /// The export dialog's own size, rate, bitrate and codec.
+    Custom(CustomOutput),
 }
 
 impl Preset {
@@ -115,6 +132,7 @@ impl Preset {
             Preset::TikTok => "tiktok",
             Preset::Discord => "discord",
             Preset::Proxy => "proxy",
+            Preset::Custom(_) => "custom",
         }
     }
 
@@ -126,6 +144,7 @@ impl Preset {
             Preset::TikTok => "TikTok",
             Preset::Discord => "Discord",
             Preset::Proxy => "Proxy",
+            Preset::Custom(_) => "Custom",
         }
     }
 
@@ -134,6 +153,40 @@ impl Preset {
             .into_iter()
             .chain([Preset::Proxy])
             .find(|p| p.id() == id)
+    }
+}
+
+/// The numbers of a Custom export.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomOutput {
+    /// The box the picture is fitted into, up or down (its shape stays the edit's
+    /// format), 2…[`MAX_SIDE`].
+    pub width: u32,
+    pub height: u32,
+    /// 1…[`MAX_FPS`].
+    pub fps: u32,
+    /// Clamped to [`CUSTOM_KBPS`].
+    pub bitrate_kbps: u32,
+    /// Falls back to H.264 when no encoder for it is available.
+    pub codec: OutCodec,
+}
+
+/// Video codecs an export can be asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OutCodec {
+    H264,
+    Hevc,
+    Av1,
+}
+
+impl OutCodec {
+    pub fn codec(self) -> Codec {
+        match self {
+            OutCodec::H264 => Codec::H264,
+            OutCodec::Hevc => Codec::H265,
+            OutCodec::Av1 => Codec::Av1,
+        }
     }
 }
 
@@ -191,8 +244,14 @@ impl Encoders {
 
 /// One export.
 pub struct ExportRequest<'a> {
+    /// The main clip (`Source::Main` in the composition).
     pub source: &'a Path,
-    pub render: &'a Render,
+    /// What to render: `klip_edit::compose` of the project over `source`.
+    pub composition: &'a Composition,
+    /// Where the composition's other sources are (`Library`, `File`, `Image`), as the
+    /// engine resolved them; a source without an entry, or whose file is gone, fails
+    /// the export by name (never silently dropped).
+    pub media: &'a [(Media, PathBuf)],
     pub preset: Preset,
     /// Where the MP4 goes; must not exist.
     pub out: &'a Path,
@@ -314,12 +373,12 @@ fn box_for(cw: u32, ch: u32, short: u32) -> (u32, u32) {
 
 fn output_for(
     preset: Preset,
-    render: &Render,
+    crop: klip_edit::Rect,
     facts: &Facts,
     encoders: &Encoders,
     pass: Option<fit::FitPass>,
 ) -> Output {
-    let (cw, ch) = (render.crop.width, render.crop.height);
+    let (cw, ch) = (crop.width, crop.height);
     let src_codec = facts
         .codec
         .filter(|c| !encoders.for_codec(*c).is_empty())
@@ -391,37 +450,161 @@ fn output_for(
                 audio_bps: DISCORD_AUDIO_BPS,
             }
         }
+        Preset::Custom(c) => {
+            let (bw, bh) = (c.width.clamp(2, MAX_SIDE), c.height.clamp(2, MAX_SIDE));
+            let (w, h) = klip_edit::compose::fit_contain(cw, ch, bw, bh);
+            let codec = c.codec.codec();
+            Output {
+                width: w.min(MAX_SIDE),
+                height: h.min(MAX_SIDE),
+                fps: c.fps.clamp(1, MAX_FPS),
+                codec: if encoders.for_codec(codec).is_empty() {
+                    Codec::H264
+                } else {
+                    codec
+                },
+                bitrate_kbps: c.bitrate_kbps.clamp(CUSTOM_KBPS.0, CUSTOM_KBPS.1),
+                max_bitrate_kbps: None,
+                audio_bps: AUDIO_BPS,
+            }
+        }
     }
 }
 
-/// The plan against the file: size, length, and a rough size of the result.
-fn check_plan(render: &Render, facts: &Facts, out: &Output) -> Result<(), ExportError> {
-    if facts.width != render.source.width || facts.height != render.source.height {
+/// How many layers play at once, at most (muted sound layers never play).
+fn most_running(comp: &Composition) -> usize {
+    let mut events: Vec<(u64, i32)> = Vec::new();
+    for l in comp.layers.iter().filter(|l| {
+        !(l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music)) && l.end_ms > l.at_ms
+    }) {
+        events.push((l.at_ms, 1));
+        events.push((l.end_ms, -1));
+    }
+    events.sort_unstable();
+    let (mut now, mut most) = (0i32, 0i32);
+    for (_, d) in events {
+        now = now.saturating_add(d);
+        most = most.max(now);
+    }
+    usize::try_from(most).unwrap_or(0)
+}
+
+/// The composition against the main clip and the output: size, crop, length, caps on
+/// everything a hostile composition could inflate, and a rough size of the result.
+fn check_plan(comp: &Composition, main: &Facts, out: &Output) -> Result<(), ExportError> {
+    let plan = |m: &str| Err(ExportError::Plan(m.to_string()));
+    if comp.duration_ms == 0 {
+        return plan("the edit is empty");
+    }
+    if main.width != comp.source.width || main.height != comp.source.height {
         return Err(ExportError::Plan(format!(
             "the plan is for a {}x{} clip, the file is {}x{}",
-            render.source.width, render.source.height, facts.width, facts.height
+            comp.source.width, comp.source.height, main.width, main.height
         )));
     }
-    if let Some(d) = facts.duration_ms
-        && render.segments.iter().any(|s| s.src_end_ms > d)
+    let c = comp.crop;
+    if c.width < 2
+        || c.height < 2
+        || c.x.saturating_add(c.width) > main.width
+        || c.y.saturating_add(c.height) > main.height
     {
-        return Err(ExportError::Plan(
-            "the edit goes past the end of the clip".into(),
-        ));
+        return plan("the format's crop is outside the clip");
     }
-    if render.output_ms > MAX_EXPORT_MS {
-        return Err(ExportError::Plan(
-            "the export is longer than 4 hours".into(),
-        ));
+    if let Some(d) = main.duration_ms
+        && comp
+            .layers
+            .iter()
+            .any(|l| l.source == Media::Main && l.src_out_ms > d)
+    {
+        return plan("the edit goes past the end of the clip");
+    }
+    if comp.duration_ms > MAX_EXPORT_MS {
+        return plan("the export is longer than 4 hours");
+    }
+    if comp.layers.len() > klip_edit::compose::MAX_LAYERS
+        || comp.texts.len() > klip_edit::MAX_TEXT_LAYERS
+        || comp.markers.len() > klip_edit::advanced::MAX_MARKERS
+    {
+        return plan("the edit has too many layers");
+    }
+    if comp.layers.iter().any(|l| {
+        l.transform.len() > klip_edit::advanced::MAX_KEYFRAMES
+            || l.opacity.len() > klip_edit::advanced::MAX_KEYFRAMES
+            || l.volume.len() > klip_edit::advanced::MAX_KEYFRAMES
+            || l.speed.len() > klip_edit::advanced::MAX_SPEED_POINTS
+    }) {
+        return plan("a layer has too many keyframes");
+    }
+    if most_running(comp) > render::MAX_RUNNING {
+        return Err(ExportError::Plan(format!(
+            "more than {} clips play at the same time",
+            render::MAX_RUNNING
+        )));
     }
     let kbps = u64::from(out.bitrate_kbps).saturating_add(u64::from(out.audio_bps) / 1000);
-    let estimate = kbps.saturating_mul(render.output_ms) / 8;
+    let estimate = kbps.saturating_mul(comp.duration_ms) / 8;
     if estimate > MAX_EXPORT_BYTES {
-        return Err(ExportError::Plan(
-            "the export would be larger than 64 GB".into(),
-        ));
+        return plan("the export would be larger than 64 GB");
     }
     Ok(())
+}
+
+/// How a source is named in an error (no folders: they may hold personal names).
+fn describe(source: &Media) -> String {
+    let file = |p: &str| {
+        Path::new(p)
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+    };
+    match source {
+        Media::Main => "the clip".into(),
+        Media::Library { key } => format!("the clip {}", file(key)),
+        Media::File { path } => format!("the file {}", file(path)),
+        Media::Image { path } => format!("the picture {}", file(path)),
+    }
+}
+
+/// Every file the composition plays, probed once; a missing one fails by name.
+fn media_files(req: &ExportRequest<'_>, main: &Facts) -> Result<Vec<MediaFile>, ExportError> {
+    let mut files = vec![MediaFile {
+        source: Media::Main,
+        path: req.source.to_path_buf(),
+        facts: Some(main.clone()),
+    }];
+    for l in &req.composition.layers {
+        if l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music) {
+            continue;
+        }
+        if files.iter().any(|m| m.source == l.source) {
+            continue;
+        }
+        if files.len() >= MAX_MEDIA {
+            return Err(ExportError::Plan("the edit uses too many files".into()));
+        }
+        let missing = || ExportError::Missing(describe(&l.source));
+        let path = req
+            .media
+            .iter()
+            .find(|(s, _)| *s == l.source)
+            .map(|(_, p)| p.clone())
+            .ok_or_else(missing)?;
+        if !path.is_file() {
+            return Err(missing());
+        }
+        let facts = match l.kind {
+            LayerKind::Video => Some(
+                probe(&path)
+                    .map_err(|e| ExportError::Source(format!("{}: {e}", describe(&l.source))))?,
+            ),
+            _ => probe(&path).ok(),
+        };
+        files.push(MediaFile {
+            source: l.source.clone(),
+            path,
+            facts,
+        });
+    }
+    Ok(files)
 }
 
 /// Export `req` to `req.out`, reporting progress and stopping when `cancel` is set.
@@ -431,26 +614,39 @@ pub fn export(
     cancel: &AtomicBool,
 ) -> Result<ExportSummary, ExportError> {
     let started = Instant::now();
-    req.render.validate().map_err(ExportError::Plan)?;
     if req.out.exists() {
         return Err(klip_mp4::Mp4Error::AlreadyExists(req.out.to_path_buf()).into());
     }
+    let comp = req.composition;
+    // What can be refused without reading anything.
+    if comp.duration_ms == 0 || comp.duration_ms > MAX_EXPORT_MS {
+        return Err(ExportError::Plan("the edit is empty or too long".into()));
+    }
+    let c = comp.crop;
+    if c.x.saturating_add(c.width) > comp.source.width
+        || c.y.saturating_add(c.height) > comp.source.height
+    {
+        return Err(ExportError::Plan(
+            "the format's crop is outside the clip".into(),
+        ));
+    }
     gst::init().map_err(|e| ExportError::Gst(e.to_string()))?;
     let facts = probe(req.source)?;
+    let media = media_files(req, &facts)?;
     let mut pass_no: u32 = 1;
     let mut fit_pass: Option<fit::FitPass> = (req.preset == Preset::Discord).then(|| {
         fit::first_pass(
             req.discord_limit_bytes,
-            req.render.output_ms,
+            comp.duration_ms,
             DISCORD_AUDIO_BPS / 1000,
         )
     });
     loop {
-        let out = output_for(req.preset, req.render, &facts, req.encoders, fit_pass);
-        check_plan(req.render, &facts, &out)?;
+        let out = output_for(req.preset, comp.crop, &facts, req.encoders, fit_pass);
+        check_plan(comp, &facts, &out)?;
         let spool = files::with_suffix(req.out, ".spool");
-        let encoded = run_pass(req, &facts, &out, &spool, pass_no, progress, cancel)?;
-        let (part, real_bytes, duration_ms) = mux(&encoded, req.render, req.out)?;
+        let encoded = render::run_pass(req, &media, &out, &spool, pass_no, progress, cancel)?;
+        let (part, real_bytes, duration_ms) = mux(&encoded, &comp.markers, req.out)?;
         let frames = encoded.video.1.len() as u64;
         let encoder = encoded.encoder.clone();
         drop(encoded);
@@ -504,7 +700,7 @@ pub fn export(
 /// the part, its size and its duration.
 fn mux(
     encoded: &Encoded,
-    render: &Render,
+    markers: &[klip_edit::advanced::Marker],
     out: &Path,
 ) -> Result<(OwnedFile, u64, u64), ExportError> {
     use std::io::{BufReader, BufWriter, Write as _};
@@ -523,11 +719,10 @@ fn mux(
             enabled: true,
         });
     }
-    let markers: Vec<Marker> = render
-        .markers
+    let markers: Vec<Marker> = markers
         .iter()
         .map(|m| Marker {
-            at: i64::try_from(m.out_ms.saturating_mul(NANOS_PER_MILLI as u64)).unwrap_or(i64::MAX),
+            at: i64::try_from(m.at_ms.saturating_mul(NANOS_PER_MILLI as u64)).unwrap_or(i64::MAX),
             title: m.title.clone(),
         })
         .collect();
@@ -621,154 +816,10 @@ fn composed(
     Ok(gst::Buffer::from_mut_slice(packed))
 }
 
-/// The samples of one segment trimmed or padded to its output length.
-fn fit_samples(mut samples: Vec<i16>, out_ms: u64) -> Vec<i16> {
-    let want = usize::try_from(out_ms)
-        .unwrap_or(usize::MAX)
-        .saturating_mul(SAMPLES_PER_MS);
-    samples.resize(want, 0);
-    samples
-}
-
-/// Which slider a recorded track follows (`None`: not used in the mix).
-fn volume_for(name: &str, has_separate: bool, v: &Volumes) -> Option<f32> {
-    match name {
-        "Game" | "System" => Some(v.game),
-        "Microphone" | "Voice" => Some(v.mic),
-        "Mix" => (!has_separate).then_some(v.game),
-        _ => (!has_separate).then_some(v.game),
-    }
-}
-
-fn run_pass(
-    req: &ExportRequest<'_>,
-    facts: &Facts,
-    out: &Output,
-    spool: &Path,
-    pass: u32,
-    progress: &mut dyn FnMut(Progress),
-    cancel: &AtomicBool,
-) -> Result<Encoded, ExportError> {
-    let render = req.render;
-    let cues: Vec<Cue> = render
-        .texts
-        .iter()
-        .filter_map(|t| {
-            klip_edit::render_layer(t, out.width, out.height)
-                .ok()
-                .map(|bitmap| Cue { id: t.id, bitmap })
-        })
-        .collect();
-    let source = Source::open(
-        req.source,
-        SourceConfig {
-            src_width: facts.width,
-            src_height: facts.height,
-            crop: render.crop,
-            out_width: out.width,
-            out_height: out.height,
-            want_video: true,
-        },
-    )?;
-    let mut encoder = start_encoder(out, req.encoders, spool)?;
-    let frames_total = render.frame_count(out.fps);
-    let mut report = |done: u64| {
-        progress(Progress {
-            pass,
-            frames_done: done,
-            frames_total,
-        });
-    };
-    report(0);
-    let mut audio: Vec<Vec<i16>> = vec![Vec::new(); source.audio_tracks()];
-    let mut i: u64 = 0;
-    // The last frame of the previous segment: what a segment that lies past the last
-    // video frame (the movie is a few ms longer than the video) keeps showing.
-    let mut last: Option<source::Frame> = None;
-    for seg in &render.segments {
-        source.seek(seg.src_start_ms, seg.src_end_ms, seg.speed.rate())?;
-        let mut cur: Option<source::Frame> = None;
-        let mut next = source.next_frame()?;
-        while let Some(t) = render.frame_out_ms(i, out.fps) {
-            if t >= seg.out_end_ms {
-                break;
-            }
-            if cancel.load(Ordering::Relaxed) {
-                return Err(ExportError::Cancelled);
-            }
-            let src_ms = render
-                .frame_source_ms(i, out.fps)
-                .ok_or_else(|| ExportError::Plan("frame outside the plan".into()))?;
-            while next.as_ref().is_some_and(|n| n.pts_ms <= src_ms) {
-                cur = next.take();
-                next = source.next_frame()?;
-            }
-            let frame = cur
-                .as_ref()
-                .or(next.as_ref())
-                .or(last.as_ref())
-                .ok_or_else(|| ExportError::Source("the clip has no frames in a segment".into()))?;
-            let active: Vec<&Cue> = render
-                .texts_at(t)
-                .filter_map(|l| cues.iter().find(|c| c.id == l.id))
-                .collect();
-            let buffer = if active.is_empty()
-                && frame.info.width() == out.width
-                && frame.info.height() == out.height
-            {
-                frame.buffer.copy()
-            } else {
-                composed(frame, out, &active)?
-            };
-            encoder.push_frame(buffer, i)?;
-            i = i.saturating_add(1);
-            if i.is_multiple_of(15) {
-                report(i);
-            }
-        }
-        // Run the segment out so its audio is complete.
-        while let Some(f) = source.next_frame()? {
-            next = Some(f);
-        }
-        if let Some(f) = cur.take().or(next.take()) {
-            last = Some(f);
-        }
-        let out_len = seg.out_end_ms.saturating_sub(seg.out_start_ms);
-        for (track, samples) in audio.iter_mut().zip(source.drain_audio()?) {
-            track.extend(fit_samples(samples, out_len));
-        }
-    }
-    report(i);
-    drop(last);
-    drop(source);
-    // The mix: Game + Microphone (or Mix alone) with the editor's sliders.
-    let names: Vec<&str> = (0..audio.len())
-        .map(|i| facts.audio_names.get(i).map_or("", String::as_str))
-        .collect();
-    let has_separate = names
-        .iter()
-        .any(|n| matches!(*n, "Game" | "System" | "Microphone" | "Voice"));
-    let inputs: Vec<compose::MixInput<'_>> = audio
-        .iter()
-        .zip(&names)
-        .filter_map(|(samples, name)| {
-            volume_for(name, has_separate, &render.volumes)
-                .map(|volume| compose::MixInput { samples, volume })
-        })
-        .collect();
-    let mixed = compose::mix(&inputs);
-    let total = fit_samples(mixed, render.output_ms);
-    encoder.push_audio(&total)?;
-    if cancel.load(Ordering::Relaxed) {
-        return Err(ExportError::Cancelled);
-    }
-    encoder.finish()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use klip_edit::{Project, SourceInfo};
+    use klip_edit::{Project, SourceInfo, compose};
 
     fn facts() -> Facts {
         Facts {
@@ -792,31 +843,35 @@ mod tests {
         }
     }
 
-    fn render() -> Render {
-        Render::new(&Project::new(10_000), &source())
+    fn comp() -> Composition {
+        compose(&Project::new(10_000), &source())
+    }
+
+    fn crop() -> klip_edit::Rect {
+        comp().crop
     }
 
     #[test]
     fn presets_pick_sizes_rates_and_codecs() {
         let enc = Encoders::default();
-        let o = output_for(Preset::Original, &render(), &facts(), &enc, None);
+        let o = output_for(Preset::Original, crop(), &facts(), &enc, None);
         assert_eq!(
             (o.width, o.height, o.fps, o.codec, o.bitrate_kbps),
             (2560, 1440, 120, Codec::H264, 40_000)
         );
-        let o = output_for(Preset::YouTube, &render(), &facts(), &enc, None);
+        let o = output_for(Preset::YouTube, crop(), &facts(), &enc, None);
         assert_eq!(
             (o.width, o.height, o.fps, o.bitrate_kbps),
             (1920, 1080, 60, 20_000)
         );
-        let o = output_for(Preset::TikTok, &render(), &facts(), &enc, None);
+        let o = output_for(Preset::TikTok, crop(), &facts(), &enc, None);
         assert_eq!((o.width, o.height, o.codec), (1920, 1080, Codec::H264));
         let p = fit::FitPass {
             bitrate_kbps: 1_000,
             max_height: 720,
             fps_cap: 30,
         };
-        let o = output_for(Preset::Discord, &render(), &facts(), &enc, Some(p));
+        let o = output_for(Preset::Discord, crop(), &facts(), &enc, Some(p));
         assert_eq!(
             (o.width, o.height, o.fps, o.bitrate_kbps, o.max_bitrate_kbps),
             (1280, 720, 30, 1_000, Some(1_000))
@@ -825,18 +880,75 @@ mod tests {
     }
 
     #[test]
+    fn custom_honours_its_numbers() {
+        let enc = Encoders::default();
+        let c = |width, height, fps, bitrate_kbps, codec| {
+            Preset::Custom(CustomOutput {
+                width,
+                height,
+                fps,
+                bitrate_kbps,
+                codec,
+            })
+        };
+        let o = output_for(
+            c(1280, 720, 30, 6_000, OutCodec::H264),
+            crop(),
+            &facts(),
+            &enc,
+            None,
+        );
+        assert_eq!(
+            (o.width, o.height, o.fps, o.bitrate_kbps, o.codec),
+            (1280, 720, 30, 6_000, Codec::H264)
+        );
+        // Up to 4K from a 1440p clip; the shape stays the format's.
+        let o = output_for(
+            c(3840, 3840, 60, 50_000, OutCodec::Hevc),
+            crop(),
+            &facts(),
+            &enc,
+            None,
+        );
+        assert_eq!((o.width, o.height), (3840, 2160));
+        assert_eq!(o.codec, Codec::H264, "no HEVC encoder in this list: H.264");
+        let o = output_for(
+            c(0, 99_999, 0, 0, OutCodec::Av1),
+            crop(),
+            &facts(),
+            &enc,
+            None,
+        );
+        assert_eq!((o.width, o.height), (2, 2));
+        assert_eq!((o.fps, o.bitrate_kbps), (1, CUSTOM_KBPS.0));
+        let o = output_for(
+            c(4096, 4096, 999, u32::MAX, OutCodec::H264),
+            crop(),
+            &facts(),
+            &enc,
+            None,
+        );
+        assert_eq!(
+            (o.width, o.fps, o.bitrate_kbps),
+            (4096, MAX_FPS, CUSTOM_KBPS.1)
+        );
+        assert_eq!(Preset::parse("custom"), None, "custom needs its numbers");
+        assert_eq!(c(2, 2, 1, 1, OutCodec::H264).name(), "Custom");
+    }
+
+    #[test]
     fn tall_crops_fit_their_boxes() {
         let mut p = Project::new(10_000);
         p.format.kind = klip_edit::FormatKind::Tall;
-        let r = Render::new(&p, &source());
+        let tall = compose(&p, &source()).crop;
         // A 810x1440 crop fits every 1080-short-side box as it is: never scaled up.
         for preset in [Preset::YouTube, Preset::TikTok] {
-            let o = output_for(preset, &r, &facts(), &Encoders::default(), None);
+            let o = output_for(preset, tall, &facts(), &Encoders::default(), None);
             assert_eq!((o.width, o.height), (810, 1440), "{preset:?}");
         }
         let o = output_for(
             Preset::Discord,
-            &r,
+            tall,
             &facts(),
             &Encoders::default(),
             Some(fit::FitPass {
@@ -852,26 +964,80 @@ mod tests {
     fn plans_are_checked_against_the_file() {
         let o = output_for(
             Preset::YouTube,
-            &render(),
+            crop(),
             &facts(),
             &Encoders::default(),
             None,
         );
-        check_plan(&render(), &facts(), &o).unwrap();
+        check_plan(&comp(), &facts(), &o).unwrap();
         let mut short = facts();
         short.duration_ms = Some(9_000);
-        assert!(check_plan(&render(), &short, &o).is_err());
+        assert!(check_plan(&comp(), &short, &o).is_err());
         let mut wide = facts();
         wide.width = 1920;
-        assert!(check_plan(&render(), &wide, &o).is_err());
-        let mut long = render();
-        long.output_ms = MAX_EXPORT_MS + 1;
+        assert!(check_plan(&comp(), &wide, &o).is_err());
+        let mut long = comp();
+        long.duration_ms = MAX_EXPORT_MS + 1;
         assert!(check_plan(&long, &facts(), &o).is_err());
         let mut huge = o.clone();
         huge.bitrate_kbps = 200_000;
-        let mut r = render();
-        r.output_ms = 3_600_000;
-        assert!(check_plan(&r, &facts(), &huge).is_err());
+        let mut c = comp();
+        c.duration_ms = 3_600_000;
+        assert!(check_plan(&c, &facts(), &huge).is_err());
+        let mut empty = comp();
+        empty.duration_ms = 0;
+        assert!(check_plan(&empty, &facts(), &o).is_err());
+        let mut outside = comp();
+        outside.crop.x = 1;
+        assert!(check_plan(&outside, &facts(), &o).is_err());
+        let mut keys = comp();
+        if let Some(l) = keys.layers.first_mut() {
+            l.volume = vec![klip_edit::Keyframe::default(); klip_edit::advanced::MAX_KEYFRAMES + 1];
+        }
+        assert!(check_plan(&keys, &facts(), &o).is_err());
+        // Seventeen layers at once.
+        let mut crowd = comp();
+        let first = crowd.layers.first().cloned().unwrap();
+        for i in 0..render::MAX_RUNNING as u32 {
+            let mut l = first.clone();
+            l.id = 100 + i;
+            crowd.layers.push(l);
+        }
+        assert!(check_plan(&crowd, &facts(), &o).is_err());
+        // ... unless they are muted sound.
+        for l in crowd.layers.iter_mut().skip(1) {
+            l.kind = LayerKind::Music;
+            l.muted = true;
+        }
+        check_plan(&crowd, &facts(), &o).unwrap();
+    }
+
+    #[test]
+    fn missing_media_fails_by_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("main.mp4");
+        std::fs::write(&main, b"x").unwrap();
+        let mut c = comp();
+        let mut b = c.layers.first().cloned().unwrap();
+        b.id = 99;
+        b.source = Media::Library {
+            key: "Game/other clip.mp4".into(),
+        };
+        c.layers.push(b);
+        let enc = Encoders::default();
+        let out = dir.path().join("out.mp4");
+        let req = |media: &'static [(Media, PathBuf)]| ExportRequest {
+            source: &main,
+            composition: &c,
+            media,
+            preset: Preset::YouTube,
+            out: &out,
+            encoders: &enc,
+            discord_limit_bytes: DISCORD_LIMIT_BYTES,
+            pretend_overshoot: 0.0,
+        };
+        let e = media_files(&req(&[]), &facts()).err().unwrap();
+        assert_eq!(e.to_string(), "the clip other clip.mp4 is missing");
     }
 
     #[test]
@@ -882,24 +1048,5 @@ mod tests {
             assert_eq!(serde_json::from_str::<Preset>(&json).unwrap(), p);
         }
         assert_eq!(Preset::parse("Discord"), None);
-    }
-
-    #[test]
-    fn volumes_follow_track_names() {
-        let v = Volumes {
-            game: 0.5,
-            mic: 2.0,
-        };
-        assert_eq!(volume_for("Game", true, &v), Some(0.5));
-        assert_eq!(volume_for("Microphone", true, &v), Some(2.0));
-        assert_eq!(volume_for("Mix", true, &v), None);
-        assert_eq!(volume_for("Mix", false, &v), Some(0.5));
-        assert_eq!(volume_for("", false, &v), Some(0.5));
-    }
-
-    #[test]
-    fn samples_fit_their_segment() {
-        assert_eq!(fit_samples(vec![1; 10], 1).len(), SAMPLES_PER_MS);
-        assert_eq!(fit_samples(vec![], 3).len(), 3 * SAMPLES_PER_MS);
     }
 }

@@ -13,7 +13,7 @@ Last updated: 2026-10-10 (M8 done).
 | M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
 | M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
 | M8 | Editor, Normal mode + export presets | **done on Windows** (ADR 0017 accepted): `klip-edit` model + text, `klip-export` pipeline, engine commands, the Editor workspace, e2e `m8_editor.rs`; Linux not yet run |
-| M9 | Editor, Advanced mode (incl. montage) | **in progress**: M9.1 ADR 0018 + the compositor spike (4.6x / 8.4x realtime: extend `klip-export`), tasks M9.2–M9.6 planned |
+| M9 | Editor, Advanced mode (incl. montage) | **in progress**: M9.1 ADR 0018 + spike, M9.2 schema v2, M9.3 the composition renderer (montages, transitions, zoom, stickers, colour, ducking, Custom export; 10-minute montage 10.3x realtime, < 800 MB); M9.4–M9.6 next |
 | M10 | Themes v1 | |
 | M11 | Sharing | |
 | M12 | Auto-clip via official integrations | |
@@ -294,7 +294,34 @@ width/height/xpos/ypos) and crossfaded in over 1 s (pad alpha), into the encode 
 
 Both over the 2x bar in ADR 0018, so Advanced mode extends `klip-export`.
 
+### Composition renderer (M9.3, `klip-export`)
+
+Measured 2026-10-10, i7-14700KF + NVIDIA (NVENC H.264), 1280x720@60 barcoded clips made
+by the tests, hardware decoding (in-process test), the user's game possibly running:
+
+| Test (`tests/export.rs`, `--ignored`) | Result |
+|---|---|
+| `long_montage_stays_under_a_gigabyte` (release): 10 min, 20 layers (main, nine library clips with 1 s crossfades, five with a 1x → 1.5x zoom, ten music pieces) | 36 000 frames in 58 s = **10.3x realtime**, peak working set **798 MB** (the test process: 116 MB before) |
+| `montage_crossfade_maps_every_frame` (debug): two clips, a 500 ms crossfade | 211 frames on the plan, 30 blended, **0 wrong** |
+| `zoom_shows_the_centre_and_colour_grades` | 2x zoom vs the scaled source centre **42.5 dB** (vs the unzoomed frame 14.0 dB); brightness +0.2 → **+49** levels (ideal 51) |
+| `music_ducks_under_a_voice` | music **−11.91 dB** under a voice layer (setting −12); unducked ±0.5 dB |
+| `sticker_sits_where_the_plan_puts_it` | opaque half 255, 50 % half 163.9 (ideal 164.8) |
+| `custom_preset_honours_its_numbers` | 640x640 box → 640x360, 30 fps, h264; 685 kbit/s at a 1500 target, 354 at 150 (simple frames undershoot) |
+
+Normal-mode exports go through the same renderer; the six M8.3 export tests pass on it.
+
 ## Approximate / not done yet
+
+- **Renderer (M9.3)**:
+  - Zoom and position snap to whole pixels (the visible source rectangle is whole source
+    pixels, the placement whole output pixels): a slow zoom can wobble by up to a pixel.
+  - A dip transition on an upper track fades that track out over the tracks below it,
+    not to black (`compose` turns transitions into opacity ramps).
+  - Composing is on the CPU (`GstVideoConverter` + own blending); `d3d11compositor` is a
+    later optimisation. A zoom animation builds a new converter every frame.
+  - Ducking listens to microphone tracks and sound/voice-over layers only; game audio
+    never ducks the music (by design, ADR 0018).
+  - Not run yet: AV1/HEVC Custom exports, montages from real recorded clips (M9.6), Linux.
 
 - **Export (M8.3)**:
   - Discord's first pass lands well under the limit (17–57 % on the barcode clip: VBR

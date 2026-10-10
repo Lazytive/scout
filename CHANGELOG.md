@@ -5,6 +5,26 @@ reason)`.
 
 ## Unreleased
 
+- M9.3 (part 4) — The renderer: `klip-export` renders a `klip_edit::Composition` (both
+  modes; Normal mode is one track) instead of a `Render`. `render::run_pass` plays each
+  layer in pieces from pooled source pipelines (music/sounds without video decoding,
+  pictures once), composes frames in-process (`canvas`: the visible part of each layer
+  cropped and scaled by a `GstVideoConverter`, alpha × opacity blending, the colour
+  matrix; a lone full-frame layer passes through untouched, so Normal mode costs what it
+  did), mixes sound per piece with per-ms volume keyframes into music and main buses
+  with ducking under speech (`mixer`), and hands audio to the encoder as soon as no
+  playing piece can add to it. `Preset::Custom {width, height, fps, bitrate_kbps,
+  codec}`. `ExportRequest {composition, media}`: other sources' files resolved by the
+  engine; a missing one fails by name (`ExportError::Missing`). The engine and the
+  media worker send compositions (`ExportJob {composition, media}`). ADR 0018 records
+  why composing is in-process rather than in `compositor`; the klip-export README is
+  rewritten. Hardware acceptance in `tests/export.rs`: crossfade montage (0 frames off
+  the plan), 2x zoom (42.5 dB vs the scaled centre), brightness, sticker alpha, ducking
+  (−11.91 dB for −12), Custom size/rate/codec/bitrate, a 10-minute montage at 10.3x
+  realtime with a 798 MB peak working set; the six M8.3 export tests pass on the new
+  path (the 0.5x beep tolerance is 70 ms now: onsets after `scaletempo` vary 30–52 ms
+  between runs). (Claude Opus 5.5: M9.3)
+
 - M9.3 (part 3) — Exports no longer hold the encoded file in memory: the encoder's
   packets are spooled to `<out>.spool` as they come (only sample metadata in RAM) and
   muxed with `klip_mp4::write_mp4_spooled` into `<out>.part`, renamed at the end

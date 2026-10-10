@@ -27,7 +27,8 @@ use gstreamer_app as gst_app;
 use klip_capture::audio::{self, CHANNELS, SAMPLE_RATE};
 use klip_capture::{CaptureStats, EncodeConfig, PacketSink, Timing, attach_sink_with};
 use klip_edit::{
-    FormatKind, Piece, Position, Project, Render, SourceInfo, Speed, TextLayer, Volumes,
+    Composition, FormatKind, Piece, Position, Project, Render, SourceInfo, Speed, TextLayer,
+    Volumes, compose,
 };
 use klip_export::{Encoders, ExportError, ExportRequest, Preset, Progress, export};
 use klip_media::{Codec, NANOS_PER_SEC, Packet, TrackInfo};
@@ -49,6 +50,8 @@ struct ClipSpec {
     mic_beeps: Vec<f64>,
     /// Bookmarks (chapters), seconds.
     markers: Vec<f64>,
+    /// The first frame's counter.
+    counter_base: u32,
 }
 
 impl ClipSpec {
@@ -61,6 +64,7 @@ impl ClipSpec {
             game_beeps: GAME_BEEPS.to_vec(),
             mic_beeps: MIC_BEEPS.to_vec(),
             markers: vec![],
+            counter_base: 0,
         }
     }
 }
@@ -197,7 +201,8 @@ fn make_clip(encoder: &EncoderChoice, path: &Path, spec: &ClipSpec) {
     pipeline.set_state(gst::State::Playing).unwrap();
     let frames = u64::from(spec.seconds * FPS);
     for i in 0..frames {
-        let data = barcode::render_bgra(i as u32, w, h, i % u64::from(FPS) == 0);
+        let data =
+            barcode::render_bgra(spec.counter_base + i as u32, w, h, i % u64::from(FPS) == 0);
         let mut buf = gst::Buffer::from_mut_slice(data);
         {
             let b = buf.get_mut().unwrap();
@@ -290,16 +295,23 @@ fn source_info(path: &Path) -> SourceInfo {
     }
 }
 
+/// The Normal-mode plan (what the expectations are computed from) and the composition
+/// the renderer gets for the same project.
+fn plan(p: &Project, info: &SourceInfo) -> (Render, Composition) {
+    (Render::new(p, info), compose(p, info))
+}
+
 fn request<'a>(
     preset: Preset,
     clip: &'a Path,
-    render: &'a Render,
+    composition: &'a Composition,
     out: &'a Path,
     encoders: &'a Encoders,
 ) -> ExportRequest<'a> {
     ExportRequest {
         source: clip,
-        render,
+        composition,
+        media: &[],
         preset,
         out,
         encoders,
@@ -392,12 +404,12 @@ fn cuts_and_speed_map_every_output_frame() {
     p.pieces = pieces.clone();
     let info = source_info(&clip);
     assert_eq!(info.bookmarks_ms, vec![1_000, 4_000, 9_000, 12_500]);
-    let render = Render::new(&p, &info);
+    let (render, comp) = plan(&p, &info);
     assert_eq!(render.output_ms, 8_000);
     let out = dir.path().join("clip - Original.mp4");
     let encoders = encoders(&enc);
     let t = Instant::now();
-    let summary = run(&request(Preset::Original, &clip, &render, &out, &encoders));
+    let summary = run(&request(Preset::Original, &clip, &comp, &out, &encoders));
     println!(
         "export (trim + cut + 2x + 0.5x, 8 s of 720p60): {} frames in {:.1} s, {} bytes, {}",
         summary.frames,
@@ -468,11 +480,11 @@ fn cuts_and_speed_map_every_output_frame() {
     }
     // A plan that claims not to know the clip's length and reaches past it is refused
     // (nothing is encoded for hours).
-    let mut past = Render::new(&p, &info);
+    let mut past = compose(&p, &info);
     past.source.duration_ms = 0;
-    past.segments[2].src_end_ms = 60_000;
-    past.output_ms = past.segments[2].out_end_ms + (60_000 - 14_000) * 2;
-    past.segments[2].out_end_ms = past.output_ms;
+    past.layers[2].src_out_ms = 60_000;
+    past.duration_ms = past.layers[2].end_ms + (60_000 - 14_000) * 2;
+    past.layers[2].end_ms = past.duration_ms;
     let r = export(
         &request(
             Preset::Original,
@@ -524,12 +536,12 @@ fn text_overlay_matches_the_bitmap() {
         start_ms: 1_000,
         end_ms: 3_000,
     }];
-    let render = Render::new(&p, &source_info(&clip));
+    let (render, comp) = plan(&p, &source_info(&clip));
     let out = dir.path().join("clip - Original.mp4");
     run(&request(
         Preset::Original,
         &clip,
-        &render,
+        &comp,
         &out,
         &encoders(&enc),
     ));
@@ -586,7 +598,7 @@ fn tall_crop_keeps_the_right_columns() {
         let mut p = Project::new(4_000);
         p.format.kind = FormatKind::Tall;
         p.format.crop_x = crop_x;
-        let render = Render::new(&p, &source_info(&clip));
+        let (render, comp) = plan(&p, &source_info(&clip));
         let (cw, ch, cx) = (
             render.crop.width as usize,
             render.crop.height as usize,
@@ -594,7 +606,7 @@ fn tall_crop_keeps_the_right_columns() {
         );
         assert_eq!((cw, ch), (404, 720));
         let out = dir.path().join(format!("tall-{crop_x}.mp4"));
-        let summary = run(&request(Preset::TikTok, &clip, &render, &out, &encoders));
+        let summary = run(&request(Preset::TikTok, &clip, &comp, &out, &encoders));
         assert_eq!((summary.width, summary.height), (404, 720));
         let streams = oracle::probe_streams(&out).unwrap();
         let video = streams.iter().find(|s| s.width.is_some()).unwrap();
@@ -632,12 +644,12 @@ fn discord_preset_fits_the_limit() {
     for (seconds, overshoot) in [(5u32, 0.0), (12, 0.0), (25, 4.0), (40, 0.0), (60, 0.0)] {
         let clip = dir.path().join(format!("clip{seconds}.mp4"));
         make_clip(&enc, &clip, &ClipSpec::hd(seconds, 30_000));
-        let render = Render::new(
+        let (render, comp) = plan(
             &Project::new(u64::from(seconds) * 1000),
             &source_info(&clip),
         );
         let out = dir.path().join(format!("clip{seconds} - Discord.mp4"));
-        let mut req = request(Preset::Discord, &clip, &render, &out, &encoders);
+        let mut req = request(Preset::Discord, &clip, &comp, &out, &encoders);
         req.pretend_overshoot = overshoot;
         let t = Instant::now();
         let summary = export(&req, &mut |_| {}, &AtomicBool::new(false)).unwrap();
@@ -688,9 +700,9 @@ fn discord_preset_fits_the_limit() {
     spec.width = 1920;
     spec.height = 1080;
     make_clip(&enc, &clip, &spec);
-    let render = Render::new(&Project::new(5_000), &source_info(&clip));
+    let (render, comp) = plan(&Project::new(5_000), &source_info(&clip));
     let out = dir.path().join("clip1080 - Discord.mp4");
-    let mut req = request(Preset::Discord, &clip, &render, &out, &encoders);
+    let mut req = request(Preset::Discord, &clip, &comp, &out, &encoders);
     req.discord_limit_bytes = 400_000;
     let summary = export(&req, &mut |_| {}, &AtomicBool::new(false)).unwrap();
     println!(
@@ -724,12 +736,12 @@ fn cancel_leaves_no_file() {
     let dir = tempfile::tempdir().unwrap();
     let clip = dir.path().join("clip.mp4");
     make_clip(&enc, &clip, &ClipSpec::hd(10, 20_000));
-    let render = Render::new(&Project::new(10_000), &source_info(&clip));
+    let (render, comp) = plan(&Project::new(10_000), &source_info(&clip));
     let out = dir.path().join("clip - YouTube.mp4");
     let cancel = AtomicBool::new(false);
     let seen = Mutex::new(Vec::new());
     let r = export(
-        &request(Preset::YouTube, &clip, &render, &out, &encoders(&enc)),
+        &request(Preset::YouTube, &clip, &comp, &out, &encoders(&enc)),
         &mut |p: Progress| {
             seen.lock().unwrap().push(p);
             if p.frames_done >= 60 {
@@ -788,9 +800,9 @@ fn volumes_pick_the_tracks() {
     ] {
         let mut p = Project::new(4_000);
         p.volumes = volumes;
-        let render = Render::new(&p, &source_info(&clip));
+        let (_, comp) = plan(&p, &source_info(&clip));
         let out = dir.path().join(format!("{name}.mp4"));
-        run(&request(Preset::Original, &clip, &render, &out, &encoders));
+        run(&request(Preset::Original, &clip, &comp, &out, &encoders));
         let times = onset_times(&out);
         println!("{name}: beeps at {times:?}");
         assert!(close(&times, want, 0.005), "{name}: {times:?} vs {want:?}");
@@ -808,14 +820,15 @@ fn volumes_pick_the_tracks() {
             game: 1.0,
             mic: 0.0,
         };
-        let render = Render::new(&p, &source_info(&clip));
+        let (_, comp) = plan(&p, &source_info(&clip));
         let out = dir.path().join(format!("{name}.mp4"));
-        run(&request(Preset::Original, &clip, &render, &out, &encoders));
+        run(&request(Preset::Original, &clip, &comp, &out, &encoders));
         let times = onset_times(&out);
         println!("{name}: beeps at {times:?}");
         let want: Vec<f64> = GAME_BEEPS.iter().map(|t| t * factor).collect();
-        // A stretched attack is detected a little early (~35 ms at 0.5x): 50 ms.
-        assert!(close(&times, &want, 0.05), "{name}: {times:?} vs {want:?}");
+        // A stretched attack is detected early, by a varying part of a scaletempo
+        // window: 0.5x onsets came 30–52 ms early over runs (2026-10-10): 70 ms.
+        assert!(close(&times, &want, 0.07), "{name}: {times:?} vs {want:?}");
     }
 }
 
@@ -825,7 +838,7 @@ fn hostile_plans_fail_cleanly() {
     let encoders = Encoders::default();
     let missing = dir.path().join("nope.mp4");
     let out = dir.path().join("out.mp4");
-    let bad = Render::default();
+    let bad = Composition::default();
     let r = export(
         &request(Preset::Original, &missing, &bad, &out, &encoders),
         &mut |_| {},
@@ -839,7 +852,7 @@ fn hostile_plans_fail_cleanly() {
         fps: Some(30.0),
         bookmarks_ms: vec![],
     };
-    let mut wide = Render::new(&Project::new(1_000), &src);
+    let mut wide = compose(&Project::new(1_000), &src);
     wide.crop.width = 10_000;
     let r = export(
         &request(Preset::Original, &missing, &wide, &out, &encoders),
@@ -847,7 +860,7 @@ fn hostile_plans_fail_cleanly() {
         &AtomicBool::new(false),
     );
     assert!(matches!(r, Err(ExportError::Plan(_))), "{r:?}");
-    let ok = Render::new(&Project::new(1_000), &src);
+    let ok = compose(&Project::new(1_000), &src);
     let r = export(
         &request(Preset::Original, &missing, &ok, &out, &encoders),
         &mut |_| {},
@@ -1064,4 +1077,649 @@ fn compose_spike(
         return Err(format!("only {frames} frames came out"));
     }
     Ok((elapsed, frames))
+}
+
+// ---------------------------------------------------------------------------------
+// M9.3: the composition renderer (montages, transitions, zoom, ducking, Custom).
+
+use klip_edit::advanced::{
+    Ease, PlacedClip, Source as Media, Track, TrackKind, TransformKey, Transition, TransitionKind,
+};
+use klip_edit::compose::Layer;
+
+/// Counters of the second clip start here, so a frame says which clip it came from.
+const B_BASE: u32 = 10_000;
+
+/// The source frame shown at `src_ms`: the largest pts (floor ms) at or before it.
+fn counter_at(src_ms: u64) -> u32 {
+    let mut k = src_ms * u64::from(FPS) / 1000;
+    while (k + 1) * 1000 / u64::from(FPS) <= src_ms {
+        k += 1;
+    }
+    k as u32
+}
+
+/// What output frame `i` must show when its top layer is fully opaque (`None` while
+/// layers blend): that layer's clip base plus its source frame (a clip of `frames`
+/// frames holds its last one past its end: the movie is a few ms longer).
+fn composed_counter(c: &Composition, i: u64, fps: u32, frames: u32) -> Option<u32> {
+    let t = c.frame_out_ms(i, fps)?;
+    let visible = c.visible_at(t);
+    let top: &Layer = visible.last()?;
+    if top.opacity_at(t) < 1.0 {
+        return None;
+    }
+    let base = if top.source == Media::Main { 0 } else { B_BASE };
+    Some(base + counter_at(top.source_ms(t)?).min(frames - 1))
+}
+
+fn library(key: &str) -> Media {
+    Media::Library { key: key.into() }
+}
+
+fn placed(id: u32, source: Media, in_ms: u64, out_ms: u64, at_ms: u64) -> PlacedClip {
+    PlacedClip {
+        id,
+        source,
+        in_ms,
+        out_ms,
+        at_ms,
+        ..PlacedClip::default()
+    }
+}
+
+fn track(id: u32, kind: TrackKind, clips: Vec<PlacedClip>) -> Track {
+    Track {
+        id,
+        kind,
+        name: format!("track {id}"),
+        muted: false,
+        clips,
+    }
+}
+
+/// A 48 kHz stereo 16-bit WAV of `f(t)` (−1…1) for `seconds`.
+fn write_wav(path: &Path, seconds: f64, f: impl Fn(f64) -> f64) {
+    let frames = (seconds * 48_000.0) as u32;
+    let mut data = Vec::with_capacity(frames as usize * 4);
+    for n in 0..frames {
+        let v = (f(f64::from(n) / 48_000.0).clamp(-1.0, 1.0) * 32_767.0) as i16;
+        data.extend_from_slice(&v.to_le_bytes());
+        data.extend_from_slice(&v.to_le_bytes());
+    }
+    let mut wav = Vec::new();
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&48_000u32.to_le_bytes());
+    wav.extend_from_slice(&(48_000u32 * 4).to_le_bytes());
+    wav.extend_from_slice(&4u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    wav.extend_from_slice(&data);
+    std::fs::write(path, wav).unwrap();
+}
+
+/// The amplitude of `freq` in `samples` (Goertzel).
+fn tone_level(samples: &[i16], rate: u32, freq: f64) -> f64 {
+    let w = 2.0 * std::f64::consts::PI * freq / f64::from(rate);
+    let coeff = 2.0 * w.cos();
+    let (mut s1, mut s2) = (0.0f64, 0.0f64);
+    for &x in samples {
+        let s0 = f64::from(x) + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    let power = s1 * s1 + s2 * s2 - coeff * s1 * s2;
+    2.0 * power.max(0.0).sqrt() / samples.len().max(1) as f64
+}
+
+fn window(samples: &[i16], from_s: f64, to_s: f64) -> &[i16] {
+    let a = (from_s * f64::from(SAMPLE_RATE)) as usize;
+    let b = (to_s * f64::from(SAMPLE_RATE)) as usize;
+    &samples[a.min(samples.len())..b.min(samples.len())]
+}
+
+fn montage_request<'a>(
+    preset: Preset,
+    clip: &'a Path,
+    composition: &'a Composition,
+    media: &'a [(Media, PathBuf)],
+    out: &'a Path,
+    encoders: &'a Encoders,
+) -> ExportRequest<'a> {
+    ExportRequest {
+        media,
+        ..request(preset, clip, composition, out, encoders)
+    }
+}
+
+#[test]
+#[ignore = "hardware: a GPU encoder and ffmpeg"]
+fn montage_crossfade_maps_every_frame() {
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.mp4");
+    let b = dir.path().join("b.mp4");
+    make_clip(&enc, &a, &ClipSpec::hd(4, 8_000));
+    make_clip(
+        &enc,
+        &b,
+        &ClipSpec {
+            counter_base: B_BASE,
+            ..ClipSpec::hd(4, 8_000)
+        },
+    );
+    // Main 0–4 s; above it b's 0–1.5 s at 1 s, then b's 2–3.5 s crossfading in over
+    // 500 ms (it starts at 2 s), then the main clip again from 3.5 s.
+    let mut p = Project::new(4_000);
+    p.advanced.tracks = vec![track(
+        1,
+        TrackKind::Video,
+        vec![
+            placed(1, library("b.mp4"), 0, 1_500, 1_000),
+            placed(2, library("b.mp4"), 2_000, 3_500, 2_500),
+        ],
+    )];
+    p.advanced.transitions = vec![Transition {
+        track: 1,
+        after_clip: 1,
+        kind: TransitionKind::Crossfade,
+        ms: 500,
+    }];
+    let comp = compose(&p, &source_info(&a));
+    // The clip's own length (its movie runs a few ms past the last frame).
+    assert!(
+        (4_000..4_050).contains(&comp.duration_ms),
+        "{}",
+        comp.duration_ms
+    );
+    let media = vec![(library("b.mp4"), b.clone())];
+    let out = dir.path().join("montage.mp4");
+    let encoders = encoders(&enc);
+    let t = Instant::now();
+    let summary = run(&montage_request(
+        Preset::Original,
+        &a,
+        &comp,
+        &media,
+        &out,
+        &encoders,
+    ));
+    println!(
+        "montage (4 s of 720p60, two sources, a crossfade): {} frames in {:.1} s",
+        summary.frames,
+        t.elapsed().as_secs_f64()
+    );
+    let counters = oracle::decode_counters(&out, 640, 360).unwrap();
+    assert_eq!(counters.len() as u64, comp.frame_count(FPS));
+    let (mut checked, mut blended, mut bad) = (0, 0, Vec::new());
+    for (i, got) in counters.iter().enumerate() {
+        match composed_counter(&comp, i as u64, FPS, 4 * FPS) {
+            Some(want) => {
+                checked += 1;
+                if *got != Some(want) {
+                    bad.push((i, *got, want));
+                }
+            }
+            None => blended += 1,
+        }
+    }
+    println!(
+        "{checked} frames checked, {blended} blended, {} wrong",
+        bad.len()
+    );
+    assert!(
+        bad.is_empty(),
+        "frames off the plan: {:?}",
+        &bad[..bad.len().min(10)]
+    );
+    assert_eq!(blended, 30, "500 ms of crossfade at 60 fps");
+    // Each side of the transition is there.
+    assert_eq!(counters[59], Some(59), "main before");
+    assert_eq!(counters[60], Some(B_BASE), "b from 1 s");
+    assert_eq!(
+        counters[150],
+        Some(B_BASE + 150),
+        "b's 2.5 s at 2.5 s: the crossfade starts it 500 ms early"
+    );
+    assert_eq!(counters[210], Some(210), "main again at 3.5 s");
+}
+
+#[test]
+#[ignore = "hardware: a GPU encoder and ffmpeg"]
+fn zoom_shows_the_centre_and_colour_grades() {
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.mp4");
+    make_clip(&enc, &a, &ClipSpec::hd(3, 20_000));
+    let zoomed = |zoom: f32| {
+        let mut p = Project::new(3_000);
+        let mut c = placed(1, Media::Main, 0, 3_000, 0);
+        c.transform = vec![TransformKey {
+            at_ms: 0,
+            value: klip_edit::Transform {
+                zoom,
+                x: 0.0,
+                y: 0.0,
+            },
+            ease: Ease::Hold,
+        }];
+        p.advanced.tracks = vec![track(1, TrackKind::Video, vec![c])];
+        compose(&p, &source_info(&a))
+    };
+    let encoders = encoders(&enc);
+    let comp = zoomed(2.0);
+    let out = dir.path().join("zoom.mp4");
+    run(&request(Preset::Original, &a, &comp, &out, &encoders));
+    let (w, h) = (1280usize, 720usize);
+    // Output frame 61 (1.0167 s) shows source frame 61 at 2x about the centre.
+    let at = 61.0 / 60.0 + 0.001;
+    let got = oracle::decode_gray_frame(&out, at, w, h).unwrap();
+    let src = oracle::decode_gray_frame(&a, at, w, h).unwrap();
+    // Reference: the middle half of the source, doubled (bilinear).
+    let mut want = vec![0u8; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let sx = (w / 4) as f64 + (x as f64 + 0.5) / 2.0 - 0.5;
+            let sy = (h / 4) as f64 + (y as f64 + 0.5) / 2.0 - 0.5;
+            let (x0, y0) = (sx.floor() as usize, sy.floor() as usize);
+            let (fx, fy) = (sx - x0 as f64, sy - y0 as f64);
+            let p = |xx: usize, yy: usize| f64::from(src[yy.min(h - 1) * w + xx.min(w - 1)]);
+            let v = p(x0, y0) * (1.0 - fx) * (1.0 - fy)
+                + p(x0 + 1, y0) * fx * (1.0 - fy)
+                + p(x0, y0 + 1) * (1.0 - fx) * fy
+                + p(x0 + 1, y0 + 1) * fx * fy;
+            want[y * w + x] = v.round() as u8;
+        }
+    }
+    let zoom_db = psnr(&got, &want);
+    let plain_db = psnr(&got, &src);
+    println!(
+        "zoom 2x: {zoom_db:.1} dB against the scaled reference, {plain_db:.1} dB against the plain frame"
+    );
+    assert!(zoom_db >= 28.0, "{zoom_db:.1} dB");
+    assert!(
+        plain_db < zoom_db - 8.0,
+        "the check tells zoomed from plain"
+    );
+
+    // Colour: +0.2 brightness lifts the picture by ~51 levels where nothing clips.
+    let mut p = Project::new(3_000);
+    p.advanced.colour.brightness = 0.2;
+    let graded = compose(&p, &source_info(&a));
+    let out2 = dir.path().join("graded.mp4");
+    run(&request(Preset::Original, &a, &graded, &out2, &encoders));
+    let g = oracle::decode_gray_frame(&out2, at, w, h).unwrap();
+    // Where the source is mid-grey (nothing clips), the graded frame is ~51 brighter.
+    let diffs: Vec<f64> = g
+        .iter()
+        .zip(&src)
+        .filter(|(_, s)| (20..=180).contains(*s))
+        .map(|(a, b)| f64::from(*a) - f64::from(*b))
+        .collect();
+    let lift = diffs.iter().sum::<f64>() / diffs.len() as f64;
+    println!("brightness +0.2: mean luma +{lift:.1}");
+    assert!((40.0..60.0).contains(&lift), "{lift:.1}");
+}
+
+#[test]
+#[ignore = "hardware: a GPU encoder and ffmpeg"]
+fn music_ducks_under_a_voice() {
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.mp4");
+    make_clip(&enc, &a, &ClipSpec::hd(4, 8_000));
+    let music = dir.path().join("music.wav");
+    let voice = dir.path().join("voice.wav");
+    write_wav(&music, 4.0, |t| {
+        0.3 * (2.0 * std::f64::consts::PI * 440.0 * t).sin()
+    });
+    write_wav(&voice, 1.0, |t| {
+        0.3 * (2.0 * std::f64::consts::PI * 1_000.0 * t).sin()
+    });
+    let file = |p: &Path| Media::File {
+        path: p.to_string_lossy().into_owned(),
+    };
+    let mut p = Project::new(4_000);
+    // The clip's own sound off, so only music and voice remain.
+    p.volumes = Volumes {
+        game: 0.0,
+        mic: 0.0,
+    };
+    p.advanced.tracks = vec![
+        track(
+            1,
+            TrackKind::Music,
+            vec![placed(1, file(&music), 0, 4_000, 0)],
+        ),
+        track(
+            2,
+            TrackKind::Audio,
+            vec![placed(2, file(&voice), 0, 1_000, 2_000)],
+        ),
+    ];
+    let comp = compose(&p, &source_info(&a));
+    let media = vec![(file(&music), music.clone()), (file(&voice), voice.clone())];
+    let out = dir.path().join("ducked.mp4");
+    let encoders = encoders(&enc);
+    run(&montage_request(
+        Preset::Original,
+        &a,
+        &comp,
+        &media,
+        &out,
+        &encoders,
+    ));
+    let s = oracle::decode_audio_mono(&out, 0, SAMPLE_RATE).unwrap();
+    let before = tone_level(window(&s, 1.0, 1.5), SAMPLE_RATE, 440.0);
+    let during = tone_level(window(&s, 2.4, 2.9), SAMPLE_RATE, 440.0);
+    let voice_level = tone_level(window(&s, 2.4, 2.9), SAMPLE_RATE, 1_000.0);
+    let db = 20.0 * (during / before).log10();
+    println!(
+        "music {before:.0} → {during:.0} under the voice ({db:.2} dB); voice {voice_level:.0}"
+    );
+    assert!((db + 12.0).abs() < 1.5, "ducked by {db:.2} dB, want −12");
+    assert!(voice_level > before * 0.5, "the voice is in the mix");
+    // Without ducking the music stays put.
+    let mut flat = comp.clone();
+    flat.ducking.enabled = false;
+    let out2 = dir.path().join("flat.mp4");
+    run(&montage_request(
+        Preset::Original,
+        &a,
+        &flat,
+        &media,
+        &out2,
+        &encoders,
+    ));
+    let s2 = oracle::decode_audio_mono(&out2, 0, SAMPLE_RATE).unwrap();
+    let db2 = 20.0
+        * (tone_level(window(&s2, 2.4, 2.9), SAMPLE_RATE, 440.0)
+            / tone_level(window(&s2, 1.0, 1.5), SAMPLE_RATE, 440.0))
+        .log10();
+    assert!(db2.abs() < 0.5, "{db2:.2} dB without ducking");
+}
+
+#[test]
+#[ignore = "hardware: a GPU encoder and ffmpeg"]
+fn custom_preset_honours_its_numbers() {
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.mp4");
+    make_clip(&enc, &a, &ClipSpec::hd(6, 20_000));
+    let (_, comp) = plan(&Project::new(6_000), &source_info(&a));
+    let out = dir.path().join("custom.mp4");
+    let encoders = encoders(&enc);
+    let custom = klip_export::CustomOutput {
+        width: 640,
+        height: 640,
+        fps: 30,
+        bitrate_kbps: 1_500,
+        codec: klip_export::OutCodec::H264,
+    };
+    let summary = run(&request(Preset::Custom(custom), &a, &comp, &out, &encoders));
+    let streams = oracle::probe_streams(&out).unwrap();
+    let v = streams
+        .iter()
+        .find(|s| s.codec_type.as_deref() == Some("video"))
+        .unwrap();
+    println!(
+        "custom: {}x{} {:?} fps {:?}, {} bytes",
+        v.width.unwrap_or(0),
+        v.height.unwrap_or(0),
+        v.avg_fps(),
+        v.codec_name,
+        summary.bytes
+    );
+    assert_eq!(
+        (v.width, v.height),
+        (Some(640), Some(360)),
+        "fits the box, keeps the shape"
+    );
+    assert_eq!(v.codec_name.as_deref(), Some("h264"));
+    assert!((v.avg_fps().unwrap() - 30.0).abs() < 0.1);
+    assert_eq!(summary.frames, comp.frame_count(30));
+    // Simple synthetic frames need less than the target, so the check is that the
+    // bitrate reaches the encoder: never over it, and a lower one gives a smaller file.
+    let kbps = summary.bytes as f64 * 8.0 / 6.0 / 1000.0;
+    assert!(
+        kbps < (1_500.0 + 160.0) * 1.3,
+        "{kbps:.0} kbit/s for 1500 + 160"
+    );
+    let low = dir.path().join("custom-low.mp4");
+    let starved = klip_export::CustomOutput {
+        bitrate_kbps: 150,
+        ..custom
+    };
+    let small = run(&request(
+        Preset::Custom(starved),
+        &a,
+        &comp,
+        &low,
+        &encoders,
+    ));
+    let low_kbps = small.bytes as f64 * 8.0 / 6.0 / 1000.0;
+    println!("custom: {kbps:.0} kbit/s at 1500, {low_kbps:.0} kbit/s at 150");
+    assert!(low_kbps < kbps * 0.8, "{low_kbps:.0} vs {kbps:.0} kbit/s");
+    assert!(
+        low_kbps < (150.0 + 160.0) * 1.5,
+        "{low_kbps:.0} kbit/s for 150 + 160"
+    );
+}
+
+#[test]
+#[ignore = "hardware: a GPU encoder and ffmpeg"]
+fn long_montage_stays_under_a_gigabyte() {
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.mp4");
+    let b = dir.path().join("b.mp4");
+    make_clip(&enc, &a, &ClipSpec::hd(60, 8_000));
+    make_clip(
+        &enc,
+        &b,
+        &ClipSpec {
+            counter_base: B_BASE,
+            ..ClipSpec::hd(60, 8_000)
+        },
+    );
+    let music = dir.path().join("music.wav");
+    write_wav(&music, 60.0, |t| {
+        0.2 * (2.0 * std::f64::consts::PI * 330.0 * t).sin()
+    });
+    let file = Media::File {
+        path: music.to_string_lossy().into_owned(),
+    };
+    // Ten minutes: the main minute, then nine minutes alternating a and b with
+    // crossfades, music all along, a zoom on every b.
+    let mut p = Project::new(60_000);
+    let mut clips = Vec::new();
+    let mut transitions = Vec::new();
+    for k in 0..9u32 {
+        let key = if k % 2 == 0 { "b.mp4" } else { "a.mp4" };
+        let mut c = placed(
+            k + 1,
+            library(key),
+            0,
+            60_000,
+            60_000 + u64::from(k) * 60_000,
+        );
+        if key == "b.mp4" {
+            c.transform = vec![
+                TransformKey {
+                    at_ms: 0,
+                    value: klip_edit::Transform::default(),
+                    ease: Ease::Linear,
+                },
+                TransformKey {
+                    at_ms: 30_000,
+                    value: klip_edit::Transform {
+                        zoom: 1.5,
+                        x: 0.1,
+                        y: 0.0,
+                    },
+                    ease: Ease::Linear,
+                },
+            ];
+        }
+        clips.push(c);
+        if k > 0 {
+            transitions.push(Transition {
+                track: 1,
+                after_clip: k,
+                kind: TransitionKind::Crossfade,
+                ms: 1_000,
+            });
+        }
+    }
+    let music_clips = (0..10u32)
+        .map(|k| placed(100 + k, file.clone(), 0, 60_000, u64::from(k) * 60_000))
+        .collect();
+    p.advanced.tracks = vec![
+        track(1, TrackKind::Video, clips),
+        track(2, TrackKind::Music, music_clips),
+    ];
+    p.advanced.transitions = transitions;
+    let comp = compose(&p, &source_info(&a));
+    println!(
+        "montage: {} layers, {} ms",
+        comp.layers.len(),
+        comp.duration_ms
+    );
+    assert!(comp.duration_ms >= 590_000, "{}", comp.duration_ms);
+    let media = vec![
+        (library("a.mp4"), a.clone()),
+        (library("b.mp4"), b.clone()),
+        (file.clone(), music.clone()),
+    ];
+    let out = dir.path().join("long.mp4");
+    let encoders = encoders(&enc);
+    let pid = std::process::id();
+    let base = klip_platform::process_usage(pid).unwrap().resident_bytes;
+    let peak = Arc::new(std::sync::atomic::AtomicU64::new(base));
+    let stop = Arc::new(AtomicBool::new(false));
+    let sampler = {
+        let (peak, stop) = (peak.clone(), stop.clone());
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                if let Ok(u) = klip_platform::process_usage(pid) {
+                    peak.fetch_max(u.resident_bytes, Ordering::Relaxed);
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        })
+    };
+    let t = Instant::now();
+    let summary = run(&montage_request(
+        Preset::Original,
+        &a,
+        &comp,
+        &media,
+        &out,
+        &encoders,
+    ));
+    stop.store(true, Ordering::Relaxed);
+    sampler.join().unwrap();
+    let peak_mb = peak.load(Ordering::Relaxed) as f64 / 1e6;
+    println!(
+        "10-minute montage: {} frames in {:.0} s ({:.1}x realtime), {:.0} MB, peak working set {peak_mb:.0} MB (test process at start {:.0} MB)",
+        summary.frames,
+        t.elapsed().as_secs_f64(),
+        comp.duration_ms as f64 / 1000.0 / t.elapsed().as_secs_f64(),
+        summary.bytes as f64 / 1e6,
+        base as f64 / 1e6
+    );
+    assert!(peak_mb < 1_000.0, "peak working set {peak_mb:.0} MB");
+    let streams = oracle::probe_streams(&out).unwrap();
+    let v = streams
+        .iter()
+        .find(|s| s.codec_type.as_deref() == Some("video"))
+        .unwrap();
+    assert!((v.duration_secs().unwrap() - comp.duration_ms as f64 / 1000.0).abs() < 0.1);
+}
+
+#[test]
+#[ignore = "hardware: a GPU encoder and ffmpeg"]
+fn sticker_sits_where_the_plan_puts_it() {
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.mp4");
+    make_clip(&enc, &a, &ClipSpec::hd(3, 20_000));
+    // A 256x256 white square, opaque in its left half, half transparent in its right.
+    let (sw, sh) = (256u32, 256u32);
+    let mut rgba = Vec::new();
+    for _y in 0..sh {
+        for x in 0..sw {
+            rgba.extend_from_slice(&[255, 255, 255, if x < sw / 2 { 255 } else { 128 }]);
+        }
+    }
+    let bitmap = klip_edit::TextBitmap {
+        frame_width: sw,
+        frame_height: sh,
+        x: 0,
+        y: 0,
+        width: sw,
+        height: sh,
+        rgba,
+    };
+    let sticker = dir.path().join("sticker.png");
+    std::fs::write(&sticker, bitmap.png().unwrap()).unwrap();
+    let image = Media::Image {
+        path: sticker.to_string_lossy().into_owned(),
+    };
+    let mut p = Project::new(3_000);
+    p.advanced.tracks = vec![track(
+        1,
+        TrackKind::Video,
+        vec![placed(1, image.clone(), 0, 1_000, 1_000)],
+    )];
+    let comp = compose(&p, &source_info(&a));
+    let media = vec![(image, sticker.clone())];
+    let out = dir.path().join("sticker.mp4");
+    let encoders = encoders(&enc);
+    run(&montage_request(
+        Preset::Original,
+        &a,
+        &comp,
+        &media,
+        &out,
+        &encoders,
+    ));
+    let (w, h) = (1280usize, 720usize);
+    // 256 px of a 1280-wide crop on a 1280-wide canvas: 256x256, centred at 512,232.
+    let region = |g: &[u8], x0: usize, x1: usize| {
+        let mut sum = 0.0;
+        let mut n = 0.0;
+        for y in 242..478 {
+            for x in x0..x1 {
+                sum += f64::from(g[y * w + x]);
+                n += 1.0;
+            }
+        }
+        sum / n
+    };
+    let at = 1.5 + 0.5 / 60.0;
+    let with = oracle::decode_gray_frame(&out, at, w, h).unwrap();
+    let src = oracle::decode_gray_frame(&a, at, w, h).unwrap();
+    let opaque = region(&with, 522, 630);
+    let half = region(&with, 650, 758);
+    let under = region(&src, 650, 758);
+    let want_half = under + (255.0 - under) * 128.0 / 255.0;
+    println!("sticker: opaque half {opaque:.1}, transparent half {half:.1} (want {want_half:.1})");
+    assert!(opaque > 245.0, "{opaque:.1}");
+    assert!(
+        (half - want_half).abs() < 6.0,
+        "{half:.1} vs {want_half:.1}"
+    );
+    // Before and after its time it is not there.
+    for t in [0.5, 2.5] {
+        let g = oracle::decode_gray_frame(&out, t + 0.5 / 60.0, w, h).unwrap();
+        let s = oracle::decode_gray_frame(&a, t + 0.5 / 60.0, w, h).unwrap();
+        assert!(psnr(&g, &s) > 35.0, "at {t} s the frame is the clip's");
+    }
 }

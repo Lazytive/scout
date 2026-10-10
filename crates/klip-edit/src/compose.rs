@@ -98,6 +98,7 @@ impl Layer {
 
 /// The whole picture and sound of an edit.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Composition {
     pub duration_ms: u64,
     pub layers: Vec<Layer>,
@@ -366,6 +367,12 @@ pub fn fit_in(w: u32, h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
     scale_into(w, h, max_w, max_h, false)
 }
 
+/// `w x h` scaled up or down to fit `max_w x max_h`, keeping the aspect ratio; even
+/// sides, at least 2.
+pub fn fit_contain(w: u32, h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
+    scale_into(w, h, max_w, max_h, true)
+}
+
 /// A layer's picture size at zoom 1, in canvas pixels. The canvas is the main clip's
 /// crop scaled to the export size, so the main clip fills it; another video fits inside
 /// it (scaled up or down, keeping its aspect); a picture keeps its size relative to the
@@ -390,7 +397,7 @@ pub fn fitted(
             };
             fit_in(px(native.0), px(native.1), out_w, out_h)
         }
-        _ => scale_into(native.0, native.1, out_w, out_h, true),
+        _ => fit_contain(native.0, native.1, out_w, out_h),
     }
 }
 

@@ -14,7 +14,7 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use klip_control::CommandError;
-use klip_edit::{Project, Render};
+use klip_edit::{Composition, Project, Source, compose};
 use klip_export::{Preset, Progress};
 use klip_library::{ClipInfo, Library};
 use serde_json::{Value, json};
@@ -25,6 +25,32 @@ use super::{Inner, lock};
 use crate::config;
 use crate::events::Event;
 use crate::media_worker::{EXPORT_INACTIVITY, ExportJob, MediaWorker};
+
+/// Where the composition's other sources are: library clips under the library's root
+/// (a key that would leave it is left out, and the export reports it missing), files
+/// and pictures where the project says.
+fn media_of(lib: &Library, comp: &Composition) -> Vec<(Source, PathBuf)> {
+    let mut out: Vec<(Source, PathBuf)> = Vec::new();
+    for l in &comp.layers {
+        if l.source == Source::Main || out.iter().any(|(s, _)| *s == l.source) {
+            continue;
+        }
+        let path = match &l.source {
+            Source::Main => None,
+            Source::Library { key } => {
+                let rel = Path::new(key);
+                rel.components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+                    .then(|| lib.root().join(rel))
+            }
+            Source::File { path } | Source::Image { path } => Some(PathBuf::from(path)),
+        };
+        if let Some(p) = path {
+            out.push((l.source.clone(), p));
+        }
+    }
+    out
+}
 
 /// Progress events are at most this close together (the bus drops when flooded).
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
@@ -203,22 +229,25 @@ impl Inner {
             return Err(busy(kind));
         }
         let source = source_of(info);
-        let (render, out) = match kind {
+        let (composition, out) = match kind {
             ExportKind::Preset(p) => {
                 let (project, _, _) = self.load_project(lib, &key, &source)?;
                 let out = lib
                     .unique_sibling(&clip, p.name())
                     .map_err(|e| CommandError::new("failed", e.to_string()))?;
-                (Render::new(&project, &source), out)
+                (compose(&project, &source), out)
             }
             ExportKind::Proxy => {
                 let out = lib
                     .proxy_path(&key)
                     .ok_or_else(|| CommandError::bad_args("bad clip key"))?;
-                (Render::new(&Project::new(source.duration_ms), &source), out)
+                (compose(&Project::new(source.duration_ms), &source), out)
             }
         };
-        render.validate().map_err(CommandError::bad_args)?;
+        if composition.duration_ms == 0 {
+            return Err(CommandError::bad_args("the edit is empty"));
+        }
+        let media = media_of(lib, &composition);
         if let Some(dir) = out.parent() {
             std::fs::create_dir_all(dir).map_err(|e| CommandError::new("failed", e.to_string()))?;
         }
@@ -244,7 +273,8 @@ impl Inner {
             id,
             clip,
             out: out.clone(),
-            render,
+            composition,
+            media,
             preset: preset.id().to_string(),
             encoders: encoders.names(),
             discord_limit_bytes: u64::from(settings.export.discord_limit_mb)

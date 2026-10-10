@@ -75,7 +75,11 @@ pub struct ExportJob {
     pub clip: PathBuf,
     /// Where the MP4 goes (must not exist).
     pub out: PathBuf,
-    pub render: klip_edit::Render,
+    /// What to render (`klip_edit::compose` of the project).
+    pub composition: klip_edit::Composition,
+    /// Files of the composition's other sources, as the engine resolved them.
+    #[serde(default)]
+    pub media: Vec<(klip_edit::Source, PathBuf)>,
     /// A [`klip_export::Preset`] id.
     pub preset: String,
     /// Encoder element names, best first (`klip_export::Encoders::names`).
@@ -99,7 +103,7 @@ pub struct CancelJob {
 pub enum Job {
     Cancel(CancelJob),
     Thumb(ThumbJob),
-    Export(ExportJob),
+    Export(Box<ExportJob>),
 }
 
 /// A progress line (`progress` set) or the final reply (`ok` set) of an export.
@@ -175,7 +179,8 @@ pub fn run_export(
     let encoders = klip_export::Encoders::from_names(&job.encoders);
     let req = klip_export::ExportRequest {
         source: &job.clip,
-        render: &job.render,
+        composition: &job.composition,
+        media: &job.media,
         preset,
         out: &job.out,
         encoders: &encoders,
@@ -599,7 +604,7 @@ mod tests {
         assert!(matches!(serde_json::from_str::<Job>(thumb), Ok(Job::Thumb(j)) if j.id == 3));
         let cancel = r#"{"cancel":7}"#;
         assert!(matches!(serde_json::from_str::<Job>(cancel), Ok(Job::Cancel(c)) if c.cancel == 7));
-        let export = r#"{"id":9,"clip":"a.mp4","out":"b.mp4","render":{},"preset":"discord","encoders":["nvd3d11h264enc"],"discord_limit_bytes":10000000}"#;
+        let export = r#"{"id":9,"clip":"a.mp4","out":"b.mp4","composition":{},"preset":"discord","encoders":["nvd3d11h264enc"],"discord_limit_bytes":10000000}"#;
         assert!(
             matches!(serde_json::from_str::<Job>(export), Ok(Job::Export(j)) if j.id == 9 && j.pretend_overshoot == 0.0)
         );
@@ -633,7 +638,8 @@ mod tests {
             id: 1,
             clip: dir.path().join("missing.mp4"),
             out: dir.path().join("out.mp4"),
-            render: klip_edit::Render::default(),
+            composition: klip_edit::Composition::default(),
+            media: vec![],
             preset: "youtube".into(),
             encoders: vec![],
             discord_limit_bytes: 10_000_000,

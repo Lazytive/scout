@@ -47,7 +47,7 @@ const MAX_LEAD_MS: u64 = 2_000;
 pub const MAX_PICTURE: u32 = 4096;
 
 /// How the source is read.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SourceConfig {
     /// The clip's size as probed.
     pub src_width: u32,

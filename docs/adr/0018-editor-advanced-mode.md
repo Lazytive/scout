@@ -66,8 +66,22 @@ in text yet (M8.2), the in-memory muxing cap (IMPROVEMENTS G1).
   (2026-10-10, i7-14700KF + RTX; software decode). Both clear the 2x bar, so Advanced
   mode extends `klip-export`; `d3d11compositor` is the first choice on Windows with
   `compositor` as the fallback (and Linux's path).
+- **Composing in-process, not in the `compositor` element (M9.3, 2026-10-10).** The
+  renderer composes each output frame itself: for every visible layer only the part
+  that lands on the canvas (`klip_edit::compose::visible`) is cropped and scaled by a
+  `GstVideoConverter`, straight into the canvas for opaque video, or into a scratch
+  buffer blended with alpha × opacity; the colour grade is one affine RGB matrix
+  (`Colour::matrix`, the same numbers an SVG `feColorMatrix` takes in the preview).
+  Why: the `compositor` pads would scale the whole input to the placed size before
+  clipping (an 8x zoom of 1080p is a 15360x8640 intermediate per frame), its pad
+  properties must be synchronised with buffers (control sources or lock-step pushing),
+  and a pure "frames + numbers → pixels" step is deterministic and unit-testable
+  without pipelines, which `editor.frame` and the preview parity test need. Sources
+  stay GStreamer pipelines (one per playing layer, pooled), encoding stays the
+  recorder's chain. `d3d11compositor` remains a later optimisation.
 - **Custom export** is `Preset::Custom {width, height, fps, bitrate_kbps, codec}` in
-  `klip-export`, validated like the recording's custom quality.
+  `klip-export`: the width x height is a box the edit's format is fitted into (up or
+  down, ≤ 4096), so the format decides the shape and the export only the resolution.
 
 ## Consequences
 - Normal mode stays as fast and simple as it is; the Advanced UI is a second workspace
@@ -78,4 +92,7 @@ in text yet (M8.2), the in-memory muxing cap (IMPROVEMENTS G1).
 - Word captions wait for the captions milestone ("Later"); the schema reserves
   `captions` for them.
 - The M8 in-memory muxing cap matters more for montages: IMPROVEMENTS G1 (streaming
-  the MP4 to disk) is pulled into M9.3.
+  the MP4 to disk) is pulled into M9.3 (done: packets spool to `<out>.spool`).
+- Ducking keys on speech, not on everything that isn't music: microphone/voice tracks
+  of clips and sound/voice-over layers duck the music; game audio does not (it would
+  keep the music ducked all the time).
