@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-10 (M8.1 started).
+Last updated: 2026-10-10 (M8.2 done).
 
 | | Milestone | State |
 |---|---|---|
@@ -12,7 +12,7 @@ Last updated: 2026-10-10 (M8.1 started).
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
 | M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
 | M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
-| M8 | Editor, Normal mode + export presets | **in progress**: M8.1 model crate `klip-edit` (ADR 0017 proposed) |
+| M8 | Editor, Normal mode + export presets | **in progress**: M8.1 model crate `klip-edit`, M8.2 text rasterisation (ADR 0017 proposed) |
 | M9 | Editor, Advanced mode | |
 | M10 | Themes v1 | |
 | M11 | Sharing | |
@@ -239,8 +239,30 @@ using the GPU):
 - Clip info (duration, size, fps, codec, bookmarks) read from the `moov` only matched
   the recorder: 7–9 s, 1280x720, H.264, 60 fps ± 3.
 
+### Text rendering (M8.2, `klip-edit`)
+
+`cargo test -p klip-edit --release --test text_render -- --ignored timing --nocapture`
+on 2026-10-10, i7-14700KF, one thread, the two-line sample of the golden test (18 + 8
+characters, an em dash and an emoji box), one layer rendered and PNG-encoded:
+
+| Preset | 1920x1080 | 1080x1920 (3 lines) | 3840x2160 |
+|---|---|---|---|
+| bold (outline + shadow) | 13.7 ms, 44 KB | 53.0 ms, 85 KB | 67.7 ms, 99 KB |
+| pill | 2.7 ms, 19 KB | 6.5 ms, 33 KB | 8.2 ms, 39 KB |
+| caption (outline + shadow) | 6.7 ms, 29 KB | 21.9 ms, 55 KB | 27.1 ms, 60 KB |
+| title | 9.3 ms, 43 KB | 14.7 ms, 60 KB | 32.4 ms, 89 KB |
+
+The outline (a disc splat from every edge pixel) dominates; the tall 9:16 `bold` is
+the worst case of the presets (173 px glyphs, 21 px outline). Debug builds are about
+10x slower (the 96-case proptests take 6 s). Nothing is cached yet: M8.4 writes the
+PNGs under `.klip/render/<cache_key>.png`.
+
 ## Approximate / not done yet
 
+- **Text (M8.2)**: no text shaping. Latin, Greek and Cyrillic (what Inter covers) render
+  well; Arabic and Hebrew come out as unjoined glyphs in logical (not visual) order,
+  ligatures as separate letters, emoji as the font's "no glyph" box. A second font or a
+  shaping crate (e.g. `cosmic-text`) is the fix if users ask for it.
 - **Library (M7)**:
   - No playback inside Klip yet: Open hands the clip to the default player (the editor's
     preview is M8). Hover-scrub shows 16 key frames per clip, not every frame; long

@@ -30,6 +30,7 @@ klip-engine = { path = "crates/klip-engine" }
 klip-library = { path = "crates/klip-library" }
 klip-edit = { path = "crates/klip-edit" }
 
+ab_glyph_rasterizer = "0.1"
 anyhow = "1"
 base64 = "0.23"
 bytemuck = { version = "1.25", features = ["derive"] }
@@ -42,6 +43,8 @@ gstreamer = { version = "0.25", features = ["v1_24"] }
 gstreamer-app = { version = "0.25", features = ["v1_24"] }
 gstreamer-video = { version = "0.25", features = ["v1_24"] }
 jiff = "0.2"
+png = "0.18"
+skrifa = "0.48"
 pollster = "1"
 proptest = "1"
 serde = { version = "1", features = ["derive"] }

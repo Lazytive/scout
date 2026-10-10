@@ -5,6 +5,22 @@ reason)`.
 
 ## Unreleased
 
+- M8.2 — Text rasterisation in `klip-edit` (`text::render`): bundled Inter 4.1 Bold +
+  ExtraBold (OFL, `assets/fonts/`, ATTRIBUTION.md), `skrifa` for glyph outlines
+  (`ab_glyph` was tried first: its `ttf-parser` is unmaintained, RUSTSEC-2026-0192,
+  so `cargo deny` refused it), `ab_glyph_rasterizer` for coverage, `png` for the
+  bitmap; word wrap, max 3 lines, auto-shrink to 4 px then cut; pill,
+  shadow (new `TextStyle::shadow`, on `bold` and `caption`), disc outline, fill;
+  `TextBitmap` cropped to the drawn area with its frame position, `measure`,
+  `cache_key`; golden hashes of the presets at two sizes, hostile strings (control
+  characters, RTL, emoji, joiners, 300-character texts) and random strings/bytes/frames
+  never panic. A three-lens review with adversarial verification found and fixed: the
+  box blur dropped the first samples of each row/column (visible when a shadow touches
+  the frame edge), empty lines and glyph-less texts got a pill, uppercase could exceed
+  the 200-character cap, the shrink loop could stop before the minimum size, a tall
+  block never shrank, hostile style values could cost seconds in the outline kernel.
+  (Claude Fable 5.1: M8.2)
+
 - M8.1 — Editor model: ADR 0017 (own export pipeline instead of GES, preview via Tauri
   `asset:` with an H.264 proxy fallback for HEVC, Klip-rendered text bitmaps shared by
   preview and export, exports in the media worker, Discord size-fit) and the pure crate

@@ -28,9 +28,31 @@ and writing the project file.
 - `format`: `crop_rect(w, h)` (tall: full height, width `h·9/16`, x from `crop_x`; even
   sizes) and `output_size(w, h, max_height)` (never scales up).
 - `text`: presets `bold`, `pill`, `caption`, `title` as data (size as a fraction of the
-  height, weight, fill, outline, background, default position, uppercase);
-  `clean_text`. Rendering to bitmaps is M8.2.
+  height, weight, fill, outline, pill background, shadow, default position, uppercase);
+  `clean_text`.
+- `text::render` (M8.2): `render(text, style, position, w, h)` → `TextBitmap`
+  (straight-alpha RGBA cropped to the drawn area, with its `x`/`y` in the frame; never
+  empty; `png()`), `render_layer`, `measure` (font size after auto-shrink, the wrapped
+  lines, block top, `shrunk`/`truncated`), `cache_key` (FNV-1a 64 of renderer version,
+  font, frame size, position, style and cleaned text: the file name under
+  `.klip/render/`). Font: Inter 4.1 Bold and ExtraBold (OFL, `assets/fonts/`,
+  `include_bytes!`), outlines through `skrifa` (Google's fontations, unhinted) and
+  coverage through `ab_glyph_rasterizer` (no shaping or kerning: RTL scripts come out
+  in logical order, ligatures as separate letters, emoji and other missing glyphs as
+  the font's "no glyph" box; joiners, marks and bidi controls are skipped). Layout:
+  word wrap inside 5 % side margins (runs of spaces collapse; a wider word breaks
+  between characters), at most 3 lines, shrink by 10 % per step until the lines fit
+  the width and the block fits the height, down to 4 px, then cut; 6 % top/bottom
+  margin, lines centred, line height 1.2 × size, whole-pixel positions. Style values
+  are clamped (size ≤ 0.5 of the height, outline ≤ 0.3 of the size, radii ≤ 32 px). Effects back to front: pill per line
+  (radius = half the line), shadow (offset copy of the coverage, two box blurs),
+  outline (coverage dilated by a disc, only edge pixels splat), fill; premultiplied
+  compositing, unpremultiplied at the end. Sides up to 4096 px. Changing any of this
+  changes the golden hashes in `tests/text_render.rs`: bump `RENDER_VERSION`.
 - `template`: `Shorts` = tall centred + the clip's name as a caption for the first 3 s.
 
 Tests: unit tests per module; `tests/hostile.rs` (proptest: any JSON loads, repair is
-idempotent, random edits keep the timeline consistent and invertible within 1 ms).
+idempotent, random edits keep the timeline consistent and invertible within 1 ms);
+`tests/text_render.rs` (golden hashes of the four presets at 1920x1080 and 1080x1920,
+hostile strings and random strings/bytes/frames never panic and stay inside the frame;
+`KLIP_TEXT_DUMP=<dir>` writes the renders over grey for a look).

@@ -8,6 +8,9 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+ab_glyph_rasterizer.workspace = true
+skrifa.workspace = true
+png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

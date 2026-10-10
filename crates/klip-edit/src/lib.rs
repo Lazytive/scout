@@ -21,5 +21,8 @@ pub use project::{
     Issue, MAX_EXTRA_KEYS, MAX_FILE_BYTES, MAX_PIECES, MAX_SOURCE_MS, MAX_TEXT_LAYERS, MAX_VOLUME,
     Mode, Piece, Project, SCHEMA_VERSION, Speed, Volumes,
 };
+pub use text::render::{
+    RenderError, TextBitmap, TextMeasure, cache_key, measure, render, render_layer,
+};
 pub use text::{MAX_TEXT_CHARS, Position, TextLayer, TextStyle};
 pub use timeline::{EditError, Segment};

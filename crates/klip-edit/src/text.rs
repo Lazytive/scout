@@ -1,8 +1,10 @@
 //! Text layers: what the user typed, where and when, in one of a few preset styles.
-//! Styles are data; `klip-edit` renders them to bitmaps in M8.2 (ADR 0017: Klip draws
-//! the text, so preview and export show the same pixels).
+//! Styles are data; [`render`] draws them to bitmaps (ADR 0017: Klip draws the text,
+//! so preview and export show the same pixels).
 
 use serde::{Deserialize, Serialize};
+
+pub mod render;
 
 /// Longest text of one layer, in characters.
 pub const MAX_TEXT_CHARS: usize = 200;
@@ -61,6 +63,8 @@ pub struct TextStyle {
     pub outline: Option<([u8; 4], f32)>,
     /// Background box colour (a rounded "pill" behind each line).
     pub background: Option<[u8; 4]>,
+    /// Drop shadow colour and offset (fraction of the font size, down and right).
+    pub shadow: Option<([u8; 4], f32)>,
     /// Where the style usually goes (the layer can override it).
     pub position: Position,
     pub uppercase: bool,
@@ -76,6 +80,7 @@ pub const PRESETS: &[TextStyle] = &[
         fill: [255, 255, 255, 255],
         outline: Some(([0, 0, 0, 255], 0.12)),
         background: None,
+        shadow: Some(([0, 0, 0, 160], 0.06)),
         position: Position::Middle,
         uppercase: false,
     },
@@ -87,6 +92,7 @@ pub const PRESETS: &[TextStyle] = &[
         fill: [255, 255, 255, 255],
         outline: None,
         background: Some([0, 0, 0, 178]),
+        shadow: None,
         position: Position::Bottom,
         uppercase: false,
     },
@@ -98,6 +104,7 @@ pub const PRESETS: &[TextStyle] = &[
         fill: [255, 214, 10, 255],
         outline: Some(([0, 0, 0, 255], 0.14)),
         background: None,
+        shadow: Some(([0, 0, 0, 160], 0.06)),
         position: Position::Bottom,
         uppercase: true,
     },
@@ -109,6 +116,7 @@ pub const PRESETS: &[TextStyle] = &[
         fill: [255, 255, 255, 255],
         outline: None,
         background: Some([20, 20, 24, 200]),
+        shadow: None,
         position: Position::Top,
         uppercase: true,
     },

@@ -67,9 +67,12 @@ font files), so text drawn by the WebView would differ from machine to machine.
   rasterises each text layer to an RGBA PNG at the output size with a **bundled
   open-licence font** (one family, OFL; entry in ATTRIBUTION.md; the UI itself keeps
   system fonts). Presets are data (font size as a fraction of height, fill, outline,
-  pill background, position). Preview and export show the identical pixels; the
-  second half of the parity test compares the overlay region of an exported frame to
-  the PNG.
+  pill background, shadow, position). Preview and export show the identical pixels;
+  the second half of the parity test compares the overlay region of an exported frame
+  to the PNG. (M8.2: the font is Inter 4.1 Bold/ExtraBold, outlines through `skrifa`
+  and coverage through `ab_glyph_rasterizer`, no shaping; the bitmap is cropped to the drawn area and carries its frame position, so
+  the compositor and the preview place it at `x`/`y` instead of blending a full
+  frame; `cache_key` names the cached PNG.)
 - **Export runs in the media worker** (ADR 0015/0016 pattern: `--klip-media-worker`,
   JSON lines, timeout, kill) as an `ExportJob` with progress lines and cancel; a
   decoder or encoder crash never reaches the app or the replay buffer. Exports are
