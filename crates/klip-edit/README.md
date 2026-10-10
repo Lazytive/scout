@@ -50,6 +50,14 @@ and writing the project file.
   compositing, unpremultiplied at the end. Sides up to 4096 px. Changing any of this
   changes the golden hashes in `tests/text_render.rs`: bump `RENDER_VERSION`.
 - `template`: `Shorts` = tall centred + the clip's name as a caption for the first 3 s.
+- `plan` (M8.3): `Render::new(&Project, &SourceInfo)` = what `klip-export` renders:
+  the crop (`format::crop_rect` on the probed size), the output segments
+  (`timeline::segments` after clamping the project to the clip's length), the text
+  layers cleaned and clipped to the output, the volumes, and the clip's bookmarks mapped
+  to output time as `Marker`s (cut ones dropped, at most 255). `validate` (crop inside
+  the source, segments consistent, positive length), `frame_out_ms(i, fps)` =
+  `i*1000/fps` floor, `frame_source_ms(i, fps)` (the frame the export shows: the same
+  integer math as the preview), `frame_count(fps)`, `texts_at(out_ms)`. Serde, lenient.
 
 Tests: unit tests per module; `tests/hostile.rs` (proptest: any JSON loads, repair is
 idempotent, random edits keep the timeline consistent and invertible within 1 ms);

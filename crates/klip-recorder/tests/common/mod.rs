@@ -84,6 +84,8 @@ impl Harness {
             encoder: encoder.clone(),
             bitrate_kbps: 8_000,
             keyframe_interval: FPS as u32,
+            max_bitrate_kbps: None,
+            leaky_queue: true,
         };
         let chain =
             klip_capture::build_encode_chain(&pipeline, &cfg, W as u32, H as u32, FPS as u32)

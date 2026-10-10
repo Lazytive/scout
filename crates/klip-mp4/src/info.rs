@@ -47,6 +47,9 @@ pub struct Mp4Info {
     /// The first video track.
     pub video: Option<VideoSummary>,
     pub audio_tracks: u32,
+    /// The audio tracks' handler names in track order (Klip writes `Mix`, `Game`,
+    /// `Microphone`, ...; empty for an unnamed track).
+    pub audio_names: Vec<String>,
     /// Chapter starts (Klip's bookmarks), ms from the start.
     pub chapters_ms: Vec<u64>,
     /// The `moov` describes fragments (a recording that was never finalised).
@@ -93,7 +96,10 @@ fn parse_moov(moov: &[u8]) -> Result<Mp4Info, Mp4Error> {
                 tracks = tracks.saturating_add(1);
                 match parse_trak(body) {
                     Some(Track::Video(v)) if info.video.is_none() => info.video = Some(v),
-                    Some(Track::Audio) => info.audio_tracks = info.audio_tracks.saturating_add(1),
+                    Some(Track::Audio(name)) => {
+                        info.audio_tracks = info.audio_tracks.saturating_add(1);
+                        info.audio_names.push(name);
+                    }
                     _ => {}
                 }
             }
@@ -146,8 +152,12 @@ fn to_ms(value: u64, timescale: u32) -> Option<u64> {
 
 enum Track {
     Video(VideoSummary),
-    Audio,
+    /// With the handler name.
+    Audio(String),
 }
+
+/// Longest handler name kept.
+const MAX_HANDLER_NAME: usize = 64;
 
 /// A track's kind and, for video, its summary; `None` for other tracks or ones that
 /// don't parse.
@@ -160,6 +170,7 @@ fn parse_trak(trak: &[u8]) -> Option<Track> {
     let mut timescale = 0u32;
     let mut duration = 0u64;
     let mut handler = None;
+    let mut name = String::new();
     let mut stbl = None;
     for (k, b) in children(mdia).ok()? {
         match &k {
@@ -181,6 +192,16 @@ fn parse_trak(trak: &[u8]) -> Option<Track> {
                 c.full_box().ok()?;
                 c.skip(4).ok()?;
                 handler = Some(c.fourcc().ok()?);
+                // 12 reserved bytes, then the name (UTF-8, null-terminated).
+                if c.skip(12).is_ok() {
+                    let raw = c.rest();
+                    let end = raw.iter().position(|b| *b == 0).unwrap_or(raw.len());
+                    name = String::from_utf8_lossy(raw.get(..end).unwrap_or(&[]))
+                        .chars()
+                        .filter(|c| !c.is_control())
+                        .take(MAX_HANDLER_NAME)
+                        .collect();
+                }
             }
             b"minf" => {
                 stbl = children(b)
@@ -193,7 +214,7 @@ fn parse_trak(trak: &[u8]) -> Option<Track> {
         }
     }
     match &handler? {
-        b"soun" => Some(Track::Audio),
+        b"soun" => Some(Track::Audio(name)),
         b"vide" => {
             let stbl = stbl?;
             let mut entry = None;

@@ -7,7 +7,7 @@ use gstreamer::prelude::*;
 
 /// Set `name` from its string form (`"true"`, `"4000"`, an enum nick, …) if the element
 /// has a writable property of that name. Returns whether it was set.
-pub(crate) fn set_str(el: &gst::Element, name: &str, value: &str) -> bool {
+pub fn set_str(el: &gst::Element, name: &str, value: &str) -> bool {
     let Some(pspec) = el.find_property(name) else {
         tracing::debug!(element = %el.name(), property = name, "property not present");
         return false;
@@ -34,7 +34,7 @@ pub(crate) fn set_str(el: &gst::Element, name: &str, value: &str) -> bool {
 }
 
 /// Like [`set_str`] but an error if the property is missing or rejects the value.
-pub(crate) fn require(el: &gst::Element, name: &str, value: &str) -> Result<(), String> {
+pub fn require(el: &gst::Element, name: &str, value: &str) -> Result<(), String> {
     if set_str(el, name, value) {
         Ok(())
     } else {

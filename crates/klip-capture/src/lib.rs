@@ -20,7 +20,7 @@
 pub mod apps;
 pub mod audio;
 mod lag;
-mod props;
+pub mod props;
 pub mod thumbnail;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -57,7 +57,7 @@ pub enum CaptureError {
     Config(String),
 }
 
-fn gst_err(e: impl std::fmt::Display) -> CaptureError {
+pub fn gst_err(e: impl std::fmt::Display) -> CaptureError {
     CaptureError::Gst(e.to_string())
 }
 
@@ -136,6 +136,11 @@ pub struct EncodeConfig {
     pub bitrate_kbps: u32,
     /// Keyframe interval in frames (Klip uses 1 s).
     pub keyframe_interval: u32,
+    /// Peak bitrate; `None` = 1.5 x `bitrate_kbps` (the export's size-fit sets it).
+    pub max_bitrate_kbps: Option<u32>,
+    /// Live capture: the queue before the encoder drops frames when the encoder falls
+    /// behind (a capture must never stall). `false` for an export: the feed blocks.
+    pub leaky_queue: bool,
 }
 
 /// Receives the output of a pipeline. Called on GStreamer streaming threads; must be
@@ -244,13 +249,13 @@ pub fn fit_size(w: u32, h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
     ((ow & !1).max(64), (oh & !1).max(64))
 }
 
-fn make(name: &str) -> Result<gst::Element, CaptureError> {
+pub fn make(name: &str) -> Result<gst::Element, CaptureError> {
     gst::ElementFactory::make(name)
         .build()
         .map_err(|_| CaptureError::MissingElement(name.to_string()))
 }
 
-fn capsfilter(caps: &str) -> Result<gst::Element, CaptureError> {
+pub fn capsfilter(caps: &str) -> Result<gst::Element, CaptureError> {
     let el = make("capsfilter")?;
     let caps = gst::Caps::from_str(caps).map_err(gst_err)?;
     if el.find_property("caps").is_none() {
@@ -283,10 +288,14 @@ fn parser_and_caps(codec: Codec) -> Result<(&'static str, &'static str), Capture
 fn configure_encoder(el: &gst::Element, cfg: &EncodeConfig) -> Result<(), CaptureError> {
     let kbps = cfg.bitrate_kbps.to_string();
     let max_kbps = cfg
-        .bitrate_kbps
-        .saturating_mul(3)
-        .checked_div(2)
-        .unwrap_or(cfg.bitrate_kbps)
+        .max_bitrate_kbps
+        .unwrap_or_else(|| {
+            cfg.bitrate_kbps
+                .saturating_mul(3)
+                .checked_div(2)
+                .unwrap_or(cfg.bitrate_kbps)
+        })
+        .max(cfg.bitrate_kbps)
         .to_string();
     let gop = cfg.keyframe_interval.max(1).to_string();
     let req =
@@ -561,7 +570,9 @@ pub fn build_encode_chain(
     props::set_str(&queue, "max-size-buffers", "8");
     props::set_str(&queue, "max-size-bytes", "0");
     props::set_str(&queue, "max-size-time", "0");
-    props::set_str(&queue, "leaky", "downstream");
+    if cfg.leaky_queue {
+        props::set_str(&queue, "leaky", "downstream");
+    }
     chain.push(queue.clone());
     let encoder = make(&cfg.encoder.element)?;
     if klip_probe::allowed(&cfg.encoder.element).is_none() {

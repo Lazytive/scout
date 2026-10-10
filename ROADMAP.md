@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-10 (M8.2 done).
+Last updated: 2026-10-10 (M8.3 done).
 
 | | Milestone | State |
 |---|---|---|
@@ -12,7 +12,7 @@ Last updated: 2026-10-10 (M8.2 done).
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
 | M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
 | M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
-| M8 | Editor, Normal mode + export presets | **in progress**: M8.1 model crate `klip-edit`, M8.2 text rasterisation (ADR 0017 proposed) |
+| M8 | Editor, Normal mode + export presets | **in progress**: M8.1 model crate `klip-edit`, M8.2 text rasterisation, M8.3 export pipeline `klip-export` + media-worker export job (ADR 0017 proposed) |
 | M9 | Editor, Advanced mode | |
 | M10 | Themes v1 | |
 | M11 | Sharing | |
@@ -257,8 +257,46 @@ the worst case of the presets (173 px glyphs, 21 px outline). Debug builds are a
 10x slower (the 96-case proptests take 6 s). Nothing is cached yet: M8.4 writes the
 PNGs under `.klip/render/<cache_key>.png`.
 
+### Export (M8.3, `klip-export`)
+
+`cargo test -p klip-export --release --test export -- --ignored --nocapture` on
+2026-10-10, i7-14700KF + NVIDIA (NVENC H.264, D3D11 mode), software decoding
+(`d3d12h264dec` was free to be picked in-process; the worker demotes hardware decoders),
+a synthetic barcoded 1280x720@60 clip with two AAC tracks, ffmpeg as the oracle:
+
+| Export | Frames | Time | Output |
+|---|---|---|---|
+| Original: trim + cut + 2x + 0.5x, 8 s out of 20 s | 480 | 1.0–1.7 s | every frame = the plan's source frame; 60 fps; one Mix track; faststart |
+| Original with a text cue (5 s) | 300 | ~1 s | overlay region PSNR 45.4 dB vs the bitmap over the source frame; 9.4 dB without it |
+| Discord 5 / 12 / 25 / 40 / 60 s at 10 MB | 300–3600 | 0.7 / 1.4 / 5.4 (two passes, forced) / 4.4 / 4.4 s | 20 / 17 / 35 / 57 / 53 % of the limit; 60 s went 720p30 at 1125 kbit/s |
+| Cancel at frame 60 of 600 | – | < 1 s | no file, no `.part` |
+| TikTok from a tall (9:16) crop at `crop_x` 0 / 0.5 / 1 | 240 each | ~0.5 s | 404x720; the kept columns match the source (PSNR 42–44 dB), a wrong offset is ≥ 3 dB worse |
+| Discord on a 1920x1080 clip at a 400 kB limit | 151 | ~0.5 s | steps down to 852x480 at 30 fps, every frame = the plan's source frame |
+| Bookmarks through trim + cut + 2x/0.5x | – | – | 3 of 4 survive as chapters at the mapped output times (1 ms), the cut one is gone |
+| Beeps through the same cuts, and 0.5x / 2x whole-clip | – | – | onsets at the mapped times within 10 ms (1x: 1 ms; 0.5x: a stretched attack reads ~35 ms early) |
+
+So an export runs at roughly 300–500 output frames per second at 720p on this machine
+(decode + crop/scale on the CPU, NVENC encode). 1080p and 1440p sources are not measured
+yet; the Library's real clips are the M8.6 job.
+
 ## Approximate / not done yet
 
+- **Export (M8.3)**:
+  - Discord's first pass lands well under the limit (17–57 % on the barcode clip: VBR
+    encoders don't spend the whole budget on easy pictures), so the second pass is rare;
+    it is exercised by a test knob (`pretend_overshoot`), not by a clip that really
+    overshoots. A pass that aims closer (e.g. 0.97 and a re-encode when under 70 %)
+    would give better quality; not done.
+  - Scaling and text compositing run on the CPU (`videoconvertscale`, a BGRA copy per
+    frame with text); decoding is software in the worker. `d3d11compositor`/GPU decode
+    would be faster for 1440p/4K sources. The whole encoded output is held in memory
+    before the MP4 is written (fine for clips; a 10-minute 4K export would be large).
+  - No kerning or shaping in text (see M8.2).
+  - The media worker's child-process export path (progress lines, cancel line) has unit
+    tests for the protocol and the in-process path; the real child process is exercised
+    with the engine commands in M8.4.
+  - Exports are capped at 4 hours / an estimated 4 GB because the encoded output is
+    held in memory until it is written (`plan/IMPROVEMENTS.md` G1: stream it).
 - **Text (M8.2)**: no text shaping. Latin, Greek and Cyrillic (what Inter covers) render
   well; Arabic and Hebrew come out as unjoined glyphs in logical (not visual) order,
   ligatures as separate letters, emoji as the font's "no glyph" box. A second font or a

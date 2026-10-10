@@ -93,7 +93,12 @@ pub fn output_duration_ms(p: &Project) -> u64 {
 
 /// The source time shown at output time `out_ms`; `None` at or after the end.
 pub fn source_time(p: &Project, out_ms: u64) -> Option<u64> {
-    segments(p)
+    source_time_in(&segments(p), out_ms)
+}
+
+/// [`source_time`] over segments that were already computed (the export plan).
+pub fn source_time_in(segments: &[Segment], out_ms: u64) -> Option<u64> {
+    segments
         .iter()
         .find(|s| out_ms >= s.out_start_ms && out_ms < s.out_end_ms)
         .map(|s| {
@@ -102,15 +107,20 @@ pub fn source_time(p: &Project, out_ms: u64) -> Option<u64> {
         })
 }
 
-/// When source time `src_ms` is shown; `None` if it is cut or past the end.
-pub fn output_time(p: &Project, src_ms: u64) -> Option<u64> {
-    segments(p)
+/// [`output_time`] over computed segments.
+pub fn output_time_in(segments: &[Segment], src_ms: u64) -> Option<u64> {
+    segments
         .iter()
         .find(|s| src_ms >= s.src_start_ms && src_ms < s.src_end_ms)
         .map(|s| {
             s.out_start_ms
                 .saturating_add(out_offset(src_ms.saturating_sub(s.src_start_ms), s.speed))
         })
+}
+
+/// When source time `src_ms` is shown; `None` if it is cut or past the end.
+pub fn output_time(p: &Project, src_ms: u64) -> Option<u64> {
+    output_time_in(&segments(p), src_ms)
 }
 
 fn materialize(p: &mut Project) -> Result<(), EditError> {

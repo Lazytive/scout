@@ -33,7 +33,7 @@ impl Default for Format {
 }
 
 /// A pixel rectangle inside the source frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rect {
     pub x: u32,
     pub y: u32,

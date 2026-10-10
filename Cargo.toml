@@ -29,6 +29,7 @@ klip-settings = { path = "crates/klip-settings" }
 klip-engine = { path = "crates/klip-engine" }
 klip-library = { path = "crates/klip-library" }
 klip-edit = { path = "crates/klip-edit" }
+klip-export = { path = "crates/klip-export" }
 
 ab_glyph_rasterizer = "0.1"
 anyhow = "1"

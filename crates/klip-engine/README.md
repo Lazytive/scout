@@ -82,11 +82,20 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   requested keys first, then the rest newest first, but only while no game is followed
   (the game stopping wakes it); failures are remembered in the index and emitted as
   `thumbs_ready` with `failed`.
-- Media worker (`media_worker.rs`): library thumbnails in a child process — the host
-  binary re-run with `--klip-media-worker` (`worker_main()` first in `main`, after
-  `klip_probe::worker_main()`), one JSON job/reply per line, atomic outputs, 60 s per job
-  then kill + respawn, stopped after 20 s idle, below-normal priority (Windows).
-  `EngineOptions::media_worker = None` runs jobs in-process (tests).
+- Media worker (`media_worker.rs`): library thumbnails and exports in a child process —
+  the host binary re-run with `--klip-media-worker` (`worker_main()` first in `main`,
+  after `klip_probe::worker_main()`), one JSON job per line (`Job`: `ThumbJob`,
+  `ExportJob`, `CancelJob`, told apart by shape), atomic outputs, below-normal priority
+  (Windows), stopped after 20 s idle. Thumbs: one `ThumbReply` each, 60 s then kill +
+  respawn. Exports (M8.3, `klip-export`): run on their own thread in the worker so a
+  `{"cancel": id}` line can stop them; `ExportReply` progress lines (every 15 frames)
+  and one final line with the `ExportSummary`; the host (`MediaWorker::export`) polls
+  its cancel flag, forwards progress, and replaces the worker after
+  `EXPORT_INACTIVITY` (120 s) of silence. `EncoderChoice`s cross the boundary as
+  element names (`klip_export::Encoders::names/from_names`); the worker runs
+  `klip_probe::init` before encoding (Media Foundation before NVENC, ADR 0009) and
+  decodes in software (`prefer_software_decoders`). `EngineOptions::media_worker =
+  None` runs jobs in-process (tests).
 - `events`: `Event` (`ready`, `game_started/stopped`, `recorder_started/stopped/failed`,
   `clip_saved` with the game's window, `recording_started/stopped`, `bookmark`,
   `action_failed` for hotkeys, `quick_menu`, `mic_level`, `thumbnail`, `overlay_preview`, `hotkeys` with each binding's error,

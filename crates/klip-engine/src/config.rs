@@ -448,6 +448,8 @@ pub fn plan_with(
                 encoder,
                 bitrate_kbps: q.bitrate_kbps,
                 keyframe_interval: q.fps,
+                max_bitrate_kbps: None,
+                leaky_queue: true,
             },
             encoder_fallbacks: encoders,
             audio,

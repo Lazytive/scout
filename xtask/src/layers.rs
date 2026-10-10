@@ -23,6 +23,7 @@ pub const ENGINE: &[&str] = &[
     "klip-probe",
     "klip-capture",
     "klip-recorder",
+    "klip-export",
     "klip-engine",
 ];
 /// Applications and tools: may depend on anything below them.

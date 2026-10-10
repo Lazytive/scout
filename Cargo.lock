@@ -2863,6 +2863,8 @@ dependencies = [
  "dirs 7.0.0",
  "klip-capture",
  "klip-control",
+ "klip-edit",
+ "klip-export",
  "klip-library",
  "klip-media",
  "klip-mp4",
@@ -2870,6 +2872,28 @@ dependencies = [
  "klip-probe",
  "klip-recorder",
  "klip-settings",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "klip-export"
+version = "0.0.1"
+dependencies = [
+ "bytes",
+ "gstreamer",
+ "gstreamer-app",
+ "gstreamer-video",
+ "klip-capture",
+ "klip-edit",
+ "klip-media",
+ "klip-mp4",
+ "klip-platform",
+ "klip-probe",
+ "klip-testkit",
  "serde",
  "serde_json",
  "tempfile",

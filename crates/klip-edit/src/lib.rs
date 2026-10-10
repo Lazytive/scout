@@ -10,6 +10,7 @@
 
 mod file;
 pub mod format;
+pub mod plan;
 mod project;
 pub mod template;
 pub mod text;
@@ -17,6 +18,7 @@ pub mod timeline;
 
 pub use file::{LoadStatus, Loaded, load, save};
 pub use format::{Format, FormatKind, Rect};
+pub use plan::{Render, SourceInfo};
 pub use project::{
     Issue, MAX_EXTRA_KEYS, MAX_FILE_BYTES, MAX_PIECES, MAX_SOURCE_MS, MAX_TEXT_LAYERS, MAX_VOLUME,
     Mode, Piece, Project, SCHEMA_VERSION, Speed, Volumes,

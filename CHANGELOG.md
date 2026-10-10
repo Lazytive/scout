@@ -5,6 +5,35 @@ reason)`.
 
 ## Unreleased
 
+- M8.3 — Export pipeline: `klip-export` (engine layer; `export(&ExportRequest,
+  progress, cancel)`: presets Original/YouTube/TikTok/Discord, one `decodebin`
+  pipeline seeked per segment at the segment's rate with `videocrop` →
+  `videoconvertscale` → BGRA and `scaletempo` → S16 per audio track, output frames
+  picked by `Render::frame_source_ms` (the preview's integer mapping), text cues
+  blended on the CPU, the recorder's `build_encode_chain` + `build_aac_chain` behind
+  `appsrc`s, Game/Microphone (or Mix) mixed with the sliders, `write_mp4` with
+  bookmarks as chapters, Discord size-fit passes (`fit.rs`), atomic `.part` write,
+  progress every 15 frames, cancel per frame). `klip_edit::plan::Render`
+  (`SourceInfo`, `validate`, `frame_out_ms`/`frame_source_ms`/`frame_count`,
+  `texts_at`, markers mapped to output time; `timeline::source_time_in/output_time_in`).
+  `klip-capture`: `EncodeConfig::{max_bitrate_kbps, leaky_queue}`, `make`/`capsfilter`/
+  `props` public. `klip-mp4`: `Mp4Info::audio_names` (handler names). Media worker:
+  `Job` enum (`ThumbJob` | `ExportJob` | `CancelJob`), export threads with progress
+  lines and cancel, `MediaWorker::export`. Found on the way: an audio sink added to
+  an encode pipeline that only gets data after the video must be `async=false`, and
+  one `decodebin` per stream deadlocks preroll (shared queue needed). A three-lens
+  review with adversarial verification (22 findings) led to: non-blocking `appsrc`
+  pushes that watch the bus (a failed encoder can no longer hang the export), the
+  encode pipeline set to NULL when it fails to start (no leaked NVENC/MF sessions),
+  plans checked against the probed clip length and capped at 4 h / ~4 GB, the last
+  frame held across segments, a `.part` of another export left alone, a leading audio
+  gap padded and the tempo filter drained (+100 ms seek tail), audio pushed late by
+  the AAC delay (no negative origin on Linux), the YouTube box by the shorter side,
+  no letterboxing from even-rounding, a reachable `clamp` panic removed, Discord
+  stopping at once when another pass can't be smaller; new hardware checks: tall-crop
+  columns, the 480p30 step-down on a 1080p clip, chapters and beeps through cuts and
+  speed; deferred items in `plan/IMPROVEMENTS.md` G. (Claude Fable 5.1: M8.3)
+
 - M8.2 — Text rasterisation in `klip-edit` (`text::render`): bundled Inter 4.1 Bold +
   ExtraBold (OFL, `assets/fonts/`, ATTRIBUTION.md), `skrifa` for glyph outlines
   (`ab_glyph` was tried first: its `ttf-parser` is unmaintained, RUSTSEC-2026-0192,

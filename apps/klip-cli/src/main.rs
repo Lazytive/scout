@@ -645,6 +645,8 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
             encoder,
             bitrate_kbps: args.bitrate,
             keyframe_interval: args.fps,
+            max_bitrate_kbps: None,
+            leaky_queue: true,
         },
         encoder_fallbacks: encoders,
         audio,

@@ -71,6 +71,15 @@ klip_platform::ScreenCast (portal session; shared as PortalSession by every pipe
   error (`watch_portal`).
 - `KLIP_PORTAL_CAPS` overrides the source caps (diagnosis; e.g. DMA-BUF, see ADR 0012).
 
+## Used by the export too (M8.3)
+
+`klip-export` builds its encoder with `build_encode_chain` and `build_aac_chain`, fed by
+`appsrc`s: `EncodeConfig::leaky_queue = false` makes the queue before the encoder block
+instead of dropping frames (a capture must never stall; an export must never lose a
+frame) and `max_bitrate_kbps` sets the peak explicitly (Discord's size-fit wants peak =
+target; `None` keeps the 1.5x of recording). `make`, `capsfilter` and `props` are public
+for it.
+
 ## Audio (`audio`, `lag`, `apps`)
 
 ```

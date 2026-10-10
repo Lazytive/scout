@@ -73,7 +73,14 @@ font files), so text drawn by the WebView would differ from machine to machine.
   and coverage through `ab_glyph_rasterizer`, no shaping; the bitmap is cropped to the drawn area and carries its frame position, so
   the compositor and the preview place it at `x`/`y` instead of blending a full
   frame; `cache_key` names the cached PNG.)
-- **Export runs in the media worker** (ADR 0015/0016 pattern: `--klip-media-worker`,
+- **Export runs in the media worker** (M8.3: `klip-export` builds the pipeline from a
+  `klip_edit::Render` plan — the crop, the output segments, the text cues, the
+  volumes and the bookmarks as markers — computed once from the project and the
+  probed clip; decoding/cropping/scaling in one `decodebin` pipeline seeked per
+  segment with the segment's rate, `scaletempo` for audio, frames picked by the
+  plan's integer mapping, text blended on the CPU, the recorder's encoder chain and
+  AAC chain with a non-leaky queue, `write_mp4` in memory, then `.part` + rename)
+  (ADR 0015/0016 pattern: `--klip-media-worker`,
   JSON lines, timeout, kill) as an `ExportJob` with progress lines and cancel; a
   decoder or encoder crash never reaches the app or the replay buffer. Exports are
   written atomically next to the clip as `<name> - <preset>.mp4` (never overwriting,

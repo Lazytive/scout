@@ -1,0 +1,31 @@
+[package]
+name = "klip-export"
+description = "Klip export pipeline: decode a clip, apply the editor's plan (cuts, speed, crop, text, volumes), re-encode with the hardware encoders and write an MP4"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+klip-capture.workspace = true
+klip-edit.workspace = true
+klip-media.workspace = true
+klip-mp4.workspace = true
+klip-probe = { path = "../klip-probe" }
+bytes.workspace = true
+gstreamer.workspace = true
+gstreamer-app.workspace = true
+gstreamer-video.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+klip-platform.workspace = true
+klip-testkit.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

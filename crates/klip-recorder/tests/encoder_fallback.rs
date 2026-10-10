@@ -105,6 +105,8 @@ fn falls_back_to_the_next_encoder() {
             encoder: broken,
             bitrate_kbps: 4000,
             keyframe_interval: 30,
+            max_bitrate_kbps: None,
+            leaky_queue: true,
         },
         encoder_fallbacks: vec![working.clone()],
         audio: None,
