@@ -343,9 +343,9 @@ contrast 1.1 / saturation 1.3.
 ## Approximate / not done yet
 
 - **The Advanced preview (M9.5)**:
-  - Seen and measured in the app, **not heard**: the sound graph (track weights, volume
-    keys, mute, music ducking under voices) is checked by unit tests and element
-    timing, not by ear. Ducking in the preview follows the voice through an analyser
+  - Heard by the human 2026-10-10: the preview's sound and Normal mode's Game/Mic
+    sliders work (checklist step 1). Not heard yet: volume keys, muted tracks, music
+    ducking under voices (unit tests, element timing and the output meter only). Ducking in the preview follows the voice through an analyser
     every frame (≈ 16 ms), the export per 10 ms block: close, not identical.
   - Speeds below 0.5x or above 4x may be silent in the preview (Chromium mutes media
     outside its pitch-keeping range); the export is right.
@@ -646,7 +646,7 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 
 Use the release app (`target\release\Start Klip.cmd`) and two of your own clips.
 
-1. **Sound sliders (the M8 bug).** Open a clip that has your voice. In Normal mode
+1. ✅ (2026-10-10: sound and sliders work) **Sound sliders (the M8 bug).** Open a clip that has your voice. In Normal mode
    press Play, then drag **Mic** to 0 %: your voice must go away while it plays; drag
    **Game** to 0 %: the game sound must go away. Tell me if you hear any echo or delay.
 2. **Switch to Advanced.** In the Mode section click **Advanced**. The layout changes:

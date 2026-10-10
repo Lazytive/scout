@@ -5,6 +5,9 @@ reason)`.
 
 ## Unreleased
 
+- M9.5 — The human checked the release build: the preview plays sound and the Game/Mic
+  sliders change it (M9.5 checklist step 1; the M8 bug is closed). ROADMAP and STATUS
+  updated. (Claude Opus 5.5: recording the human's check)
 - M9.5.9 — Preview sound checked in the real app with trusted clicks (CDP
   `Input.dispatchMouseEvent`) and an output meter in `window.__klipSound()`: Normal mode
   peak 0.274 playing, Mic 0 % mutes only the Microphone track (0.251 from Game), both
