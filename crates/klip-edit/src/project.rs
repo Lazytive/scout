@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+
+use crate::advanced::Advanced;
 use serde_json::Value;
 
 use crate::format::Format;
@@ -140,8 +142,11 @@ pub struct Project {
     pub format: Format,
     pub text: Vec<TextLayer>,
     pub volumes: Volumes,
-    /// Keys this build doesn't know (Advanced mode, M9, or a newer Klip): kept as they
-    /// are so switching modes never loses work; shown as the "advanced edits" badge.
+    /// Advanced mode's section (ADR 0018); absent on disk while empty.
+    #[serde(skip_serializing_if = "Advanced::is_empty")]
+    pub advanced: Advanced,
+    /// Keys this build doesn't know (a newer Klip): kept as they are so switching
+    /// modes never loses work; shown as the "advanced edits" badge.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -156,6 +161,7 @@ impl Default for Project {
             format: Format::default(),
             text: Vec::new(),
             volumes: Volumes::default(),
+            advanced: Advanced::default(),
             extra: BTreeMap::new(),
         }
     }
@@ -169,6 +175,7 @@ const KNOWN_KEYS: &[&str] = &[
     "format",
     "text",
     "volumes",
+    "advanced",
 ];
 
 impl Project {
@@ -182,7 +189,7 @@ impl Project {
 
     /// Whether the project holds edits Normal mode can't show.
     pub fn has_advanced_edits(&self) -> bool {
-        !self.extra.is_empty()
+        !self.advanced.is_empty() || !self.extra.is_empty()
     }
 
     /// The next unused text layer id.
@@ -225,6 +232,9 @@ impl Project {
         if let Some(v) = map.remove("volumes") {
             p.volumes = field(v, "volumes", &mut issues);
         }
+        if let Some(v) = map.remove("advanced") {
+            p.advanced = Advanced::from_value(v, &mut issues);
+        }
         for (i, (k, v)) in map.into_iter().enumerate() {
             if i >= MAX_EXTRA_KEYS {
                 issues.push(Issue::new(
@@ -244,6 +254,7 @@ impl Project {
     /// Clamp, sort and drop what can't be used, and say what changed. Idempotent.
     pub fn repair(&mut self) -> Vec<Issue> {
         let mut issues = Vec::new();
+        issues.extend(self.advanced.repair());
         if self.version != SCHEMA_VERSION {
             issues.push(Issue::new(
                 "version",
@@ -409,7 +420,7 @@ impl Project {
     }
 }
 
-fn field<T: for<'de> Deserialize<'de> + Default>(
+pub(crate) fn field<T: for<'de> Deserialize<'de> + Default>(
     v: Value,
     path: &str,
     issues: &mut Vec<Issue>,
@@ -423,7 +434,7 @@ fn field<T: for<'de> Deserialize<'de> + Default>(
     }
 }
 
-fn list<T: for<'de> Deserialize<'de>>(
+pub(crate) fn list<T: for<'de> Deserialize<'de>>(
     v: Value,
     path: &str,
     cap: usize,

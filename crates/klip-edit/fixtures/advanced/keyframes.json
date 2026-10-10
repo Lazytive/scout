@@ -1,0 +1,16 @@
+{
+  "name": "linear, hold, before and after the keys",
+  "keys": [
+    { "at_ms": 1000, "value": 1.0, "ease": "linear" },
+    { "at_ms": 2000, "value": 3.0, "ease": "hold" },
+    { "at_ms": 3000, "value": 0.0, "ease": "linear" },
+    { "at_ms": 3001, "value": 0.5, "ease": "linear" }
+  ],
+  "expect": [[0, 1.0], [999, 1.0], [1000, 1.0], [1500, 2.0], [1999, 2.998], [2000, 3.0], [2999, 3.0], [3000, 0.0], [3001, 0.5], [9000, 0.5]],
+  "transform_keys": [
+    { "at_ms": 0, "value": { "zoom": 1.0, "x": 0.0, "y": 0.0 }, "ease": "linear" },
+    { "at_ms": 1000, "value": { "zoom": 2.0, "x": 1.0, "y": -1.0 }, "ease": "linear" },
+    { "at_ms": 2000, "value": { "zoom": 2.0, "x": 1.0, "y": -1.0 }, "ease": "hold" }
+  ],
+  "transform_expect": [[0, [1.0, 0.0, 0.0]], [250, [1.25, 0.25, -0.25]], [1000, [2.0, 1.0, -1.0]], [1500, [2.0, 1.0, -1.0]], [5000, [2.0, 1.0, -1.0]]]
+}

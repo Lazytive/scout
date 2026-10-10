@@ -5,6 +5,13 @@ reason)`.
 
 ## Unreleased
 
+- M9.2 — Schema v2: `klip_edit::advanced` (the `advanced` object: tracks of placed
+  clips with keyframed transform/opacity/volume and speed ramps, transitions, colour,
+  markers, ducking; lenient per-entry parse, idempotent repair with caps;
+  `has_advanced_edits`; keyframe and ramp math shared with the front end through
+  `fixtures/advanced/*.json`, `src/lib/keyframes.ts`). A Normal-mode save keeps the
+  section untouched. (Claude Fable 5.1: M9.2)
+
 - M9.1 — Advanced mode started: ADR 0018 (proposed: schema v2 `advanced` keys on the
   same project, one compositor renderer, keyframes in shared integer math, canvas
   preview + `editor.frame` parity, montage by library keys, `Preset::Custom`), the

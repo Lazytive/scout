@@ -8,6 +8,7 @@
 
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
+pub mod advanced;
 mod file;
 pub mod format;
 pub mod plan;
@@ -16,6 +17,9 @@ pub mod template;
 pub mod text;
 pub mod timeline;
 
+pub use advanced::{
+    Advanced, Keyframe, PlacedClip, Source, SpeedPoint, Track, TrackKind, Transform,
+};
 pub use file::{LoadStatus, Loaded, load, save};
 pub use format::{Format, FormatKind, Rect};
 pub use plan::{Render, SourceInfo};

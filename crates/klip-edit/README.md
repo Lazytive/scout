@@ -50,6 +50,19 @@ and writing the project file.
   compositing, unpremultiplied at the end. Sides up to 4096 px. Changing any of this
   changes the golden hashes in `tests/text_render.rs`: bump `RENDER_VERSION`.
 - `template`: `Shorts` = tall centred + the clip's name as a caption for the first 3 s.
+- `advanced` (M9.2, ADR 0018): the `advanced` object of schema v2, absent on disk while
+  empty: `tracks` (video / text / audio / music) of `PlacedClip`s (`source` = main clip,
+  a library key, a file or an image; `in_ms..out_ms` at `at_ms`; keyframed `transform`
+  {zoom, x, y}, `opacity`, `volume`; a `speed` ramp of piecewise-constant rates in
+  percent), `transitions` (cut / crossfade / dip after a clip), `colour`, `markers`
+  (bookmark / event / user), `ducking`. Lenient parse per entry, `repair` (sorts and
+  de-duplicates keyframes, clamps every number, drops empty clips, renumbers duplicate
+  ids, caps: 16 tracks, 256 clips, 512 keyframes, 64 ramp points, 1024 markers).
+  `keyframes::value_at/transform_at` (hold or linear, f64 lerp) and
+  `ramp::source_offset/output_length` (integer, floor per segment) are the shared math,
+  checked by `fixtures/advanced/*.json` here (`tests/advanced_fixtures.rs`) and in the
+  front end (`src/lib/keyframes.test.ts`). `Project::has_advanced_edits` = the section
+  isn't empty or unknown keys exist; a Normal-mode save keeps the section untouched.
 - `plan` (M8.3): `Render::new(&Project, &SourceInfo)` = what `klip-export` renders:
   the crop (`format::crop_rect` on the probed size), the output segments
   (`timeline::segments` after clamping the project to the clip's length), the text
