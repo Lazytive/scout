@@ -107,21 +107,66 @@ export interface EditorMedia {
   url?: string;
 }
 
-/**
- * What the editor's preview plays (`editor.proxy`). In the app this goes through the
- * Tauri command `editor_media`, which allows exactly that one file for the asset
- * protocol and so yields a playable URL; the mock has no file to play.
- */
-export async function editorMedia(path: string): Promise<EditorMedia> {
-  if (!inTauri) return call<EditorMedia>('editor.proxy', { path });
+async function viaTauri<T>(path: string, what: 'proxy' | 'audio' | 'files'): Promise<T> {
   const core = await import('@tauri-apps/api/core');
-  let r: EditorMedia;
   try {
-    r = await core.invoke<EditorMedia>('editor_media', { path });
+    return await core.invoke<T>('editor_media', { path, what });
   } catch (e) {
     const err = e as { code?: string; message?: string };
     throw new CommandError(err?.code ?? 'failed', err?.message ?? String(e));
   }
-  if (r.path && r.status !== 'making') return { ...r, url: core.convertFileSrc(r.path) };
+}
+
+/** A file the engine named, as a URL the page can load (Tauri's asset protocol). */
+export async function fileUrl(path: string): Promise<string | null> {
+  if (!inTauri) return null;
+  const core = await import('@tauri-apps/api/core');
+  return core.convertFileSrc(path);
+}
+
+/**
+ * What the editor's preview plays (`editor.proxy`). In the app this goes through the
+ * Tauri command `editor_media`, which allows exactly the files the engine names for
+ * the asset protocol and so yields a playable URL; the mock has no file to play.
+ */
+export async function editorMedia(path: string): Promise<EditorMedia> {
+  if (!inTauri) return call<EditorMedia>('editor.proxy', { path });
+  const r = await viaTauri<EditorMedia>(path, 'proxy');
+  if (r.path && r.status !== 'making') return { ...r, url: (await fileUrl(r.path)) ?? undefined };
   return r;
+}
+
+export interface AudioTrack {
+  index: number;
+  /** `Mix`, `Game`, `Microphone`, … (empty when the file doesn't say). */
+  name: string;
+  path: string;
+  /** Playable URL (absent in the mock). */
+  url?: string;
+}
+
+/** A clip's sound tracks one per file (`editor.audio`), each with a playable URL in the app. */
+export async function editorAudio(path: string): Promise<AudioTrack[]> {
+  const r = inTauri
+    ? await viaTauri<{ tracks: AudioTrack[] }>(path, 'audio')
+    : await call<{ tracks: AudioTrack[] }>('editor.audio', { path });
+  const tracks = Array.isArray(r?.tracks) ? r.tracks : [];
+  return Promise.all(tracks.map(async (t) => ({ ...t, url: (await fileUrl(t.path)) ?? undefined })));
+}
+
+export interface ProjectFile {
+  path: string;
+  kind: 'image' | 'audio';
+  ok: boolean;
+  error?: string;
+  url?: string;
+}
+
+/** The project's pictures and sounds (`editor.files`), the usable ones with a URL. */
+export async function editorFiles(path: string): Promise<ProjectFile[]> {
+  const r = inTauri
+    ? await viaTauri<{ files: ProjectFile[] }>(path, 'files')
+    : await call<{ files: ProjectFile[] }>('editor.files', { path });
+  const files = Array.isArray(r?.files) ? r.files : [];
+  return Promise.all(files.map(async (f) => ({ ...f, url: f.ok ? ((await fileUrl(f.path)) ?? undefined) : undefined })));
 }

@@ -10,7 +10,11 @@
 //! `editor.frame {path, out_ms, width}` draws one frame through the export's renderer
 //! in the media worker. `editor.proxy {path}` → what the preview should play: the clip
 //! itself for H.264, otherwise its H.264 proxy (`ready` with its path, or `making`
-//! with the job id of the export that makes it).
+//! with the job id of the export that makes it). `editor.audio {path}` → the clip's
+//! audio tracks one per file for the preview's mixer (`.klip/audio/<key>/<n>.m4a`, made
+//! in the media worker, remade when the clip changes). `editor.files {path}` → the
+//! pictures and sounds the project places, checked before the app lets the preview
+//! read them.
 
 use std::fs;
 use std::io::Read as _;
@@ -23,13 +27,13 @@ use klip_control::CommandError;
 use klip_edit::{
     Composition, MAX_FILE_BYTES, Project, Source, SourceEvent, SourceInfo, TextLayer, compose_with,
 };
-use klip_library::{ClipInfo, Library, probe_file};
+use klip_library::{ClipInfo, Library, audio_track_names, probe_file};
 use serde_json::{Value, json};
 
 use super::export::{ExportKind, media_of};
 use super::library::str_arg;
 use super::{Inner, lock};
-use crate::media_worker::FrameJob;
+use crate::media_worker::{AudioJob, FrameJob, audio_timeout, write_atomic};
 
 /// Snapshots kept per project.
 pub const HISTORY_MAX: usize = 30;
@@ -43,6 +47,16 @@ const FRAME_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_FRAME_BYTES: u64 = 32 << 20;
 /// Project files read when a renamed clip is looked for in montages.
 const RETARGET_SCAN_MAX: usize = 100_000;
+/// What `.klip/audio/<key>/` holds besides the tracks: which file they came from.
+const AUDIO_MANIFEST: &str = "tracks.json";
+/// Picture extensions a sticker may have (what the export's decoder reads).
+const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp"];
+/// Sound extensions a sound or music clip may have.
+const SOUND_EXTS: &[&str] = &[
+    "mp3", "wav", "m4a", "aac", "ogg", "oga", "opus", "flac", "mp4", "webm",
+];
+/// Most file sources `editor.files` checks.
+const MAX_FILES: usize = 512;
 
 /// The editor's view of a clip: the index entry when it has one, a probe otherwise.
 pub(super) fn source_of(info: &ClipInfo) -> SourceInfo {
@@ -193,6 +207,45 @@ fn snapshot(file: &Path, dir: &Path, force: bool) -> std::io::Result<Option<u64>
 
 /// Ids of frame jobs (each worker answers by id).
 static FRAME_IDS: AtomicU64 = AtomicU64::new(0);
+
+/// The clip a set of split audio tracks came from: size and modification time.
+fn file_stamp(path: &Path) -> Option<(u64, u128)> {
+    let m = fs::metadata(path).ok()?;
+    let modified = m
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_millis();
+    Some((m.len(), modified))
+}
+
+/// The extension of `path`, lowercased.
+fn extension(path: &Path) -> String {
+    path.extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
+}
+
+/// Why a project's file source can't be offered to the preview, if it can't.
+fn file_problem(path: &Path, kind: &str) -> Option<&'static str> {
+    if !path.is_absolute() {
+        return Some("not a full path");
+    }
+    let ext = extension(path);
+    let allowed = if kind == "image" {
+        IMAGE_EXTS
+    } else {
+        SOUND_EXTS
+    };
+    if !allowed.contains(&ext.as_str()) {
+        return Some("not a picture or sound file");
+    }
+    if !path.is_file() {
+        return Some("missing");
+    }
+    None
+}
 
 impl Inner {
     /// What is known about a clip (the index, else the file).
@@ -654,6 +707,96 @@ impl Inner {
             "frame_height": bitmap.frame_height,
             "png": base64::engine::general_purpose::STANDARD.encode(png),
         }))
+    }
+
+    /// `editor.audio {path}`: the clip's audio tracks as separate files (made once,
+    /// remade when the clip's size or time changes).
+    pub(super) fn editor_audio(&self, args: &Value) -> Result<Value, CommandError> {
+        let lib = self.clip_library()?;
+        let (path, key) = self.clip_arg(&lib, str_arg(args, "path")?)?;
+        let dir = lib
+            .audio_dir(&key)
+            .ok_or_else(|| CommandError::bad_args("bad clip key"))?;
+        let stamp =
+            file_stamp(&path).ok_or_else(|| CommandError::new("not_found", "the clip is gone"))?;
+        let names = audio_track_names(&path).map_err(|e| CommandError::new("failed", e))?;
+        let n = u32::try_from(names.len())
+            .unwrap_or(u32::MAX)
+            .min(klip_export::audio::MAX_AUDIO_TRACKS);
+        let files: Vec<PathBuf> = (0..n)
+            .map(|i| klip_export::audio::track_file(&dir, i))
+            .collect();
+        let manifest = dir.join(AUDIO_MANIFEST);
+        let fresh = fs::read(&manifest)
+            .ok()
+            .filter(|b| b.len() < 4096)
+            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+            .is_some_and(|m| {
+                m.get("bytes").and_then(Value::as_u64) == Some(stamp.0)
+                    && m.get("modified_ms").and_then(Value::as_str)
+                        == Some(stamp.1.to_string().as_str())
+                    && m.get("tracks").and_then(Value::as_u64) == Some(u64::from(n))
+            })
+            && files.iter().all(|f| f.is_file());
+        if n > 0 && !fresh {
+            let _ = fs::remove_file(&manifest);
+            let id = FRAME_IDS.fetch_add(1, Ordering::Relaxed).saturating_add(1);
+            let job = AudioJob {
+                id,
+                clip: path.clone(),
+                out_dir: dir.clone(),
+                tracks: n,
+            };
+            let reply = lock(&self.frames)
+                .audio(&job, audio_timeout(stamp.0))
+                .map_err(|e| CommandError::new("failed", e))?;
+            if !reply.ok {
+                return Err(CommandError::new(
+                    "failed",
+                    reply
+                        .error
+                        .unwrap_or_else(|| "the sound could not be read".into()),
+                ));
+            }
+            let m = json!({ "bytes": stamp.0, "modified_ms": stamp.1.to_string(), "tracks": n });
+            write_atomic(&manifest, m.to_string().as_bytes())
+                .map_err(|e| CommandError::new("failed", e.to_string()))?;
+        }
+        let tracks: Vec<Value> = files
+            .iter()
+            .zip(&names)
+            .enumerate()
+            .map(|(i, (f, name))| json!({ "index": i, "name": name, "path": f.to_string_lossy() }))
+            .collect();
+        Ok(json!({ "key": key, "status": "ready", "tracks": tracks }))
+    }
+
+    /// `editor.files {path}`: the pictures and sounds the clip's saved project places,
+    /// each checked (a full path, a picture or sound extension, there).
+    pub(super) fn editor_files(&self, args: &Value) -> Result<Value, CommandError> {
+        let lib = self.clip_library()?;
+        let (path, key) = self.clip_arg(&lib, str_arg(args, "path")?)?;
+        let source = source_of(&self.clip_info(&lib, &path, &key)?);
+        let edit = self.load_project(&lib, &key, &source)?;
+        let mut seen: Vec<(&str, &str)> = Vec::new();
+        for c in edit.project.advanced.tracks.iter().flat_map(|t| &t.clips) {
+            let (p, kind) = match &c.source {
+                Source::File { path } => (path.as_str(), "audio"),
+                Source::Image { path } => (path.as_str(), "image"),
+                Source::Main | Source::Library { .. } => continue,
+            };
+            if seen.len() < MAX_FILES && !seen.contains(&(p, kind)) {
+                seen.push((p, kind));
+            }
+        }
+        let files: Vec<Value> = seen
+            .into_iter()
+            .map(|(p, kind)| match file_problem(Path::new(p), kind) {
+                None => json!({ "path": p, "kind": kind, "ok": true }),
+                Some(why) => json!({ "path": p, "kind": kind, "ok": false, "error": why }),
+            })
+            .collect();
+        Ok(json!({ "key": key, "files": files }))
     }
 
     /// What the preview plays for `path`.

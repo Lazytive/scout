@@ -5,6 +5,16 @@ reason)`.
 
 ## Unreleased
 
+- M9.5.3 — What the preview needs to play a montage and its sound. `editor.audio
+  {path}`: the clip's audio tracks copied one per file (`klip_export::audio::
+  split_audio`: `qtdemux` → `mp4mux`, no re-encode, in the media worker as an
+  `AudioJob`) into `.klip/audio/<key>/` (a 5th per-clip cache: follows rename/delete/
+  prune; remade when the clip's size or time changes). `editor.files {path}`: the
+  project's stickers/sounds/music, checked (full path, picture/sound extension, there).
+  The app's `editor_media` takes `what: proxy | audio | files` and allows a bounded set
+  (256, oldest out) of the files the engine named instead of one. Front end:
+  `editorAudio`, `editorFiles`, `fileUrl`. (Claude Opus 5.5: M9.5.3, so the Sound
+  sliders, montage clips, stickers and music can be heard and seen in the preview)
 - M9.5.2 — The mock engine (`npm run dev`) knows the M9.4 commands: `editor.montage`,
   `clips` in the project replies, `editor.frame` (an SVG of the layers on screen),
   `editor.history.list|restore` (a snapshot per changed save, 30 kept), Custom

@@ -1,8 +1,9 @@
 //! Per-clip files beside the thumbnails (ADR 0017): the editor's project
 //! (`.klip/projects/<key>.json`: the user's edits, kept as long as the clip exists),
 //! the H.264 preview proxy (`.klip/proxies/<key>.mp4`) and rendered text bitmaps
-//! (`.klip/render/<key>/`) and the project's history snapshots
-//! (`.klip/history/<key>/<unix ms>.json`). Keys are escaped like thumbnails. They follow a clip's
+//! (`.klip/render/<key>/`), the project's history snapshots
+//! (`.klip/history/<key>/<unix ms>.json`) and the preview's audio tracks
+//! (`.klip/audio/<key>/<n>.m4a`). Keys are escaped like thumbnails. They follow a clip's
 //! rename and delete; `prune_caches` removes what belongs to clips that are gone.
 //! Also the name of an export next to its clip (`unique_sibling`).
 
@@ -22,17 +23,20 @@ pub const PROXIES_DIR: &str = "proxies";
 pub const RENDER_DIR: &str = "render";
 /// Folder under `.klip` with project history snapshots, one folder per clip.
 pub const HISTORY_DIR: &str = "history";
+/// Folder under `.klip` with the preview's audio tracks, one folder per clip.
+pub const AUDIO_DIR: &str = "audio";
 const PROJECT_SUFFIX: &str = ".json";
 const PROXY_SUFFIX: &str = ".mp4";
 /// Most ` (n)` suffixes tried for a free export name.
 const MAX_UNIQUE: u32 = 1000;
 
 /// The caches: folder, file suffix (`None`: one folder per key).
-const KINDS: [(&str, Option<&str>); 4] = [
+const KINDS: [(&str, Option<&str>); 5] = [
     (PROJECTS_DIR, Some(PROJECT_SUFFIX)),
     (PROXIES_DIR, Some(PROXY_SUFFIX)),
     (RENDER_DIR, None),
     (HISTORY_DIR, None),
+    (AUDIO_DIR, None),
 ];
 
 impl Library {
@@ -67,7 +71,13 @@ impl Library {
         self.cache_path(HISTORY_DIR, None, key)
     }
 
-    /// Move a clip's project, proxy, renders and history to its new key (it was renamed).
+    /// The folder with a clip's audio tracks for the preview.
+    pub fn audio_dir(&self, key: &str) -> Option<PathBuf> {
+        self.cache_path(AUDIO_DIR, None, key)
+    }
+
+    /// Move a clip's project, proxy, renders, history and audio to its new key (it was
+    /// renamed).
     pub fn move_caches(&self, from: &str, to: &str) {
         for (sub, suffix) in KINDS {
             if let (Some(a), Some(b)) = (
@@ -85,7 +95,7 @@ impl Library {
         }
     }
 
-    /// Remove a clip's project, proxy, renders and history (it was deleted).
+    /// Remove a clip's project, proxy, renders, history and audio (it was deleted).
     pub fn remove_caches(&self, key: &str) {
         for (sub, suffix) in KINDS {
             if let Some(p) = self.cache_path(sub, suffix, key) {
@@ -210,8 +220,12 @@ mod tests {
         write(render.join("1.png"));
         let history = lib.history_dir("a.mp4").unwrap();
         write(history.join("1.json"));
+        let audio = lib.audio_dir("a.mp4").unwrap();
+        write(audio.join("0.m4a"));
         lib.move_caches("a.mp4", "Game/b.mp4");
         assert!(!proj.exists() && !proxy.exists() && !render.exists() && !history.exists());
+        assert!(!audio.exists());
+        assert!(lib.audio_dir("Game/b.mp4").unwrap().join("0.m4a").is_file());
         assert!(
             lib.history_dir("Game/b.mp4")
                 .unwrap()
@@ -230,14 +244,16 @@ mod tests {
         write(lib.project_path("gone.mp4").unwrap());
         write(lib.render_dir("gone.mp4").unwrap().join("x.png"));
         write(lib.history_dir("gone.mp4").unwrap().join("1.json"));
+        write(lib.audio_dir("gone.mp4").unwrap().join("0.m4a"));
         let keys: HashSet<&str> = ["Game/b.mp4"].into_iter().collect();
-        assert_eq!(lib.prune_caches(&keys), 3);
+        assert_eq!(lib.prune_caches(&keys), 4);
         assert!(lib.project_path("Game/b.mp4").unwrap().is_file());
         assert!(!lib.project_path("gone.mp4").unwrap().exists());
         lib.remove_caches("Game/b.mp4");
         assert!(!lib.project_path("Game/b.mp4").unwrap().exists());
         assert!(!lib.render_dir("Game/b.mp4").unwrap().exists());
         assert!(!lib.history_dir("Game/b.mp4").unwrap().exists());
+        assert!(!lib.audio_dir("Game/b.mp4").unwrap().exists());
         // Unknown keys and missing folders are fine.
         lib.remove_caches("../x");
         lib.move_caches("nope.mp4", "also.mp4");

@@ -103,6 +103,14 @@ pub mod commands {
     /// `{path, add: [paths]}` → the project of `path` with the clips `add` appended on
     /// its montage track (a montage lives under its first clip).
     pub const EDITOR_MONTAGE: &str = "editor.montage";
+    /// `{path}` → `{key, status: "ready", tracks: [{index, name, path}]}`: the clip's
+    /// audio tracks copied one per file for the editor's preview (cached in
+    /// `.klip/audio/<key>/`); `tracks` is empty for a clip without sound.
+    pub const EDITOR_AUDIO: &str = "editor.audio";
+    /// `{path}` → `{files: [{path, kind: image | audio, ok, error?}]}`: the files the
+    /// clip's project places (stickers, sounds, music), checked: absolute, a picture or
+    /// sound extension, there.
+    pub const EDITOR_FILES: &str = "editor.files";
     /// `{path}` → `{snapshots: [{id, saved_unix_ms, bytes}]}`, newest first.
     pub const EDITOR_HISTORY_LIST: &str = "editor.history.list";
     /// `{path, id}` → the project as that snapshot saved it, saved again (the project it

@@ -37,9 +37,10 @@ const MAIN: &str = "main";
 pub(crate) struct AppState {
     pub(crate) handler: Arc<dyn Handler>,
     engine: Mutex<Option<Engine>>,
-    /// The file the editor's preview may read through the asset protocol (one at a
-    /// time: `ipc::editor_media` allows the next and forbids the last).
-    pub(crate) media: Mutex<Option<std::path::PathBuf>>,
+    /// The files the editor's preview may read through the asset protocol, oldest
+    /// first (`ipc::editor_media` allows what the engine names and forbids the oldest
+    /// beyond `ipc::MAX_MEDIA_FILES`).
+    pub(crate) media: Mutex<std::collections::VecDeque<std::path::PathBuf>>,
 }
 
 fn setting(handler: &Arc<dyn Handler>, section: &str, key: &str, default: bool) -> bool {
@@ -196,7 +197,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             app.manage(AppState {
                 handler: handler.clone(),
                 engine: Mutex::new(Some(engine)),
-                media: Mutex::new(None),
+                media: Mutex::new(std::collections::VecDeque::new()),
             });
 
             let prefs = handler

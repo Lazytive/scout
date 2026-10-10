@@ -31,6 +31,7 @@ use klip_mp4::{Marker, Mp4Options};
 use klip_probe::EncoderChoice;
 use serde::{Deserialize, Serialize};
 
+pub mod audio;
 pub mod canvas;
 pub mod compose;
 pub mod encode;

@@ -24,8 +24,10 @@ mod names;
 mod query;
 mod thumbs;
 
-pub use caches::{HISTORY_DIR, PROJECTS_DIR, PROXIES_DIR, RENDER_DIR};
-pub use index::{ClipEvent, ClipInfo, INDEX_FILE, Index, IndexEntry, probe_file};
+pub use caches::{AUDIO_DIR, HISTORY_DIR, PROJECTS_DIR, PROXIES_DIR, RENDER_DIR};
+pub use index::{
+    ClipEvent, ClipInfo, INDEX_FILE, Index, IndexEntry, audio_track_names, probe_file,
+};
 pub use names::{
     MAX_NAME_CHARS, MAX_TAG_CHARS, MAX_TAGS, check_clip_name, clean_tag, normalize_tags,
 };

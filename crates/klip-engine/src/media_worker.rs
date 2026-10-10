@@ -8,7 +8,8 @@
 //!
 //! Thumbnail jobs ([`ThumbJob`]) run one after the other and answer with one
 //! [`ThumbReply`]; so do frame jobs ([`FrameJob`], `editor.frame`) with a
-//! [`FrameReply`]. Export jobs ([`ExportJob`]) run on their own thread, send
+//! [`FrameReply`] and audio splits ([`AudioJob`], `editor.audio`) with an
+//! [`AudioReply`]. Export jobs ([`ExportJob`]) run on their own thread, send
 //! [`ExportReply`] progress lines and one final reply, and can be stopped with a
 //! [`CancelJob`] line. A job that is silent longer than its timeout gets the worker
 //! killed; the next job starts a new one. An idle worker is stopped, so it holds no
@@ -130,6 +131,27 @@ pub struct FrameReply {
     pub out_ms: u64,
 }
 
+/// Copy a clip's audio tracks one per file (`editor.audio`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AudioJob {
+    pub id: u64,
+    pub clip: PathBuf,
+    /// Where `<n>.m4a` go.
+    pub out_dir: PathBuf,
+    pub tracks: u32,
+}
+
+/// The answer to an [`AudioJob`] (`audio` is its id).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AudioReply {
+    pub audio: u64,
+    pub ok: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
 /// Stop an export.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -143,6 +165,7 @@ pub struct CancelJob {
 pub enum Job {
     Cancel(CancelJob),
     Thumb(ThumbJob),
+    Audio(AudioJob),
     Frame(Box<FrameJob>),
     Export(Box<ExportJob>),
 }
@@ -162,7 +185,7 @@ pub struct ExportReply {
     pub summary: Option<ExportSummary>,
 }
 
-fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -252,6 +275,37 @@ fn run_frame_caught(job: &FrameJob) -> FrameReply {
             width: 0,
             height: 0,
             out_ms: 0,
+        }
+    })
+}
+
+/// How long splitting a clip's audio may take: generous for a long recording.
+pub fn audio_timeout(clip_bytes: u64) -> Duration {
+    let gb = clip_bytes / 1_000_000_000;
+    Duration::from_secs(30u64.saturating_add(gb.saturating_mul(20)).min(600))
+}
+
+/// Split a clip's audio in this process.
+pub fn run_audio(job: &AudioJob) -> AudioReply {
+    let r = klip_export::audio::split_audio(
+        &job.clip,
+        &job.out_dir,
+        job.tracks,
+        audio_timeout(std::fs::metadata(&job.clip).map_or(0, |m| m.len())),
+    );
+    AudioReply {
+        audio: job.id,
+        ok: r.is_ok(),
+        error: r.err().map(|e| e.to_string()),
+    }
+}
+
+fn run_audio_caught(job: &AudioJob) -> AudioReply {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_audio(job))).unwrap_or_else(|_| {
+        AudioReply {
+            audio: job.id,
+            ok: false,
+            error: Some("audio job panicked".into()),
         }
     })
 }
@@ -349,6 +403,11 @@ pub fn worker_main() -> Option<i32> {
             }
             Ok(Job::Frame(job)) => {
                 if !send(&out, &run_frame_caught(&job)) {
+                    break;
+                }
+            }
+            Ok(Job::Audio(job)) => {
+                if !send(&out, &run_audio_caught(&job)) {
                     break;
                 }
             }
@@ -539,6 +598,19 @@ impl MediaWorker {
         let r = self
             .ensure()
             .and_then(|w| ask_for::<FrameReply>(w, job, timeout, |r| r.frame == job.id));
+        self.after(&r);
+        r
+    }
+
+    /// Split one clip's audio, waiting at most `timeout`.
+    pub fn audio(&mut self, job: &AudioJob, timeout: Duration) -> Result<AudioReply, String> {
+        if self.exe.is_none() {
+            return Ok(run_audio_caught(job));
+        }
+        self.last_used = Instant::now();
+        let r = self
+            .ensure()
+            .and_then(|w| ask_for::<AudioReply>(w, job, timeout, |r| r.audio == job.id));
         self.after(&r);
         r
     }

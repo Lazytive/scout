@@ -1841,3 +1841,36 @@ fn frames_match_the_export() {
     .unwrap();
     assert!(e.to_string().contains("pixels wide"), "{e}");
 }
+
+#[test]
+#[ignore = "hardware: a GPU encoder and ffmpeg"]
+fn audio_split_keeps_each_track() {
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let clip = dir.path().join("clip.mp4");
+    make_clip(&enc, &clip, &ClipSpec::hd(4, 20_000));
+    let out = dir.path().join("audio");
+    let t0 = Instant::now();
+    let files = klip_export::audio::split_audio(&clip, &out, 2, Duration::from_secs(30)).unwrap();
+    println!("split 2 tracks of a 4 s clip in {:?}", t0.elapsed());
+    assert_eq!(files.len(), 2);
+    let game = onset_times(&files[0]);
+    let mic = onset_times(&files[1]);
+    println!("game {game:?}, mic {mic:?}");
+    assert!(close(&game, &GAME_BEEPS, 0.005), "{game:?}");
+    assert!(close(&mic, &MIC_BEEPS, 0.005), "{mic:?}");
+    // A track the clip doesn't have: an error, and nothing left behind.
+    let none = dir.path().join("none");
+    assert!(klip_export::audio::split_audio(&clip, &none, 3, Duration::from_secs(30)).is_err());
+    assert_eq!(
+        std::fs::read_dir(&none).unwrap().count(),
+        0,
+        "no files left"
+    );
+    // Not a clip at all.
+    let junk = dir.path().join("junk.mp4");
+    std::fs::write(&junk, b"not an mp4").unwrap();
+    let bad = dir.path().join("bad");
+    assert!(klip_export::audio::split_audio(&junk, &bad, 1, Duration::from_secs(10)).is_err());
+    assert_eq!(std::fs::read_dir(&bad).unwrap().count(), 0);
+}

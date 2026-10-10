@@ -733,3 +733,222 @@ fn frames_of_a_montage() {
     let h = tall["height"].as_u64().unwrap();
     assert!((318..=322).contains(&h), "9:16 at 180 wide: {h}");
 }
+
+/// A clip with video, "Game" and "Microphone" AAC tracks. The sound is made up (any
+/// bytes): splitting copies packets, it never decodes them.
+fn clip_with_sound(path: &Path) {
+    use klip_media::AudioParams;
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let video = TrackInfo {
+        codec: Codec::H264,
+        codec_data: Bytes::from_static(&[1, 0x64, 0, 0x28, 0xFF, 0xE1, 0, 0]),
+        params: TrackParams::Video(VideoParams {
+            width: 1280,
+            height: 720,
+            colorimetry: None,
+        }),
+        bitrate: None,
+    };
+    let audio = TrackInfo {
+        codec: Codec::Aac,
+        // AAC-LC, 48 kHz, stereo.
+        codec_data: Bytes::from_static(&[0x11, 0x90]),
+        params: TrackParams::Audio(AudioParams {
+            sample_rate: 48_000,
+            channels: 2,
+        }),
+        bitrate: None,
+    };
+    let frame = NANOS_PER_SEC / 60;
+    let frames: Vec<Packet> = (0..120)
+        .map(|i| Packet {
+            pts: i * frame,
+            dts: i * frame,
+            duration: frame,
+            keyframe: i % 60 == 0,
+            data: Bytes::from(vec![0u8; 64]),
+        })
+        .collect();
+    // 1024 samples per AAC packet: 21.33 ms.
+    let block = 1024 * NANOS_PER_SEC / 48_000;
+    let sound = |fill: u8| -> Vec<Packet> {
+        (0..94)
+            .map(|i| Packet {
+                pts: i * block,
+                dts: i * block,
+                duration: block,
+                keyframe: true,
+                data: Bytes::from(vec![fill; 40]),
+            })
+            .collect()
+    };
+    let (game, mic) = (sound(1), sound(2));
+    let mut f = std::fs::File::create(path).unwrap();
+    klip_mp4::write_mp4(
+        &mut f,
+        &[
+            Mp4Track::new(&video, &frames),
+            Mp4Track::new(&audio, &game).named("Game"),
+            Mp4Track::new(&audio, &mic).named("Microphone"),
+        ],
+        &Mp4Options {
+            creation_time_unix: 1_700_000_000,
+            force_co64: false,
+            markers: &[],
+        },
+    )
+    .unwrap();
+}
+
+/// M9.5: the preview's sound is the clip's tracks one per file (made once, remade when
+/// the clip changes, following a rename); the project's files are checked before the
+/// app lets the preview read them.
+#[test]
+fn audio_tracks_and_files_for_the_preview() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("clips").join("Game").join("S.mp4");
+    clip_with_sound(&path);
+    let (engine, rx) = start(settings(dir.path()));
+    let p = path.to_string_lossy().to_string();
+    let r = engine
+        .handle("editor.audio", &json!({ "path": p }))
+        .unwrap();
+    assert_eq!(r["status"], "ready");
+    let tracks = r["tracks"].as_array().unwrap();
+    let names: Vec<&str> = tracks.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Game", "Microphone"]);
+    let files: Vec<PathBuf> = tracks
+        .iter()
+        .map(|t| PathBuf::from(t["path"].as_str().unwrap()))
+        .collect();
+    for f in &files {
+        assert!(f.is_file(), "{f:?}");
+        assert!(f.starts_with(dir.path().join("clips").join(".klip").join("audio")));
+        // One audio track each, every packet copied.
+        let info = klip_mp4::probe(&mut std::fs::File::open(f).unwrap()).unwrap();
+        assert_eq!((info.audio_tracks, info.video.is_none()), (1, true));
+        assert!(
+            info.duration_ms.unwrap().abs_diff(2005) < 30,
+            "{:?}",
+            info.duration_ms
+        );
+    }
+    let made = std::fs::metadata(&files[0]).unwrap().modified().unwrap();
+    // Asked again: the same files, not made again.
+    let again = engine
+        .handle("editor.audio", &json!({ "path": p }))
+        .unwrap();
+    assert_eq!(again["tracks"], r["tracks"]);
+    assert_eq!(
+        std::fs::metadata(&files[0]).unwrap().modified().unwrap(),
+        made
+    );
+    // The clip changes: made again.
+    std::thread::sleep(Duration::from_millis(20));
+    clip_with_sound(&path);
+    {
+        use std::io::Write as _;
+        // An empty `free` box at the end: another size, the same clip.
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        f.write_all(&[0, 0, 0, 8, b'f', b'r', b'e', b'e']).unwrap();
+    }
+    engine
+        .handle("editor.audio", &json!({ "path": p }))
+        .unwrap();
+    assert_ne!(
+        std::fs::metadata(&files[0]).unwrap().modified().unwrap(),
+        made
+    );
+    // Renamed: the tracks follow.
+    let renamed = engine
+        .handle("clip.rename", &json!({ "path": p, "name": "T" }))
+        .unwrap();
+    next(&rx, "library_changed");
+    assert!(!files[0].exists());
+    let moved = engine
+        .handle("editor.audio", &json!({ "path": renamed["path"] }))
+        .unwrap();
+    assert!(PathBuf::from(moved["tracks"][1]["path"].as_str().unwrap()).is_file());
+    // A clip without sound has no tracks.
+    let silent = dir.path().join("clips").join("silent.mp4");
+    clip(&silent, 30);
+    let none = engine
+        .handle("editor.audio", &json!({ "path": silent.to_string_lossy() }))
+        .unwrap();
+    assert_eq!(none["tracks"], json!([]));
+    // Hostile paths.
+    for bad in [json!({}), json!({ "path": "nope" }), json!({ "path": 7 })] {
+        assert_eq!(
+            engine.handle("editor.audio", &bad).unwrap_err().code,
+            "bad_args",
+            "{bad}"
+        );
+    }
+    let outside = dir.path().join("elsewhere.mp4");
+    clip_with_sound(&outside);
+    assert!(
+        engine
+            .handle(
+                "editor.audio",
+                &json!({ "path": outside.to_string_lossy() })
+            )
+            .is_err()
+    );
+
+    // editor.files: the project's pictures and sounds, checked.
+    let png = dir.path().join("sticker.png");
+    std::fs::write(&png, b"png").unwrap();
+    let sp = renamed["path"].as_str().unwrap().to_string();
+    let mut project = engine
+        .handle("editor.project.get", &json!({ "path": sp }))
+        .unwrap()["project"]
+        .clone();
+    let placed = |id: u32, source: Value| json!({ "id": id, "source": source, "in_ms": 0, "out_ms": 1000, "at_ms": 0 });
+    project["advanced"] = json!({ "tracks": [
+        { "id": 1, "kind": "video", "clips": [
+            placed(1, json!({ "kind": "image", "path": png.to_string_lossy() })),
+        ] },
+        { "id": 2, "kind": "audio", "clips": [
+            placed(2, json!({ "kind": "file", "path": "relative/boom.wav" })),
+        ] },
+        { "id": 3, "kind": "music", "clips": [
+            placed(3, json!({ "kind": "file", "path": dir.path().join("tool.exe").to_string_lossy() })),
+        ] },
+        { "id": 4, "kind": "audio", "clips": [
+            placed(4, json!({ "kind": "file", "path": dir.path().join("gone.mp3").to_string_lossy() })),
+        ] },
+    ] });
+    engine
+        .handle(
+            "editor.project.set",
+            &json!({ "path": sp, "project": project }),
+        )
+        .unwrap();
+    let files = engine
+        .handle("editor.files", &json!({ "path": sp }))
+        .unwrap()["files"]
+        .clone();
+    let got: Vec<(bool, &str)> = files
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["ok"].as_bool().unwrap(),
+                f["error"].as_str().unwrap_or(""),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [
+            (true, ""),
+            (false, "not a full path"),
+            (false, "not a picture or sound file"),
+            (false, "missing"),
+        ]
+    );
+}

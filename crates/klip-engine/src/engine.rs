@@ -872,6 +872,8 @@ impl Handler for Inner {
             commands::EDITOR_PROJECT_GET => self.editor_project_get(args),
             commands::EDITOR_PROJECT_SET => self.editor_project_set(args),
             commands::EDITOR_PROXY => self.editor_proxy(args),
+            commands::EDITOR_AUDIO => self.editor_audio(args),
+            commands::EDITOR_FILES => self.editor_files(args),
             commands::EDITOR_TEXT_RENDER => self.editor_text_render(args),
             commands::EDITOR_FRAME => self.editor_frame(args),
             commands::EDITOR_MONTAGE => self.editor_montage(args),

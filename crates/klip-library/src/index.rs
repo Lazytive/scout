@@ -167,6 +167,18 @@ pub fn probe_file(path: &Path) -> Result<ClipInfo, String> {
     Ok(ClipInfo::from_mp4(&info))
 }
 
+/// The names of a file's audio tracks in track order (`Mix`, `Game`, `Microphone`, …;
+/// empty for an unnamed track), one per audio track.
+pub fn audio_track_names(path: &Path) -> Result<Vec<String>, String> {
+    let f = File::open(path).map_err(|e| e.to_string())?;
+    let info =
+        klip_mp4::probe(&mut BufReader::with_capacity(64 * 1024, f)).map_err(|e| e.to_string())?;
+    let n = usize::try_from(info.audio_tracks).unwrap_or(0);
+    let mut names = info.audio_names;
+    names.resize(n, String::new());
+    Ok(names)
+}
+
 impl Library {
     pub fn index_path(&self) -> std::path::PathBuf {
         self.root.join(META_DIR).join(INDEX_FILE)

@@ -106,6 +106,16 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   it (`retarget_montages`). `editor.proxy {path}` → what the preview plays: `original`
   for an H.264 clip, else the H.264 proxy in `.klip/proxies/<key>.mp4` (`ready`, or
   `making` with the id of the export job that makes it; `preset: "proxy"`).
+  `editor.audio {path}` (M9.5) → `{key, status: "ready", tracks: [{index, name, path}]}`:
+  the clip's audio tracks copied one per file (`klip_export::audio::split_audio`,
+  `AudioJob` in the frame worker, timeout 30 s + 20 s per GB) into
+  `.klip/audio/<key>/<n>.m4a` with a `tracks.json` stamp (size, modification time,
+  count): remade when the clip changes, follows rename/delete/prune like the other
+  caches. Names come from the file (`klip_library::audio_track_names`); the preview's
+  mixer weighs them like the export (`mixer::volume_for`). `editor.files {path}` →
+  `{files: [{path, kind: image | audio, ok, error?}]}`: the saved project's sticker,
+  sound and music files, `ok` only for a full path with a picture/sound extension that
+  exists (the app allows only those for the asset protocol).
 - Export (`engine/export.rs`, M8.4, M9.4): `export.start {path, preset}` (`original` /
   `youtube` / `tiktok` / `discord`, or `custom` with `custom: {width, height, fps,
   bitrate_kbps, codec: h264 | hevc | av1}`, every number range-checked; the file is

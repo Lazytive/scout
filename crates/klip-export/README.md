@@ -77,6 +77,14 @@ Decoding is software by default when run in the media worker
 (`videoconvertscale` and `GstVideoConverter` on all threads, blending and the colour
 matrix on row bands). `d3d11compositor` is a later optimisation.
 
+## The preview's sound tracks (`audio::split_audio`, `editor.audio`, M9.5)
+
+`qtdemux` → one `queue ! mp4mux ! filesink` per audio track (no re-encode), video to a
+`fakesink`; `<n>.m4a.part` renamed when all are done; a track the file doesn't have,
+an unreadable file or the timeout leaves nothing behind. A 4 s two-track clip splits in
+6–28 ms (hardware test `audio_split_keeps_each_track`: the beeps of each file land where
+the clip's Game and Microphone tracks have them, ±5 ms).
+
 ## One frame (`frame::frame`, `editor.frame`, M9.4)
 
 `frame(&FrameRequest {source, composition, media, out_ms, width})` → `FrameImage
