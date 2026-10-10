@@ -236,7 +236,8 @@ pub fn decode_audio_mono(path: &Path, index: usize, rate: u32) -> Result<Vec<i16
 }
 
 /// Decode the frame at `at_s` seconds of the first video stream as `width`x`height`
-/// 8-bit gray (luma) with ffmpeg.
+/// 8-bit gray (luma) with ffmpeg. `at_s` 0 also reads a still picture (ffmpeg gives
+/// nothing for a seek in one).
 pub fn decode_gray_frame(
     path: &Path,
     at_s: f64,
@@ -244,15 +245,13 @@ pub fn decode_gray_frame(
     height: usize,
 ) -> Result<Vec<u8>, OracleError> {
     let scale = format!("scale={width}:{height}:flags=area");
-    let out = Command::new("ffmpeg")
-        .args([
-            "-v",
-            "error",
-            "-nostdin",
-            "-ss",
-            &format!("{at_s:.3}"),
-            "-i",
-        ])
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(["-v", "error", "-nostdin"]);
+    if at_s > 0.0 {
+        cmd.args(["-ss", &format!("{at_s:.3}")]);
+    }
+    let out = cmd
+        .arg("-i")
         .arg(path_str(path)?)
         .args([
             "-map",

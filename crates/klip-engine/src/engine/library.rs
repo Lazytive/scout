@@ -254,6 +254,7 @@ impl Inner {
             lib.rename(&path, name).map_err(lib_err)?
         };
         let new_key = lib.key(&new_path).map_err(lib_err)?;
+        self.retarget_montages(&lib, &old_key, &new_key);
         {
             let mut state = lock(&self.library);
             if state.root.as_deref() == Some(lib.root())

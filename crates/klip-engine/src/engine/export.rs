@@ -1,5 +1,7 @@
-//! Export commands (M8.4): `export.start {path, preset}` renders a clip's project with a
-//! preset into `<name> - <Preset>.mp4` next to the clip (never overwriting), on its own
+//! Export commands (M8.4, M9.4): `export.start {path, preset}` renders a clip's project
+//! (a montage too: its clips must all be there, `missing` otherwise) with a preset, or
+//! with `preset: "custom"` and `custom: {width, height, fps, bitrate_kbps, codec}`, into
+//! `<name> - <Preset>.mp4` next to the clip (never overwriting), on its own
 //! thread through the media worker; `export.cancel {id}`; `export.status`. One export
 //! runs at a time (`busy` otherwise). Progress comes as `export_progress` events (at
 //! most a few per second), the end as one `export_done`; a finished export is indexed
@@ -8,18 +10,19 @@
 //! preview never blocks an export, nor an export a preview (human check, 2026-10-10).
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use klip_control::CommandError;
+use klip_edit::compose::LayerKind;
 use klip_edit::{Composition, Project, Source, compose};
-use klip_export::{Preset, Progress};
+use klip_export::{CUSTOM_KBPS, CustomOutput, MAX_FPS, MAX_SIDE, OutCodec, Preset, Progress};
 use klip_library::{ClipInfo, Library};
 use serde_json::{Value, json};
 
-use super::editor::source_of;
+use super::editor::{library_file, missing_error, source_of};
 use super::library::str_arg;
 use super::{Inner, lock};
 use crate::config;
@@ -29,7 +32,7 @@ use crate::media_worker::{EXPORT_INACTIVITY, ExportJob, MediaWorker};
 /// Where the composition's other sources are: library clips under the library's root
 /// (a key that would leave it is left out, and the export reports it missing), files
 /// and pictures where the project says.
-fn media_of(lib: &Library, comp: &Composition) -> Vec<(Source, PathBuf)> {
+pub(super) fn media_of(lib: &Library, comp: &Composition) -> Vec<(Source, PathBuf)> {
     let mut out: Vec<(Source, PathBuf)> = Vec::new();
     for l in &comp.layers {
         if l.source == Source::Main || out.iter().any(|(s, _)| *s == l.source) {
@@ -37,12 +40,7 @@ fn media_of(lib: &Library, comp: &Composition) -> Vec<(Source, PathBuf)> {
         }
         let path = match &l.source {
             Source::Main => None,
-            Source::Library { key } => {
-                let rel = Path::new(key);
-                rel.components()
-                    .all(|c| matches!(c, std::path::Component::Normal(_)))
-                    .then(|| lib.root().join(rel))
-            }
+            Source::Library { key } => library_file(lib, key),
             Source::File { path } | Source::Image { path } => Some(PathBuf::from(path)),
         };
         if let Some(p) = path {
@@ -180,10 +178,14 @@ impl Inner {
 
     pub(super) fn export_start(&self, args: &Value) -> Result<Value, CommandError> {
         let preset_id = str_arg(args, "preset")?;
-        let preset = Preset::ALL
-            .into_iter()
-            .find(|p| p.id() == preset_id)
-            .ok_or_else(|| CommandError::bad_args("unknown preset"))?;
+        let preset = if preset_id == "custom" {
+            Preset::Custom(custom_arg(args)?)
+        } else {
+            Preset::ALL
+                .into_iter()
+                .find(|p| p.id() == preset_id)
+                .ok_or_else(|| CommandError::bad_args("unknown preset"))?
+        };
         let lib = self.clip_library()?;
         let (path, key) = self.clip_arg(&lib, str_arg(args, "path")?)?;
         let info = self.clip_info(&lib, &path, &key)?;
@@ -231,11 +233,28 @@ impl Inner {
         let source = source_of(info);
         let (composition, out) = match kind {
             ExportKind::Preset(p) => {
-                let (project, _, _) = self.load_project(lib, &key, &source)?;
+                let edit = self.load_project(lib, &key, &source)?;
+                let composition = edit.composition(&source);
+                // A clip of the montage that is gone fails now, by name (muted sound
+                // is never read).
+                let played = |k: &str| {
+                    composition.layers.iter().any(|l| {
+                        matches!(&l.source, Source::Library { key } if key == k)
+                            && !(l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music))
+                    })
+                };
+                let gone: Vec<&str> = edit
+                    .missing()
+                    .map(|c| c.key.as_str())
+                    .filter(|k| played(k))
+                    .collect();
+                if !gone.is_empty() {
+                    return Err(missing_error(gone.into_iter()));
+                }
                 let out = lib
                     .unique_sibling(&clip, p.name())
                     .map_err(|e| CommandError::new("failed", e.to_string()))?;
-                (compose(&project, &source), out)
+                (composition, out)
             }
             ExportKind::Proxy => {
                 let out = lib
@@ -276,6 +295,10 @@ impl Inner {
             composition,
             media,
             preset: preset.id().to_string(),
+            custom: match preset {
+                Preset::Custom(c) => Some(c),
+                _ => None,
+            },
             encoders: encoders.names(),
             discord_limit_bytes: u64::from(settings.export.discord_limit_mb)
                 .saturating_mul(1_000_000),
@@ -320,6 +343,33 @@ impl Inner {
             });
         }
     }
+}
+
+/// `args.custom` of a Custom export, every number checked.
+fn custom_arg(args: &Value) -> Result<CustomOutput, CommandError> {
+    let c = args
+        .get("custom")
+        .filter(|v| v.is_object())
+        .ok_or_else(|| CommandError::bad_args("custom must be an object"))?;
+    let num = |name: &str, lo: u32, hi: u32| {
+        c.get(name)
+            .and_then(Value::as_u64)
+            .and_then(|v| u32::try_from(v).ok())
+            .filter(|v| (lo..=hi).contains(v))
+            .ok_or_else(|| CommandError::bad_args(format!("custom.{name} must be {lo}…{hi}")))
+    };
+    let codec: OutCodec = c
+        .get("codec")
+        .cloned()
+        .and_then(|v| serde_json::from_value(v).ok())
+        .ok_or_else(|| CommandError::bad_args("custom.codec must be h264, hevc or av1"))?;
+    Ok(CustomOutput {
+        width: num("width", 2, MAX_SIDE)?,
+        height: num("height", 2, MAX_SIDE)?,
+        fps: num("fps", 1, MAX_FPS)?,
+        bitrate_kbps: num("bitrate_kbps", CUSTOM_KBPS.0, CUSTOM_KBPS.1)?,
+        codec,
+    })
 }
 
 fn export_thread(
@@ -387,7 +437,10 @@ fn export_thread(
             reason: "exported".into(),
         });
         let lib = Library::new(root.clone());
-        if let Some(new_key) = path.as_deref().and_then(|p| lib.key(Path::new(p)).ok()) {
+        if let Some(new_key) = path
+            .as_deref()
+            .and_then(|p| lib.key(std::path::Path::new(p)).ok())
+        {
             inner.queue_new_clip(&root, new_key);
         }
     }
@@ -407,6 +460,40 @@ mod tests {
             progress: Progress::default(),
             started: Instant::now(),
         }
+    }
+
+    #[test]
+    fn custom_settings_are_checked() {
+        let ok = json!({"custom": {"width": 1280, "height": 720, "fps": 30, "bitrate_kbps": 6000, "codec": "hevc"}});
+        assert_eq!(
+            custom_arg(&ok).unwrap(),
+            CustomOutput {
+                width: 1280,
+                height: 720,
+                fps: 30,
+                bitrate_kbps: 6000,
+                codec: OutCodec::Hevc
+            }
+        );
+        for (field, bad) in [
+            ("width", json!(1)),
+            ("width", json!(5000)),
+            ("height", json!(-2)),
+            ("fps", json!(0)),
+            ("fps", json!(241)),
+            ("bitrate_kbps", json!(50)),
+            ("bitrate_kbps", json!("6000")),
+            ("codec", json!("x264")),
+            ("codec", json!(null)),
+        ] {
+            let mut a = ok.clone();
+            a["custom"][field] = bad;
+            let e = custom_arg(&a).unwrap_err();
+            assert_eq!(e.code, "bad_args", "{field}");
+            assert!(e.message.contains(field), "{}", e.message);
+        }
+        assert!(custom_arg(&json!({})).is_err());
+        assert!(custom_arg(&json!({"custom": [1]})).is_err());
     }
 
     #[test]

@@ -309,8 +309,31 @@ by the tests, hardware decoding (in-process test), the user's game possibly runn
 | `custom_preset_honours_its_numbers` | 640x640 box → 640x360, 30 fps, h264; 685 kbit/s at a 1500 target, 354 at 150 (simple frames undershoot) |
 
 Normal-mode exports go through the same renderer; the six M8.3 export tests pass on it.
+Re-run after M9.4's refactor (2026-10-10, same machine, the user's PC in use): all 13
+export tests pass; the 10-minute montage at **9.2x** realtime, **785 MB** peak.
+
+### Editor frames and montage projects (M9.4)
+
+Measured 2026-10-10, same machine:
+
+| Test | Result |
+|---|---|
+| `frames_match_the_export` (`klip-export`, debug, hardware decoding in-process): the crossfade montage, `frame::frame` at 1280 wide vs the exported frame at the same time, ten times before/inside/after the crossfade | barcodes **all as planned**; PSNR vs the export **48.3–51.1 dB**; **49–220 ms** a frame (JPEG 20–78 KB) |
+| `frames_of_a_montage` (`klip-engine`, `editor.frame` end to end, in-process, 640x360 clips) | first frame **431 ms** (GStreamer start-up), then **34–56 ms**; a tall unsaved project gives a 180x320 frame |
+| `montage_missing_clips_history_and_rename` (`klip-engine`, not hardware) | append, Custom export job, history coalescing and restore, rename followed, deleted clip reported `missing` and kept, export refused by name |
 
 ## Approximate / not done yet
+
+- **Editor frames and montages (M9.4)**:
+  - `editor.frame` opens every clip on screen per call (no cache): fine for a paused
+    preview and parity checks, too slow to scrub with (the canvas preview, M9.5, is for
+    that). In the app it runs in a media worker of its own (not measured in the app yet).
+  - Event markers come from chapters with a title other than `Bookmark <n>`; Klip writes
+    none yet (auto-clip integrations are M10+), so in practice they are bookmarks.
+  - Deleting a montage's first clip deletes the montage (its project lives under that
+    clip). Deleting another clip leaves it `missing` in the montage; the export refuses
+    with the clip's name until it is removed from the edit.
+  - History snapshots: at most one a minute while saving, 30 kept per project.
 
 - **Renderer (M9.3)**:
   - Zoom and position snap to whole pixels (the visible source rectangle is whole source

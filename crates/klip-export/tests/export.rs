@@ -292,6 +292,7 @@ fn source_info(path: &Path) -> SourceInfo {
         duration_ms: info.duration_ms.unwrap(),
         fps: v.fps,
         bookmarks_ms: info.chapters_ms,
+        events: Vec::new(),
     }
 }
 
@@ -851,6 +852,7 @@ fn hostile_plans_fail_cleanly() {
         duration_ms: 1_000,
         fps: Some(30.0),
         bookmarks_ms: vec![],
+        events: Vec::new(),
     };
     let mut wide = compose(&Project::new(1_000), &src);
     wide.crop.width = 10_000;
@@ -1722,4 +1724,120 @@ fn sticker_sits_where_the_plan_puts_it() {
         let s = oracle::decode_gray_frame(&a, t + 0.5 / 60.0, w, h).unwrap();
         assert!(psnr(&g, &s) > 35.0, "at {t} s the frame is the clip's");
     }
+}
+
+/// M9.4: `frame` draws what the export encodes. The montage of
+/// `montage_crossfade_maps_every_frame` plus a muted music track whose file is gone
+/// (muted sound is never read; this export failed before M9.4): frames before,
+/// inside and after the crossfade carry the planned barcode and match the export's
+/// frame at the same time.
+#[test]
+#[ignore = "hardware: a GPU encoder and ffmpeg"]
+fn frames_match_the_export() {
+    use klip_export::FrameRequest;
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.mp4");
+    let b = dir.path().join("b.mp4");
+    make_clip(&enc, &a, &ClipSpec::hd(4, 8_000));
+    make_clip(
+        &enc,
+        &b,
+        &ClipSpec {
+            counter_base: B_BASE,
+            ..ClipSpec::hd(4, 8_000)
+        },
+    );
+    let mut p = Project::new(4_000);
+    let gone = dir.path().join("gone.wav").to_string_lossy().into_owned();
+    p.advanced.tracks = vec![
+        track(
+            1,
+            TrackKind::Video,
+            vec![
+                placed(1, library("b.mp4"), 0, 1_500, 1_000),
+                placed(2, library("b.mp4"), 2_000, 3_500, 2_500),
+            ],
+        ),
+        Track {
+            muted: true,
+            ..track(
+                2,
+                TrackKind::Music,
+                vec![placed(3, Media::File { path: gone }, 0, 4_000, 0)],
+            )
+        },
+    ];
+    p.advanced.transitions = vec![Transition {
+        track: 1,
+        after_clip: 1,
+        kind: TransitionKind::Crossfade,
+        ms: 500,
+    }];
+    let comp = compose(&p, &source_info(&a));
+    let media = vec![(library("b.mp4"), b.clone())];
+    let out = dir.path().join("montage.mp4");
+    let encoders = encoders(&enc);
+    run(&montage_request(
+        Preset::Original,
+        &a,
+        &comp,
+        &media,
+        &out,
+        &encoders,
+    ));
+    let (w, h) = (640, 360);
+    for i in [0u64, 59, 60, 100, 125, 140, 150, 209, 210, 239] {
+        let t = comp.frame_out_ms(i, FPS).unwrap();
+        let started = Instant::now();
+        let img = klip_export::frame::frame(&FrameRequest {
+            source: &a,
+            composition: &comp,
+            media: &media,
+            out_ms: t,
+            width: 1280,
+        })
+        .unwrap();
+        let took = started.elapsed();
+        assert_eq!((img.width, img.height, img.out_ms), (1280, 720, t));
+        let jpg = dir.path().join(format!("frame-{i}.jpg"));
+        std::fs::write(&jpg, &img.jpeg).unwrap();
+        let got = oracle::decode_gray_frame(&jpg, 0.0, w, h).unwrap();
+        let exported = oracle::decode_gray_frame(&out, t as f64 / 1000.0, w, h).unwrap();
+        let db = psnr(&got, &exported);
+        let counter = barcode::read_gray(&got, w, h);
+        println!(
+            "frame {i} at {t} ms: counter {counter:?}, PSNR vs export {db:.1} dB, {} KB, {:.0} ms",
+            img.jpeg.len() / 1024,
+            took.as_secs_f64() * 1000.0
+        );
+        if let Some(want) = composed_counter(&comp, i, FPS, 4 * FPS) {
+            assert_eq!(counter, Some(want), "frame {i}");
+        }
+        assert!(db >= 35.0, "frame {i}: {db:.1} dB");
+    }
+    // Past the end: the last frame.
+    let last = klip_export::frame::frame(&FrameRequest {
+        source: &a,
+        composition: &comp,
+        media: &media,
+        out_ms: u64::MAX,
+        width: 320,
+    })
+    .unwrap();
+    assert_eq!(
+        (last.width, last.height, last.out_ms),
+        (320, 180, comp.duration_ms - 1)
+    );
+    // A width out of range is refused by name.
+    let e = klip_export::frame::frame(&FrameRequest {
+        source: &a,
+        composition: &comp,
+        media: &media,
+        out_ms: 0,
+        width: 8,
+    })
+    .err()
+    .unwrap();
+    assert!(e.to_string().contains("pixels wide"), "{e}");
 }

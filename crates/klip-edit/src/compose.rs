@@ -69,6 +69,27 @@ impl Layer {
         Some(src.min(self.src_out_ms.saturating_sub(1)))
     }
 
+    /// The first output time that shows source time `src_ms`, or `None` when the layer
+    /// doesn't play it (the inverse of [`Self::source_ms`]).
+    pub fn output_ms(&self, src_ms: u64) -> Option<u64> {
+        if src_ms < self.src_in_ms || src_ms >= self.src_out_ms || self.end_ms <= self.at_ms {
+            return None;
+        }
+        let want = src_ms.saturating_sub(self.src_in_ms);
+        // `source_offset` never decreases: the first local time reaching `want`.
+        let (mut lo, mut hi) = (0u64, self.end_ms.saturating_sub(self.at_ms));
+        while lo < hi {
+            let mid = lo.saturating_add(hi.saturating_sub(lo) / 2);
+            if ramp::source_offset(&self.speed, mid) >= want {
+                hi = mid;
+            } else {
+                lo = mid.saturating_add(1);
+            }
+        }
+        let out = self.at_ms.saturating_add(lo);
+        self.active(out).then_some(out)
+    }
+
     /// Layer-local time for the keyframes.
     fn local(&self, out_ms: u64) -> u64 {
         out_ms.saturating_sub(self.at_ms)
@@ -182,8 +203,55 @@ fn fade(from_ms: u64, to_ms: u64, from: f32, to: f32) -> Vec<Keyframe> {
     ]
 }
 
+/// A clip's chapters: source ms and, for an event, its title.
+fn chapters(info: &SourceInfo) -> Vec<(u64, Option<&str>)> {
+    let title_at = |ms: u64| {
+        info.events
+            .iter()
+            .find(|e| e.at_ms == ms && !e.title.is_empty())
+            .map(|e| e.title.as_str())
+    };
+    let mut out: Vec<(u64, Option<&str>)> = info
+        .bookmarks_ms
+        .iter()
+        .take(MAX_MARKERS)
+        .map(|&ms| (ms, title_at(ms)))
+        .collect();
+    for e in info.events.iter().take(MAX_MARKERS) {
+        if !info.bookmarks_ms.contains(&e.at_ms) && !e.title.is_empty() {
+            out.push((e.at_ms, Some(e.title.as_str())));
+        }
+    }
+    out
+}
+
+fn chapter_marker(at_ms: u64, title: Option<&str>) -> Marker {
+    match title {
+        Some(t) => Marker {
+            at_ms,
+            title: t.to_string(),
+            kind: MarkerKind::Event,
+        },
+        None => Marker {
+            at_ms,
+            title: String::new(),
+            kind: MarkerKind::Bookmark,
+        },
+    }
+}
+
 /// Build the composition of `project` over `source` (the main clip as probed).
 pub fn compose(project: &Project, source: &SourceInfo) -> Composition {
+    compose_with(project, source, &[])
+}
+
+/// [`compose`] for a montage: `clips` are the project's other library clips as probed,
+/// by key. Every clip's bookmarks and events become markers where the clip plays them.
+pub fn compose_with(
+    project: &Project,
+    source: &SourceInfo,
+    clips: &[(String, SourceInfo)],
+) -> Composition {
     let mut p = project.clone();
     if source.duration_ms > 0 && source.duration_ms <= MAX_SOURCE_MS {
         p.source_ms = source.duration_ms;
@@ -287,16 +355,34 @@ pub fn compose(project: &Project, source: &SourceInfo) -> Composition {
             duration = duration.max(end);
         }
     }
-    let mut markers: Vec<Marker> = source
-        .bookmarks_ms
+    let main_chapters = chapters(source);
+    let mut markers: Vec<Marker> = main_chapters
         .iter()
-        .filter_map(|&src| timeline::output_time_in(&segments, src))
-        .map(|at_ms| Marker {
-            at_ms,
-            title: String::new(),
-            kind: MarkerKind::Bookmark,
+        .filter_map(|&(src, title)| {
+            timeline::output_time_in(&segments, src).map(|at| chapter_marker(at, title))
         })
         .collect();
+    // Chapters of the clips placed on Advanced tracks, where they play.
+    for l in layers.iter().filter(|l| l.track != 0) {
+        let info = match &l.source {
+            Source::Main => source,
+            Source::Library { key } => match clips.iter().find(|(k, _)| k == key) {
+                Some((_, info)) => info,
+                None => continue,
+            },
+            Source::File { .. } | Source::Image { .. } => continue,
+        };
+        let list = if l.source == Source::Main {
+            main_chapters.clone()
+        } else {
+            chapters(info)
+        };
+        for (src, title) in list {
+            if let Some(at) = l.output_ms(src) {
+                markers.push(chapter_marker(at, title));
+            }
+        }
+    }
     markers.extend(
         p.advanced
             .markers
@@ -304,11 +390,25 @@ pub fn compose(project: &Project, source: &SourceInfo) -> Composition {
             .filter(|m| m.at_ms < duration)
             .cloned(),
     );
-    markers.sort_by_key(|m| m.at_ms);
+    let rank = |k: MarkerKind| match k {
+        MarkerKind::Bookmark => 0u8,
+        MarkerKind::Event => 1,
+        MarkerKind::User => 2,
+    };
+    markers
+        .sort_by(|a, b| (a.at_ms, rank(a.kind), &a.title).cmp(&(b.at_ms, rank(b.kind), &b.title)));
+    // A clip placed twice over the same time gives the same marker twice.
+    markers.dedup();
     markers.truncate(MAX_MARKERS);
-    for (i, m) in markers.iter_mut().enumerate() {
-        if m.title.is_empty() {
-            m.title = format!("Bookmark {}", i.saturating_add(1));
+    let mut n: usize = 0;
+    for m in &mut markers {
+        if m.kind == MarkerKind::Bookmark {
+            n = n.saturating_add(1);
+            if m.title.is_empty() {
+                m.title = format!("Bookmark {n}");
+            }
+        } else if m.title.is_empty() {
+            m.title = "Marker".into();
         }
     }
     Composition {
@@ -623,6 +723,7 @@ impl Composition {
 mod tests {
     use super::*;
     use crate::advanced::{PlacedClip, Track, Transition};
+    use crate::plan::SourceEvent;
     use crate::project::Piece;
 
     fn layer(id: u32, kind: LayerKind, at_ms: u64, end_ms: u64) -> Layer {
@@ -1017,7 +1118,116 @@ mod tests {
             duration_ms: 10_000,
             fps: Some(60.0),
             bookmarks_ms: vec![500, 7_000],
+            events: Vec::new(),
         }
+    }
+
+    #[test]
+    fn output_ms_inverts_source_ms() {
+        let l = Layer {
+            id: 1,
+            track: 1,
+            kind: LayerKind::Video,
+            source: Source::Main,
+            src_in_ms: 1_000,
+            src_out_ms: 5_000,
+            at_ms: 2_000,
+            end_ms: 2_000 + ramp::output_length(&ramp_points(), 4_000),
+            z: 1,
+            muted: false,
+            transform: Vec::new(),
+            opacity: Vec::new(),
+            volume: Vec::new(),
+            speed: ramp_points(),
+        };
+        for out in (l.at_ms..l.end_ms).step_by(7) {
+            let src = l.source_ms(out).unwrap();
+            let back = l.output_ms(src).unwrap();
+            assert!(back <= out, "{out} → {src} → {back}");
+            assert_eq!(l.source_ms(back), Some(src), "{out}");
+        }
+        assert_eq!(l.output_ms(1_000), Some(2_000));
+        assert_eq!(l.output_ms(999), None);
+        assert_eq!(l.output_ms(5_000), None);
+    }
+
+    fn ramp_points() -> Vec<SpeedPoint> {
+        vec![
+            SpeedPoint {
+                at_ms: 0,
+                rate_pct: 50,
+            },
+            SpeedPoint {
+                at_ms: 1_000,
+                rate_pct: 300,
+            },
+        ]
+    }
+
+    #[test]
+    fn chapters_of_every_clip_become_markers() {
+        let mut main = source();
+        main.events = vec![SourceEvent {
+            at_ms: 7_000,
+            title: "Ace".into(),
+        }];
+        let other = SourceInfo {
+            bookmarks_ms: vec![1_000, 3_000],
+            events: vec![SourceEvent {
+                at_ms: 2_500,
+                title: "Clutch".into(),
+            }],
+            ..source()
+        };
+        let mut p = Project::new(10_000);
+        p.pieces = vec![Piece {
+            start_ms: 0,
+            end_ms: 8_000,
+            speed: Speed::Normal,
+        }];
+        let clip = |id: u32, at_ms: u64| PlacedClip {
+            id,
+            source: Source::Library {
+                key: "G/b.mp4".into(),
+            },
+            in_ms: 2_000,
+            out_ms: 4_000,
+            at_ms,
+            ..PlacedClip::default()
+        };
+        p.advanced.tracks = vec![Track {
+            id: 1,
+            kind: TrackKind::Video,
+            name: "Montage".into(),
+            muted: false,
+            clips: vec![clip(1, 8_000), clip(2, 10_000)],
+        }];
+        p.advanced.markers = vec![Marker {
+            at_ms: 9_000,
+            title: "Mine".into(),
+            kind: MarkerKind::User,
+        }];
+        let c = compose_with(&p, &main, &[("G/b.mp4".into(), other.clone())]);
+        let got: Vec<(u64, MarkerKind, &str)> = c
+            .markers
+            .iter()
+            .map(|m| (m.at_ms, m.kind, m.title.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (500, MarkerKind::Bookmark, "Bookmark 1"),
+                (7_000, MarkerKind::Event, "Ace"),
+                (8_500, MarkerKind::Event, "Clutch"),
+                (9_000, MarkerKind::Bookmark, "Bookmark 2"),
+                (9_000, MarkerKind::User, "Mine"),
+                (10_500, MarkerKind::Event, "Clutch"),
+                (11_000, MarkerKind::Bookmark, "Bookmark 3"),
+            ],
+            "b's 1000 is before its in point; 3000 plays at 8000 + 1000"
+        );
+        // Without the clip's info its chapters are unknown, the rest stays.
+        assert_eq!(compose(&p, &main).markers.len(), 3);
     }
 
     #[test]

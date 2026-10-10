@@ -7,7 +7,8 @@
 //! on its stdout. The host binary calls [`worker_main`] first thing in `main`.
 //!
 //! Thumbnail jobs ([`ThumbJob`]) run one after the other and answer with one
-//! [`ThumbReply`]. Export jobs ([`ExportJob`]) run on their own thread, send
+//! [`ThumbReply`]; so do frame jobs ([`FrameJob`], `editor.frame`) with a
+//! [`FrameReply`]. Export jobs ([`ExportJob`]) run on their own thread, send
 //! [`ExportReply`] progress lines and one final reply, and can be stopped with a
 //! [`CancelJob`] line. A job that is silent longer than its timeout gets the worker
 //! killed; the next job starts a new one. An idle worker is stopped, so it holds no
@@ -23,7 +24,8 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, sync_channel};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use klip_export::{ExportSummary, Progress};
+use klip_export::{CustomOutput, ExportSummary, Progress};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 /// First argument that turns the host binary into a media worker.
@@ -80,14 +82,52 @@ pub struct ExportJob {
     /// Files of the composition's other sources, as the engine resolved them.
     #[serde(default)]
     pub media: Vec<(klip_edit::Source, PathBuf)>,
-    /// A [`klip_export::Preset`] id.
+    /// A [`klip_export::Preset`] id (`custom`: with `custom`).
     pub preset: String,
+    /// The numbers of a Custom export.
+    #[serde(default)]
+    pub custom: Option<CustomOutput>,
     /// Encoder element names, best first (`klip_export::Encoders::names`).
     pub encoders: Vec<String>,
     pub discord_limit_bytes: u64,
     /// Test knob, see `klip_export::ExportRequest::pretend_overshoot`.
     #[serde(default)]
     pub pretend_overshoot: f64,
+}
+
+/// Draw one composed frame (`editor.frame`) as a JPEG.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FrameJob {
+    pub id: u64,
+    pub clip: PathBuf,
+    /// Where the JPEG goes (atomically).
+    pub out: PathBuf,
+    pub composition: klip_edit::Composition,
+    #[serde(default)]
+    pub media: Vec<(klip_edit::Source, PathBuf)>,
+    /// The output time drawn.
+    pub frame_ms: u64,
+    /// The picture's width (its height follows the edit's format).
+    pub width: u32,
+}
+
+/// The answer to a [`FrameJob`] (`frame` is its id: the key keeps it apart from a
+/// [`ThumbReply`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FrameReply {
+    pub frame: u64,
+    pub ok: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub width: u32,
+    #[serde(default)]
+    pub height: u32,
+    /// The output time drawn (a time past the end draws the last frame).
+    #[serde(default)]
+    pub out_ms: u64,
 }
 
 /// Stop an export.
@@ -103,6 +143,7 @@ pub struct CancelJob {
 pub enum Job {
     Cancel(CancelJob),
     Thumb(ThumbJob),
+    Frame(Box<FrameJob>),
     Export(Box<ExportJob>),
 }
 
@@ -166,14 +207,74 @@ fn run_job_caught(job: &ThumbJob) -> Result<(), String> {
         .unwrap_or_else(|_| Err("thumbnail job panicked".into()))
 }
 
+/// Draw a frame in this process; the JPEG goes to `job.out`.
+pub fn run_frame(job: &FrameJob) -> FrameReply {
+    let req = klip_export::FrameRequest {
+        source: &job.clip,
+        composition: &job.composition,
+        media: &job.media,
+        out_ms: job.frame_ms,
+        width: job.width,
+    };
+    let r = klip_export::frame::frame(&req)
+        .map_err(|e| e.to_string())
+        .and_then(|img| {
+            write_atomic(&job.out, &img.jpeg)
+                .map(|()| img)
+                .map_err(|e| e.to_string())
+        });
+    match r {
+        Ok(img) => FrameReply {
+            frame: job.id,
+            ok: true,
+            error: None,
+            width: img.width,
+            height: img.height,
+            out_ms: img.out_ms,
+        },
+        Err(e) => FrameReply {
+            frame: job.id,
+            ok: false,
+            error: Some(e),
+            width: 0,
+            height: 0,
+            out_ms: 0,
+        },
+    }
+}
+
+fn run_frame_caught(job: &FrameJob) -> FrameReply {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_frame(job))).unwrap_or_else(|_| {
+        FrameReply {
+            frame: job.id,
+            ok: false,
+            error: Some("frame job panicked".into()),
+            width: 0,
+            height: 0,
+            out_ms: 0,
+        }
+    })
+}
+
+/// The preset of an export job (`custom` takes the job's numbers).
+fn job_preset(job: &ExportJob) -> Result<klip_export::Preset, String> {
+    if job.preset == "custom" {
+        return job
+            .custom
+            .map(klip_export::Preset::Custom)
+            .ok_or_else(|| "a custom export without its settings".to_string());
+    }
+    klip_export::Preset::parse(&job.preset)
+        .ok_or_else(|| format!("unknown preset {:?}", job.preset))
+}
+
 /// Do an export in this process, reporting progress and honouring `cancel`.
 pub fn run_export(
     job: &ExportJob,
     progress: &mut dyn FnMut(Progress),
     cancel: &AtomicBool,
 ) -> Result<ExportSummary, String> {
-    let preset = klip_export::Preset::parse(&job.preset)
-        .ok_or_else(|| format!("unknown preset {:?}", job.preset))?;
+    let preset = job_preset(job)?;
     // Media Foundation must start before any NVENC session in this process (ADR 0009).
     klip_probe::init().map_err(|e| e.to_string())?;
     let encoders = klip_export::Encoders::from_names(&job.encoders);
@@ -243,6 +344,11 @@ pub fn worker_main() -> Option<i32> {
                     error: r.err(),
                 };
                 if !send(&out, &reply) {
+                    break;
+                }
+            }
+            Ok(Job::Frame(job)) => {
+                if !send(&out, &run_frame_caught(&job)) {
                     break;
                 }
             }
@@ -424,6 +530,19 @@ impl MediaWorker {
         r
     }
 
+    /// Draw one frame, waiting at most `timeout` for it.
+    pub fn frame(&mut self, job: &FrameJob, timeout: Duration) -> Result<FrameReply, String> {
+        if self.exe.is_none() {
+            return Ok(run_frame_caught(job));
+        }
+        self.last_used = Instant::now();
+        let r = self
+            .ensure()
+            .and_then(|w| ask_for::<FrameReply>(w, job, timeout, |r| r.frame == job.id));
+        self.after(&r);
+        r
+    }
+
     /// Run one export, reporting progress; `cancel` stops it (the worker answers with
     /// an error). The worker is replaced when it is silent for `inactivity`.
     pub fn export(
@@ -522,6 +641,17 @@ fn cap(e: Option<String>) -> String {
 }
 
 fn ask(w: &mut Running, job: &ThumbJob, timeout: Duration) -> Result<(), String> {
+    let r = ask_for::<ThumbReply>(w, job, timeout, |r| r.id == job.id)?;
+    if r.ok { Ok(()) } else { Err(cap(r.error)) }
+}
+
+/// Send `job` and wait for the reply `mine` accepts.
+fn ask_for<R: DeserializeOwned>(
+    w: &mut Running,
+    job: &impl Serialize,
+    timeout: Duration,
+    mine: impl Fn(&R) -> bool,
+) -> Result<R, String> {
     write_job(w, job)?;
     let deadline = Instant::now()
         .checked_add(timeout)
@@ -529,12 +659,10 @@ fn ask(w: &mut Running, job: &ThumbJob, timeout: Duration) -> Result<(), String>
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         match w.replies.recv_timeout(left) {
-            Ok(line) => match serde_json::from_str::<ThumbReply>(line.trim()) {
-                Ok(r) if r.id == job.id => {
-                    return if r.ok { Ok(()) } else { Err(cap(r.error)) };
-                }
+            Ok(line) => match serde_json::from_str::<R>(line.trim()) {
+                Ok(r) if mine(&r) => return Ok(r),
                 // A stale reply (an earlier job that timed out can't be one: the worker
-                // was replaced), an export's line, or junk: keep waiting.
+                // was replaced), another job's line, or junk: keep waiting.
                 _ => {}
             },
             Err(RecvTimeoutError::Timeout) => {
@@ -608,6 +736,27 @@ mod tests {
         assert!(
             matches!(serde_json::from_str::<Job>(export), Ok(Job::Export(j)) if j.id == 9 && j.pretend_overshoot == 0.0)
         );
+        let frame =
+            r#"{"id":4,"clip":"a.mp4","out":"f.jpg","composition":{},"frame_ms":1500,"width":640}"#;
+        assert!(
+            matches!(serde_json::from_str::<Job>(frame), Ok(Job::Frame(j)) if j.id == 4 && j.frame_ms == 1500)
+        );
+        let custom = r#"{"id":5,"clip":"a.mp4","out":"b.mp4","composition":{},"preset":"custom","custom":{"width":1280,"height":720,"fps":30,"bitrate_kbps":6000,"codec":"hevc"},"encoders":[],"discord_limit_bytes":1}"#;
+        assert!(
+            matches!(serde_json::from_str::<Job>(custom), Ok(Job::Export(j)) if j.custom.is_some_and(|c| c.fps == 30))
+        );
+        // Replies stay apart by their keys.
+        let fr = serde_json::to_string(&FrameReply {
+            frame: 4,
+            ok: true,
+            error: None,
+            width: 640,
+            height: 360,
+            out_ms: 1500,
+        })
+        .unwrap();
+        assert!(serde_json::from_str::<ThumbReply>(&fr).is_err());
+        assert!(serde_json::from_str::<FrameReply>(r#"{"id":4,"ok":true}"#).is_err());
         assert!(serde_json::from_str::<Job>(r#"{"id":1,"nonsense":true}"#).is_err());
         assert!(serde_json::from_str::<Job>("[]").is_err());
     }
@@ -641,6 +790,7 @@ mod tests {
             composition: klip_edit::Composition::default(),
             media: vec![],
             preset: "youtube".into(),
+            custom: None,
             encoders: vec![],
             discord_limit_bytes: 10_000_000,
             pretend_overshoot: 0.0,
@@ -668,6 +818,39 @@ mod tests {
             )
             .unwrap_err();
         assert!(e.contains("unknown preset"), "{e}");
+        let bare_custom = ExportJob {
+            preset: "custom".into(),
+            ..bad_preset
+        };
+        let e = w
+            .export(
+                &bare_custom,
+                &mut |_| {},
+                &AtomicBool::new(false),
+                Duration::from_secs(5),
+            )
+            .unwrap_err();
+        assert!(e.contains("without its settings"), "{e}");
         assert!(!dir.path().join("out.mp4").exists());
+    }
+
+    #[test]
+    fn in_process_frame_reports_errors_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let job = FrameJob {
+            id: 2,
+            clip: dir.path().join("missing.mp4"),
+            out: dir.path().join("f.jpg"),
+            composition: klip_edit::Composition::default(),
+            media: vec![],
+            frame_ms: 0,
+            width: 640,
+        };
+        let r = MediaWorker::in_process()
+            .frame(&job, Duration::from_secs(5))
+            .unwrap();
+        assert!(!r.ok && r.frame == 2);
+        assert!(r.error.unwrap().contains("empty"));
+        assert!(!dir.path().join("f.jpg").exists());
     }
 }

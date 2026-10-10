@@ -82,16 +82,35 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   requested keys first, then the rest newest first, but only while no game is followed
   (the game stopping wakes it); failures are remembered in the index and emitted as
   `thumbs_ready` with `failed`.
-- Editor (`engine/editor.rs`, M8.4): `editor.project.get {path}` → the clip's project
-  (`.klip/projects/<key>.json` through `klip_edit::load`, or a new one), its repair
-  issues, `status` (`new` / `saved` / `repaired` / `reset`) and the clip's `SourceInfo`
-  (from the index, else a probe; the clip's length always wins over the project's);
+- Editor (`engine/editor.rs`, M8.4, M9.4): `editor.project.get {path}` → the clip's
+  project (`.klip/projects/<key>.json` through `klip_edit::load`, or a new one), its
+  repair issues, `status` (`new` / `saved` / `repaired` / `reset`), the clip's
+  `SourceInfo` (from the index, else a probe; the clip's length always wins over the
+  project's; titled chapters as `events`) and `clips`: the other library clips the
+  project places (a montage lives under its first clip) as `{key, name, status: ok |
+  missing | unreadable, source}`. A missing clip is reported, never dropped; one that
+  runs past its file's end is shortened (`Advanced::fit_library_clips`).
   `editor.project.set {path, project}` → repaired (unknown keys kept) and saved
-  atomically (≤ 1 MiB); `editor.proxy {path}` → what the preview plays: `original` for
-  an H.264 clip, else the H.264 proxy in `.klip/proxies/<key>.mp4` (`ready`, or `making`
-  with the id of the export job that makes it; `preset: "proxy"`).
-- Export (`engine/export.rs`, M8.4): `export.start {path, preset}` (`original` /
-  `youtube` / `tiktok` / `discord`) renders the saved project with `klip-export` on a
+  atomically (≤ 1 MiB; an unchanged project isn't rewritten). The project a save
+  replaces is kept as a snapshot in `.klip/history/<key>/<unix ms>.json` when the newest
+  is older than a minute (30 kept): `editor.history.list {path}` → `{snapshots: [{id,
+  saved_unix_ms, bytes}]}` newest first; `editor.history.restore {path, id}` saves the
+  snapshot as the project (the replaced one becomes a snapshot, so it can be undone).
+  `editor.montage {path, add: [paths]}` appends the clips, whole, after the end of the
+  edit on the first video track (`Advanced::append_clips`; a "Montage" track when there
+  is none). `editor.frame {path, out_ms, width, project?}` → `{jpeg (base64), width,
+  height, out_ms}`: `klip_export::frame` of the saved (or the given) project in a media
+  worker of its own (`Inner::frames`, stopped by the engine tick after 20 s idle; the
+  JPEG goes through a temp file, the reply line is capped); `missing` when a clip on
+  screen at that time is gone. A renamed clip is followed by every montage that places
+  it (`retarget_montages`). `editor.proxy {path}` → what the preview plays: `original`
+  for an H.264 clip, else the H.264 proxy in `.klip/proxies/<key>.mp4` (`ready`, or
+  `making` with the id of the export job that makes it; `preset: "proxy"`).
+- Export (`engine/export.rs`, M8.4, M9.4): `export.start {path, preset}` (`original` /
+  `youtube` / `tiktok` / `discord`, or `custom` with `custom: {width, height, fps,
+  bitrate_kbps, codec: h264 | hevc | av1}`, every number range-checked; the file is
+  `<name> - Custom.mp4`) renders the saved project (a montage with its clips' chapters
+  as markers; `missing` naming the clips that are gone) with `klip-export` on a
   `klip-export-<id>` thread through its own media worker into
   `<name> - <Preset>.mp4` next to the clip (`Library::unique_sibling`: ` (2)`, ` (3)`
   … when taken; never overwrites) → `{id, out}`; one at a time (`busy`), while the

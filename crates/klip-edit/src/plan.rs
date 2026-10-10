@@ -28,6 +28,16 @@ pub struct SourceInfo {
     pub fps: Option<f64>,
     /// Bookmarks (chapters), source ms.
     pub bookmarks_ms: Vec<u64>,
+    /// Chapters with a title of their own (auto-clip events), source ms.
+    pub events: Vec<SourceEvent>,
+}
+
+/// A titled chapter of a clip (an auto-clip event).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SourceEvent {
+    pub at_ms: u64,
+    pub title: String,
 }
 
 /// A bookmark on the output timeline.
@@ -205,6 +215,7 @@ mod tests {
             duration_ms: 20_000,
             fps: Some(60.0),
             bookmarks_ms: vec![1_000, 9_000, 19_500],
+            events: Vec::new(),
         }
     }
 

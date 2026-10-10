@@ -5,6 +5,30 @@ reason)`.
 
 ## Unreleased
 
+- M9.4 — Engine + control for Advanced mode. Montage projects: `editor.montage {path,
+  add}` appends library clips whole on the first video track (`Advanced::append_clips`);
+  `editor.project.get` lists the clips a project places (`clips: {key, name, status: ok
+  | missing | unreadable, source}`), a gone clip is kept and reported, never dropped;
+  clips running past their file's end are shortened (`fit_library_clips`); a renamed
+  clip is followed by every montage. `editor.frame {path, out_ms, width, project?}`:
+  the frame the export encodes, drawn by the export's own step (`render::Drawer`,
+  factored out of the frame loop, with `source_config`/`native_size`) in a media worker
+  of its own, as a full-range YCbCr JPEG (`klip_capture::thumbnail::encode_bgra_jpeg`;
+  feeding `jpegenc` RGB makes an RGB-coded JPEG ffmpeg can't read, and its default I420
+  is limited range, which looks washed out); 48–51 dB against the exported frames,
+  35–220 ms a frame. Markers from every clip's chapters where it plays (`compose_with`,
+  `Layer::output_ms`), titled chapters as `Event` markers (`Mp4Info::chapter_titles`,
+  `ClipInfo::events`, `SourceInfo::events`), bookmarks numbered among bookmarks.
+  `export.start` with `preset: "custom"` + `custom: {width, height, fps, bitrate_kbps,
+  codec}` (checked; `ExportJob::custom`), and `missing` naming the montage's gone clips
+  before a job starts. Project history: the project a save replaces is kept in
+  `.klip/history/<key>/` (one a minute, 30 kept, follows renames, goes with the clip);
+  `editor.history.list|restore`. Fixed: a muted music/sound track whose file isn't used
+  elsewhere failed the export ("a clip of the edit is missing"): muted sound is now
+  skipped before the media lookup (regression test in `frames_match_the_export`).
+  Test oracle: `decode_gray_frame` at 0 s no longer seeks (ffmpeg gives nothing for a
+  seek in a still picture). (Claude Opus 5.5: M9.4)
+
 - M9.3 (part 4) — The renderer: `klip-export` renders a `klip_edit::Composition` (both
   modes; Normal mode is one track) instead of a `Render`. `render::run_pass` plays each
   layer in pieces from pooled source pipelines (music/sounds without video decoding,

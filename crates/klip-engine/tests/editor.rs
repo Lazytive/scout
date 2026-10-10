@@ -390,3 +390,346 @@ fn discord_limit_is_a_setting() {
             .is_err()
     );
 }
+
+fn history_dir(dir: &Path, key: &str) -> PathBuf {
+    dir.join("clips")
+        .join(".klip")
+        .join("history")
+        .join(key.replace('/', "%2F"))
+}
+
+/// M9.4: a montage under its first clip; a clip that goes away is reported and kept,
+/// and blocks the export by name; a renamed clip is followed; project history.
+#[test]
+fn montage_missing_clips_history_and_rename() {
+    let dir = tempfile::tempdir().unwrap();
+    let game = dir.path().join("clips").join("Game");
+    let (a, b, c) = (game.join("A.mp4"), game.join("B.mp4"), game.join("C.mp4"));
+    clip(&a, 120);
+    clip(&b, 180);
+    clip(&c, 60);
+    let (engine, rx) = start(settings(dir.path()));
+    let s = |p: &Path| p.to_string_lossy().to_string();
+
+    // Hostile arguments.
+    for args in [
+        json!({ "path": s(&a) }),
+        json!({ "path": s(&a), "add": [] }),
+        json!({ "path": s(&a), "add": "B.mp4" }),
+        json!({ "path": s(&a), "add": [7] }),
+        json!({ "path": s(&a), "add": [dir.path().join("elsewhere.mp4")] }),
+        json!({ "path": s(&a), "add": [s(&game.join("none.mp4"))] }),
+        json!({ "path": "..", "add": [s(&b)] }),
+    ] {
+        assert_eq!(
+            engine.handle("editor.montage", &args).unwrap_err().code,
+            "bad_args",
+            "{args}"
+        );
+    }
+    assert!(!project_file(dir.path(), "Game/A.mp4").exists());
+
+    // A + B + C: the clips follow A's 2 s, whole, on a new montage track.
+    let m = engine
+        .handle(
+            "editor.montage",
+            &json!({ "path": s(&a), "add": [s(&b), s(&c)] }),
+        )
+        .unwrap();
+    assert_eq!(m["key"], "Game/A.mp4");
+    let track = &m["project"]["advanced"]["tracks"][0];
+    assert_eq!(track["name"], "Montage");
+    let placed: Vec<(String, u64, u64)> = track["clips"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c["source"]["key"].as_str().unwrap_or("").to_string(),
+                c["at_ms"].as_u64().unwrap(),
+                c["out_ms"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        placed,
+        vec![
+            ("Game/B.mp4".to_string(), 2_000, 3_000),
+            ("Game/C.mp4".to_string(), 5_000, 1_000)
+        ]
+    );
+    let clips = m["clips"].as_array().unwrap();
+    assert_eq!(clips.len(), 2);
+    assert_eq!(
+        (&clips[0]["status"], &clips[0]["name"]),
+        (&json!("ok"), &json!("B.mp4"))
+    );
+    assert_eq!(clips[0]["source"]["duration_ms"], 3_000);
+    assert!(project_file(dir.path(), "Game/A.mp4").is_file());
+    assert!(
+        !history_dir(dir.path(), "Game/A.mp4").exists(),
+        "nothing replaced yet"
+    );
+
+    // A Custom export of the montage is a job (the made-up clips can't decode).
+    for bad in [
+        json!({ "path": s(&a), "preset": "custom" }),
+        json!({ "path": s(&a), "preset": "custom", "custom": { "width": 1280, "height": 720, "fps": 30, "bitrate_kbps": 6000, "codec": "x264" } }),
+    ] {
+        assert_eq!(
+            engine.handle("export.start", &bad).unwrap_err().code,
+            "bad_args"
+        );
+    }
+    let custom = json!({ "path": s(&a), "preset": "custom", "custom": { "width": 640, "height": 360, "fps": 30, "bitrate_kbps": 2000, "codec": "h264" } });
+    match engine.handle("export.start", &custom) {
+        Ok(started) => {
+            assert!(
+                started["out"].as_str().unwrap().ends_with("A - Custom.mp4"),
+                "{started}"
+            );
+            assert_eq!(started["preset"], "custom");
+            let done = next(&rx, "export_done");
+            assert_eq!(
+                (&done["ok"], &done["preset"]),
+                (&json!(false), &json!("custom"))
+            );
+        }
+        Err(e) if e.code == "failed" && e.message.contains("encoder") => {
+            eprintln!("custom export skipped: {}", e.message);
+        }
+        Err(e) => panic!("{e:?}"),
+    }
+
+    // History: the next real change keeps the montage as a snapshot.
+    let mut changed = m["project"].clone();
+    changed["advanced"]["markers"] = json!([{ "at_ms": 100, "title": "Start", "kind": "user" }]);
+    engine
+        .handle(
+            "editor.project.set",
+            &json!({ "path": s(&a), "project": changed }),
+        )
+        .unwrap();
+    let list = engine
+        .handle("editor.history.list", &json!({ "path": s(&a) }))
+        .unwrap();
+    let snaps = list["snapshots"].as_array().unwrap();
+    assert_eq!(snaps.len(), 1);
+    let id = snaps[0]["id"].as_u64().unwrap();
+    for args in [
+        json!({ "path": s(&a) }),
+        json!({ "path": s(&a), "id": "1" }),
+        json!({ "path": s(&a), "id": -1 }),
+    ] {
+        assert_eq!(
+            engine
+                .handle("editor.history.restore", &args)
+                .unwrap_err()
+                .code,
+            "bad_args",
+            "{args}"
+        );
+    }
+    assert_eq!(
+        engine
+            .handle(
+                "editor.history.restore",
+                &json!({ "path": s(&a), "id": id + 1 })
+            )
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
+    let restored = engine
+        .handle(
+            "editor.history.restore",
+            &json!({ "path": s(&a), "id": id }),
+        )
+        .unwrap();
+    assert_eq!(restored["status"], "restored");
+    assert!(
+        restored["project"]["advanced"]["markers"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let after = engine
+        .handle("editor.history.list", &json!({ "path": s(&a) }))
+        .unwrap();
+    assert_eq!(
+        after["snapshots"].as_array().unwrap().len(),
+        2,
+        "the replaced project is a snapshot too"
+    );
+
+    // C is renamed: the montage follows it.
+    let renamed = engine
+        .handle("clip.rename", &json!({ "path": s(&c), "name": "Clutch" }))
+        .unwrap();
+    assert_eq!(renamed["key"], "Game/Clutch.mp4");
+    let got = engine
+        .handle("editor.project.get", &json!({ "path": s(&a) }))
+        .unwrap();
+    assert_eq!(
+        got["project"]["advanced"]["tracks"][0]["clips"][1]["source"]["key"],
+        "Game/Clutch.mp4"
+    );
+    assert_eq!(got["clips"][1]["status"], "ok");
+
+    // B is deleted: reported missing, never dropped, and the export names it.
+    engine
+        .handle(
+            "clip.delete",
+            &json!({ "paths": [s(&b)], "permanent": true }),
+        )
+        .unwrap();
+    let got = engine
+        .handle("editor.project.get", &json!({ "path": s(&a) }))
+        .unwrap();
+    assert_eq!(
+        (&got["clips"][0]["key"], &got["clips"][0]["status"]),
+        (&json!("Game/B.mp4"), &json!("missing"))
+    );
+    assert!(got["clips"][0]["source"].is_null());
+    assert_eq!(
+        got["project"]["advanced"]["tracks"][0]["clips"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let e = engine
+        .handle(
+            "export.start",
+            &json!({ "path": s(&a), "preset": "youtube" }),
+        )
+        .unwrap_err();
+    assert_eq!(
+        (e.code, e.message.as_str()),
+        ("missing", "missing from the clip folder: B.mp4")
+    );
+    // A frame where B would show says so; the frame args are checked first.
+    let e = engine
+        .handle(
+            "editor.frame",
+            &json!({ "path": s(&a), "out_ms": 2_500, "width": 320 }),
+        )
+        .unwrap_err();
+    assert_eq!(e.code, "missing");
+    for args in [
+        json!({ "path": s(&a), "width": 320 }),
+        json!({ "path": s(&a), "out_ms": -1, "width": 320 }),
+        json!({ "path": s(&a), "out_ms": 0, "width": 8 }),
+        json!({ "path": s(&a), "out_ms": 0, "width": 5000 }),
+        json!({ "path": s(&a), "out_ms": 0, "width": 320, "project": [] }),
+        json!({ "path": "nope", "out_ms": 0, "width": 320 }),
+    ] {
+        assert_eq!(
+            engine.handle("editor.frame", &args).unwrap_err().code,
+            "bad_args",
+            "{args}"
+        );
+    }
+    // Deleting the montage's own clip takes its project and history with it.
+    engine
+        .handle(
+            "clip.delete",
+            &json!({ "paths": [s(&a)], "permanent": true }),
+        )
+        .unwrap();
+    assert!(!project_file(dir.path(), "Game/A.mp4").exists());
+    assert!(!history_dir(dir.path(), "Game/A.mp4").exists());
+}
+
+/// A playable H.264 clip of `frames` 60 fps frames at 640x360, made with the OS (or
+/// Cisco's) encoder.
+fn real_clip(path: &Path, frames: u32, pattern: &str) -> bool {
+    use gstreamer::prelude::*;
+    gstreamer::init().unwrap();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let Some(enc) = ["mfh264enc", "openh264enc"]
+        .into_iter()
+        .find(|e| gstreamer::ElementFactory::find(e).is_some())
+    else {
+        return false;
+    };
+    let line = format!(
+        "videotestsrc num-buffers={frames} pattern={pattern} ! video/x-raw,format=NV12,width=640,height=360,framerate=60/1 ! {enc} ! h264parse ! mp4mux ! filesink location=\"{}\"",
+        path.to_string_lossy().replace('\\', "/")
+    );
+    let pipeline = gstreamer::parse::launch(&line).unwrap();
+    pipeline.set_state(gstreamer::State::Playing).unwrap();
+    let bus = pipeline.bus().unwrap();
+    let ok = bus
+        .timed_pop_filtered(
+            gstreamer::ClockTime::from_seconds(30),
+            &[gstreamer::MessageType::Eos, gstreamer::MessageType::Error],
+        )
+        .is_some_and(|m| m.type_() == gstreamer::MessageType::Eos);
+    pipeline.set_state(gstreamer::State::Null).unwrap();
+    ok
+}
+
+/// M9.4: `editor.frame` draws the montage through the export's renderer (in this
+/// process here; the app runs it in the media worker).
+#[test]
+#[ignore = "hardware: encodes and decodes real clips"]
+fn frames_of_a_montage() {
+    let dir = tempfile::tempdir().unwrap();
+    let game = dir.path().join("clips").join("Game");
+    let (a, b) = (game.join("A.mp4"), game.join("B.mp4"));
+    if !real_clip(&a, 120, "smpte") || !real_clip(&b, 120, "ball") {
+        eprintln!("skipped: no H.264 encoder to make the clips");
+        return;
+    }
+    let (engine, _rx) = start(settings(dir.path()));
+    let s = |p: &Path| p.to_string_lossy().to_string();
+    engine
+        .handle("editor.montage", &json!({ "path": s(&a), "add": [s(&b)] }))
+        .unwrap();
+    let frame = |out_ms: u64, width: u32, project: Value| {
+        let t = Instant::now();
+        let f = engine
+            .handle(
+                "editor.frame",
+                &json!({ "path": s(&a), "out_ms": out_ms, "width": width, "project": project }),
+            )
+            .unwrap();
+        println!(
+            "frame at {out_ms} ms, {width} wide: {:.0} ms",
+            t.elapsed().as_secs_f64() * 1000.0
+        );
+        f
+    };
+    use base64::Engine as _;
+    let jpeg = |f: &Value| {
+        base64::engine::general_purpose::STANDARD
+            .decode(f["jpeg"].as_str().unwrap())
+            .unwrap()
+    };
+    let first = frame(500, 320, Value::Null);
+    assert_eq!(
+        (&first["width"], &first["height"], &first["out_ms"]),
+        (&json!(320), &json!(180), &json!(500))
+    );
+    let a_jpeg = jpeg(&first);
+    assert_eq!(&a_jpeg[..2], &[0xFF, 0xD8], "a JPEG");
+    let second = frame(2_500, 320, Value::Null);
+    assert_ne!(jpeg(&second), a_jpeg, "B shows from 2 s");
+    let last = frame(u64::MAX, 640, Value::Null);
+    assert_eq!(
+        (&last["width"], &last["height"]),
+        (&json!(640), &json!(360))
+    );
+    assert!(last["out_ms"].as_u64().unwrap() >= 3_990);
+    // An unsaved project from the UI: a tall crop changes the frame's shape.
+    let mut p = engine
+        .handle("editor.project.get", &json!({ "path": s(&a) }))
+        .unwrap()["project"]
+        .clone();
+    p["format"]["kind"] = json!("tall");
+    let tall = frame(500, 180, p);
+    assert_eq!(tall["width"], 180);
+    let h = tall["height"].as_u64().unwrap();
+    assert!((318..=322).contains(&h), "9:16 at 180 wide: {h}");
+}

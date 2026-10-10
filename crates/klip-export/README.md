@@ -77,6 +77,20 @@ Decoding is software by default when run in the media worker
 (`videoconvertscale` and `GstVideoConverter` on all threads, blending and the colour
 matrix on row bands). `d3d11compositor` is a later optimisation.
 
+## One frame (`frame::frame`, `editor.frame`, M9.4)
+
+`frame(&FrameRequest {source, composition, media, out_ms, width})` → `FrameImage
+{width, height, out_ms, jpeg}`: the picture the export encodes at `out_ms` (clamped to
+the last frame), at `width` (16…4096; the height follows the format, as a Custom export
+of that width). Only the layers on screen then are read (a montage clip missing
+elsewhere doesn't matter); each is opened and accurately seeked to its source time and
+the frame the frame loop would pick is kept (largest pts ≤ the time; the first frame
+when none is; the file's last frame when the time is past its end). The picture is
+drawn by `render::Drawer`, the step the export's frame loop uses (placement, opacity,
+colour matrix, text cues), and encoded as a full-range YCbCr JPEG
+(`klip_capture::thumbnail::encode_bgra_jpeg`, quality 92). `render::source_config` and
+`native_size` are shared the same way.
+
 ## Tests
 
 - Unit: presets → outputs (Custom included), fit math, plan checks (caps, crop,

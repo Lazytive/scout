@@ -37,6 +37,7 @@ use host::RecorderHandle;
 
 use crate::events::{Bus, Event};
 use crate::games::{self, DetectedGame};
+use crate::media_worker::MediaWorker;
 use crate::{EngineError, config};
 
 /// How often the watcher looks for games.
@@ -152,6 +153,8 @@ pub(crate) struct Inner {
     thumbs: (Mutex<library::ThumbQueue>, Condvar),
     thumbs_thread: Mutex<Option<JoinHandle<()>>>,
     media_worker: Option<PathBuf>,
+    /// Draws `editor.frame` pictures (a worker of its own; stopped when idle).
+    frames: Mutex<MediaWorker>,
     /// A storage clean-up job is running.
     cleaning: AtomicBool,
     /// The running export and the last one (lock alone, briefly).
@@ -210,6 +213,10 @@ impl Engine {
             thumbs: (Mutex::new(library::ThumbQueue::default()), Condvar::new()),
             thumbs_thread: Mutex::new(None),
             media_worker: opts.media_worker.clone(),
+            frames: Mutex::new(match &opts.media_worker {
+                Some(exe) => MediaWorker::isolated(exe.clone()),
+                None => MediaWorker::in_process(),
+            }),
             cleaning: AtomicBool::new(false),
             exports: Mutex::new(export::ExportState::default()),
             low_disk_warned: Mutex::new(None),
@@ -404,6 +411,10 @@ impl Inner {
     /// One look at what runs; start or stop the recorder accordingly.
     fn tick(&self) {
         self.reap_crashed_recorder();
+        // A frame being drawn holds the lock; it is stopped on a later tick.
+        if let Ok(mut frames) = self.frames.try_lock() {
+            frames.idle();
+        }
         let settings = self.settings();
         let mode = settings.games.buffer;
         if mode == BufferMode::Off {
@@ -862,6 +873,10 @@ impl Handler for Inner {
             commands::EDITOR_PROJECT_SET => self.editor_project_set(args),
             commands::EDITOR_PROXY => self.editor_proxy(args),
             commands::EDITOR_TEXT_RENDER => self.editor_text_render(args),
+            commands::EDITOR_FRAME => self.editor_frame(args),
+            commands::EDITOR_MONTAGE => self.editor_montage(args),
+            commands::EDITOR_HISTORY_LIST => self.editor_history_list(args),
+            commands::EDITOR_HISTORY_RESTORE => self.editor_history_restore(args),
             commands::EXPORT_START => self.export_start(args),
             commands::EXPORT_CANCEL => self.export_cancel(args),
             commands::EXPORT_STATUS => self.export_status(args),

@@ -36,6 +36,7 @@ pub mod compose;
 pub mod encode;
 pub mod files;
 pub mod fit;
+pub mod frame;
 pub mod mixer;
 pub mod render;
 pub mod source;
@@ -43,6 +44,8 @@ pub mod source;
 use encode::{EncodeSettings, Encoded, Encoder};
 use files::OwnedFile;
 use render::MediaFile;
+
+pub use frame::{FrameImage, FrameRequest, MIN_FRAME_WIDTH};
 
 /// Default Discord upload limit, bytes.
 pub const DISCORD_LIMIT_BYTES: u64 = 10_000_000;
@@ -565,13 +568,18 @@ fn describe(source: &Media) -> String {
 }
 
 /// Every file the composition plays, probed once; a missing one fails by name.
-fn media_files(req: &ExportRequest<'_>, main: &Facts) -> Result<Vec<MediaFile>, ExportError> {
+fn media_files(
+    source: &Path,
+    comp: &Composition,
+    media: &[(Media, PathBuf)],
+    main: &Facts,
+) -> Result<Vec<MediaFile>, ExportError> {
     let mut files = vec![MediaFile {
         source: Media::Main,
-        path: req.source.to_path_buf(),
+        path: source.to_path_buf(),
         facts: Some(main.clone()),
     }];
-    for l in &req.composition.layers {
+    for l in &comp.layers {
         if l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music) {
             continue;
         }
@@ -582,8 +590,7 @@ fn media_files(req: &ExportRequest<'_>, main: &Facts) -> Result<Vec<MediaFile>, 
             return Err(ExportError::Plan("the edit uses too many files".into()));
         }
         let missing = || ExportError::Missing(describe(&l.source));
-        let path = req
-            .media
+        let path = media
             .iter()
             .find(|(s, _)| *s == l.source)
             .map(|(_, p)| p.clone())
@@ -632,7 +639,7 @@ pub fn export(
     }
     gst::init().map_err(|e| ExportError::Gst(e.to_string()))?;
     let facts = probe(req.source)?;
-    let media = media_files(req, &facts)?;
+    let media = media_files(req.source, comp, req.media, &facts)?;
     let mut pass_no: u32 = 1;
     let mut fit_pass: Option<fit::FitPass> = (req.preset == Preset::Discord).then(|| {
         fit::first_pass(
@@ -840,6 +847,7 @@ mod tests {
             duration_ms: 10_000,
             fps: Some(120.0),
             bookmarks_ms: vec![],
+            events: Vec::new(),
         }
     }
 
@@ -1024,20 +1032,20 @@ mod tests {
             key: "Game/other clip.mp4".into(),
         };
         c.layers.push(b);
-        let enc = Encoders::default();
-        let out = dir.path().join("out.mp4");
-        let req = |media: &'static [(Media, PathBuf)]| ExportRequest {
-            source: &main,
-            composition: &c,
-            media,
-            preset: Preset::YouTube,
-            out: &out,
-            encoders: &enc,
-            discord_limit_bytes: DISCORD_LIMIT_BYTES,
-            pretend_overshoot: 0.0,
-        };
-        let e = media_files(&req(&[]), &facts()).err().unwrap();
+        let e = media_files(&main, &c, &[], &facts()).err().unwrap();
         assert_eq!(e.to_string(), "the clip other clip.mp4 is missing");
+        // Muted sound is never read, so its file may be gone.
+        let mut music = c.layers.first().cloned().unwrap();
+        music.id = 100;
+        music.kind = LayerKind::Music;
+        music.muted = true;
+        music.source = Media::File {
+            path: dir.path().join("gone.wav").to_string_lossy().into_owned(),
+        };
+        c.layers.retain(|l| l.id != 99);
+        c.layers.push(music);
+        let files = media_files(&main, &c, &[], &facts()).unwrap();
+        assert_eq!(files.len(), 1, "the main clip only");
     }
 
     #[test]

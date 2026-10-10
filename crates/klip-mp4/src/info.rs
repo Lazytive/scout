@@ -52,6 +52,9 @@ pub struct Mp4Info {
     pub audio_names: Vec<String>,
     /// Chapter starts (Klip's bookmarks), ms from the start.
     pub chapters_ms: Vec<u64>,
+    /// The chapters' titles, in the order of `chapters_ms` (control characters
+    /// dropped; Klip's own bookmarks are `Bookmark <n>`).
+    pub chapter_titles: Vec<String>,
     /// The `moov` describes fragments (a recording that was never finalised).
     pub fragmented: bool,
 }
@@ -104,7 +107,9 @@ fn parse_moov(moov: &[u8]) -> Result<Mp4Info, Mp4Error> {
                 }
             }
             b"mvex" => info.fragmented = true,
-            b"udta" => info.chapters_ms = parse_udta(body),
+            b"udta" => {
+                (info.chapters_ms, info.chapter_titles) = parse_udta(body).into_iter().unzip();
+            }
             _ => {}
         }
     }
@@ -293,7 +298,7 @@ fn codec_name(kind: &[u8; 4]) -> String {
 
 /// Chapter starts from a Nero `chpl` box (what Klip writes for bookmarks); empty when
 /// there is none or it doesn't parse.
-fn parse_udta(udta: &[u8]) -> Vec<u64> {
+fn parse_udta(udta: &[u8]) -> Vec<(u64, String)> {
     let Ok(kids) = children(udta) else {
         return Vec::new();
     };
@@ -303,7 +308,7 @@ fn parse_udta(udta: &[u8]) -> Vec<u64> {
     parse_chpl(chpl).unwrap_or_default()
 }
 
-fn parse_chpl(body: &[u8]) -> Result<Vec<u64>, Mp4Error> {
+fn parse_chpl(body: &[u8]) -> Result<Vec<(u64, String)>, Mp4Error> {
     let mut c = Cur::new(body);
     let version = c.full_box()?.0;
     if version == 1 {
@@ -314,10 +319,13 @@ fn parse_chpl(body: &[u8]) -> Result<Vec<u64>, Mp4Error> {
     for _ in 0..count {
         let at_100ns = c.u64()?;
         let len = usize::from(c.u8()?);
-        c.skip(len)?;
-        out.push(at_100ns.checked_div(10_000).unwrap_or(0));
+        let title = String::from_utf8_lossy(c.take(len)?)
+            .chars()
+            .filter(|ch| !ch.is_control())
+            .collect::<String>();
+        out.push((at_100ns.checked_div(10_000).unwrap_or(0), title));
     }
-    out.sort_unstable();
+    out.sort_by_key(|(ms, _)| *ms);
     Ok(out)
 }
 

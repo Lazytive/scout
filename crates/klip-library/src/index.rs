@@ -36,8 +36,40 @@ pub struct ClipInfo {
     pub height: u32,
     pub fps: Option<f64>,
     pub audio_tracks: u32,
-    /// Bookmark times, ms from the start.
+    /// Bookmark times, ms from the start (every chapter of the file).
     pub bookmarks_ms: Vec<u64>,
+    /// Chapters with a title of their own (an auto-clip event, a chapter another tool
+    /// wrote), not Klip's `Bookmark <n>`: the editor shows them as event markers.
+    pub events: Vec<ClipEvent>,
+}
+
+/// A titled chapter of a clip.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ClipEvent {
+    pub at_ms: u64,
+    pub title: String,
+}
+
+/// Longest event title kept.
+const MAX_EVENT_CHARS: usize = 80;
+
+/// Klip's own bookmark titles (`Bookmark`, `Bookmark 3`) and untitled chapters.
+fn is_bookmark_title(title: &str) -> bool {
+    let t = title.trim();
+    t.is_empty()
+        || t.strip_prefix("Bookmark")
+            .is_some_and(|rest| rest.trim().chars().all(|c| c.is_ascii_digit()))
+}
+
+fn clean_title(title: &str) -> String {
+    title
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_EVENT_CHARS)
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 impl ClipInfo {
@@ -52,6 +84,17 @@ impl ClipInfo {
             fps: v.and_then(|v| v.fps),
             audio_tracks: i.audio_tracks,
             bookmarks_ms: i.chapters_ms.iter().copied().take(MAX_BOOKMARKS).collect(),
+            events: i
+                .chapters_ms
+                .iter()
+                .zip(&i.chapter_titles)
+                .filter(|(_, t)| !is_bookmark_title(t))
+                .take(MAX_BOOKMARKS)
+                .map(|(&at_ms, t)| ClipEvent {
+                    at_ms,
+                    title: clean_title(t),
+                })
+                .collect(),
         }
     }
 
@@ -61,6 +104,10 @@ impl ClipInfo {
             *c = c.chars().take(MAX_CODEC_CHARS).collect();
         }
         self.bookmarks_ms.truncate(MAX_BOOKMARKS);
+        self.events.truncate(MAX_BOOKMARKS);
+        for e in &mut self.events {
+            e.title = clean_title(&e.title);
+        }
         if self
             .fps
             .is_some_and(|f| !f.is_finite() || f <= 0.0 || f > 1000.0)
@@ -196,5 +243,38 @@ impl Library {
             changed |= index.clips.len() != before;
         }
         changed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn titled_chapters_are_events() {
+        let info = klip_mp4::Mp4Info {
+            chapters_ms: vec![100, 200, 300, 400],
+            chapter_titles: vec![
+                "Bookmark 1".into(),
+                "Triple kill".into(),
+                String::new(),
+                format!("  {}  ", "x".repeat(200)),
+            ],
+            ..Default::default()
+        };
+        let c = ClipInfo::from_mp4(&info);
+        assert_eq!(c.bookmarks_ms, vec![100, 200, 300, 400]);
+        assert_eq!(c.events.len(), 2);
+        assert_eq!(
+            c.events[0],
+            ClipEvent {
+                at_ms: 200,
+                title: "Triple kill".into()
+            }
+        );
+        assert_eq!((c.events[1].at_ms, c.events[1].title.len()), (400, 78));
+        assert!(is_bookmark_title("Bookmark"));
+        assert!(is_bookmark_title(" Bookmark 12 "));
+        assert!(!is_bookmark_title("Bookmarked kill"));
     }
 }

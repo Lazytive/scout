@@ -97,7 +97,19 @@ pub mod commands {
     /// `{x, y, width, height, frame_width, frame_height, png}` (base64), the pixels the
     /// export composites.
     pub const EDITOR_TEXT_RENDER: &str = "editor.text.render";
-    /// `{path, preset}` → `{id, out}`; `export_progress` / `export_done` events follow.
+    /// `{path, out_ms, width, project?}` → `{jpeg (base64), width, height, out_ms}`: the
+    /// frame the export encodes at that time (the saved project, or `project`).
+    pub const EDITOR_FRAME: &str = "editor.frame";
+    /// `{path, add: [paths]}` → the project of `path` with the clips `add` appended on
+    /// its montage track (a montage lives under its first clip).
+    pub const EDITOR_MONTAGE: &str = "editor.montage";
+    /// `{path}` → `{snapshots: [{id, saved_unix_ms, bytes}]}`, newest first.
+    pub const EDITOR_HISTORY_LIST: &str = "editor.history.list";
+    /// `{path, id}` → the project as that snapshot saved it, saved again (the project it
+    /// replaces becomes a snapshot).
+    pub const EDITOR_HISTORY_RESTORE: &str = "editor.history.restore";
+    /// `{path, preset}` (`preset: "custom"` with `custom: {width, height, fps,
+    /// bitrate_kbps, codec}`) → `{id, out}`; `export_progress` / `export_done` follow.
     pub const EXPORT_START: &str = "export.start";
     /// `{id}` stops a running export.
     pub const EXPORT_CANCEL: &str = "export.cancel";

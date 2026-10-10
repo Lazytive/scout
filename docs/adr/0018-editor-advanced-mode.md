@@ -82,6 +82,15 @@ in text yet (M8.2), the in-memory muxing cap (IMPROVEMENTS G1).
 - **Custom export** is `Preset::Custom {width, height, fps, bitrate_kbps, codec}` in
   `klip-export`: the width x height is a box the edit's format is fitted into (up or
   down, ≤ 4096), so the format decides the shape and the export only the resolution.
+- **`editor.frame` (M9.4, 2026-10-10)** draws with the export's own per-frame step
+  (`render::Drawer`, shared by the frame loop) after opening and accurately seeking each
+  clip on screen, in a media worker of its own, and returns a full-range YCbCr JPEG.
+  Measured against the exported frames of a crossfade montage: 48–51 dB, barcodes as
+  planned. It is for paused frames and the parity test, not for scrubbing (a call
+  opens every clip on screen; 35–220 ms). A montage is a project under its first clip
+  whose other clips are library keys; a clip that is gone is reported (`missing`) and
+  kept, never dropped, and a renamed one is followed. Project history is file
+  snapshots of the project a save replaces (at most one a minute, 30 kept).
 
 ## Consequences
 - Normal mode stays as fast and simple as it is; the Advanced UI is a second workspace

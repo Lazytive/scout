@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use gstreamer as gst;
+use klip_edit::Composition;
 use klip_edit::advanced::Source as Media;
 use klip_edit::compose::{Layer, LayerKind, Piece, fit_in, fitted, place};
 use klip_edit::{Rect, Volumes};
@@ -186,6 +187,140 @@ fn decode_size(
         rounded(f64::from(fit.0) * zoom),
         rounded(f64::from(fit.1) * zoom),
     )
+}
+
+/// How a layer's file is read: a video decoded at [`decode_size`] (the main clip
+/// cropped to the format), a picture at its own size, sound without video.
+pub(crate) fn source_config(
+    l: &Layer,
+    facts: Option<&Facts>,
+    crop: Rect,
+    canvas: (u32, u32),
+) -> Result<SourceConfig, ExportError> {
+    Ok(match l.kind {
+        LayerKind::Video => {
+            let f = facts.ok_or_else(|| {
+                ExportError::Source("a video of the edit could not be read".into())
+            })?;
+            let main = l.source == Media::Main;
+            let (w, h) = decode_size(l, (f.width, f.height), main, crop, canvas);
+            SourceConfig {
+                src_width: f.width,
+                src_height: f.height,
+                crop: if main { crop } else { Rect::default() },
+                out_width: w,
+                out_height: h,
+                want_video: true,
+            }
+        }
+        LayerKind::Image => SourceConfig {
+            src_width: 0,
+            src_height: 0,
+            crop: Rect::default(),
+            out_width: 0,
+            out_height: 0,
+            want_video: true,
+        },
+        LayerKind::Audio | LayerKind::Music => SourceConfig {
+            src_width: 0,
+            src_height: 0,
+            crop: Rect::default(),
+            out_width: 2,
+            out_height: 2,
+            want_video: false,
+        },
+    })
+}
+
+/// A layer's picture size before fitting: a video's whole frame as probed, a
+/// picture's decoded size.
+pub(crate) fn native_size(l: &Layer, facts: Option<&Facts>, frame: &Frame) -> (u32, u32) {
+    match (l.kind, facts) {
+        (LayerKind::Video, Some(f)) => (f.width, f.height),
+        _ => (frame.info.width(), frame.info.height()),
+    }
+}
+
+/// One output picture from the visible layers' frames (ADR 0018): each frame placed by
+/// its layer's transform, blended with its opacity, the colour grade, then the text
+/// cues. The export's frame loop and `editor.frame` both draw with it, so a preview
+/// frame is the exported frame.
+pub(crate) struct Drawer<'c> {
+    comp: &'c Composition,
+    out: Output,
+    canvas: Canvas,
+    grade: Option<[[f32; 4]; 3]>,
+    cues: Vec<Cue>,
+}
+
+impl<'c> Drawer<'c> {
+    pub(crate) fn new(comp: &'c Composition, out: &Output) -> Result<Self, ExportError> {
+        let cues: Vec<Cue> = comp
+            .texts
+            .iter()
+            .filter_map(|t| {
+                klip_edit::render_layer(t, out.width, out.height)
+                    .ok()
+                    .map(|bitmap| Cue { id: t.id, bitmap })
+            })
+            .collect();
+        Ok(Drawer {
+            comp,
+            out: out.clone(),
+            canvas: Canvas::new(out.width, out.height)?,
+            grade: (!comp.colour.is_identity()).then(|| comp.colour.matrix()),
+            cues,
+        })
+    }
+
+    /// The picture at output time `t`: `frame_of` gives each of the `visible` layers'
+    /// current frame and native size; a layer without one is left out.
+    pub(crate) fn draw<'f>(
+        &mut self,
+        t: u64,
+        visible: &[&Layer],
+        frame_of: impl Fn(&Layer) -> Option<(&'f Frame, (u32, u32))>,
+    ) -> Result<gst::Buffer, ExportError> {
+        let (width, height) = (self.out.width, self.out.height);
+        let mut items: Vec<Item<'f>> = Vec::with_capacity(visible.len());
+        for l in visible {
+            let Some((frame, native)) = frame_of(l) else {
+                continue;
+            };
+            let fit = fitted(
+                l.kind,
+                l.source == Media::Main,
+                native,
+                self.comp.crop.width,
+                (width, height),
+            );
+            items.push(Item {
+                frame,
+                placement: place(l.transform_at(t), fit.0, fit.1, width, height),
+                opacity: l.opacity_at(t),
+                opaque: l.kind == LayerKind::Video,
+            });
+        }
+        let active: Vec<&Cue> = self
+            .comp
+            .texts_at(t)
+            .filter_map(|l| self.cues.iter().find(|c| c.id == l.id))
+            .collect();
+        match items.as_slice() {
+            [only] if self.grade.is_none() && self.canvas.is_passthrough(only) => {
+                if active.is_empty() {
+                    Ok(only.frame.buffer.copy())
+                } else {
+                    crate::composed(only.frame, &self.out, &active)
+                }
+            }
+            _ => {
+                let mut b = self.canvas.compose(&items, self.grade.as_ref())?;
+                draw_cues(&mut b, &self.out, &active)?;
+                Ok(b)
+            }
+        }
+    }
 }
 
 impl Run {
@@ -425,72 +560,23 @@ pub(crate) fn run_pass(
         media,
         main_volumes: comp.main_volumes,
     };
-    let cues: Vec<Cue> = comp
-        .texts
-        .iter()
-        .filter_map(|t| {
-            klip_edit::render_layer(t, out.width, out.height)
-                .ok()
-                .map(|bitmap| Cue { id: t.id, bitmap })
-        })
-        .collect();
     let mut runs: Vec<Run> = Vec::new();
     let mut run_of: HashMap<u32, usize> = HashMap::new();
     for (li, l) in comp.layers.iter().enumerate() {
+        // Muted sound never plays (its file isn't even among `media`).
+        if l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music) {
+            continue;
+        }
         let mi = media
             .iter()
             .position(|m| m.source == l.source)
             .ok_or_else(|| ExportError::Source("a clip of the edit is missing".into()))?;
-        let main = l.source == Media::Main;
         let facts = media.get(mi).and_then(|m| m.facts.as_ref());
-        let (cfg, pieces, audio) = match l.kind {
-            LayerKind::Video => {
-                let f = facts.ok_or_else(|| {
-                    ExportError::Source("a video of the edit could not be read".into())
-                })?;
-                let (w, h) = decode_size(l, (f.width, f.height), main, comp.crop, canvas_size);
-                (
-                    SourceConfig {
-                        src_width: f.width,
-                        src_height: f.height,
-                        crop: if main { comp.crop } else { Rect::default() },
-                        out_width: w,
-                        out_height: h,
-                        want_video: true,
-                    },
-                    l.pieces(PIECE_MAX_MS),
-                    !l.muted,
-                )
-            }
-            LayerKind::Image => (
-                SourceConfig {
-                    src_width: 0,
-                    src_height: 0,
-                    crop: Rect::default(),
-                    out_width: 0,
-                    out_height: 0,
-                    want_video: true,
-                },
-                Vec::new(),
-                false,
-            ),
-            LayerKind::Audio | LayerKind::Music => {
-                if l.muted {
-                    continue;
-                }
-                (
-                    SourceConfig {
-                        src_width: 0,
-                        src_height: 0,
-                        crop: Rect::default(),
-                        out_width: 2,
-                        out_height: 2,
-                        want_video: false,
-                    },
-                    l.pieces(PIECE_MAX_MS),
-                    true,
-                )
-            }
+        let cfg = source_config(l, facts, comp.crop, canvas_size)?;
+        let (pieces, audio) = match l.kind {
+            LayerKind::Video => (l.pieces(PIECE_MAX_MS), !l.muted),
+            LayerKind::Image => (Vec::new(), false),
+            LayerKind::Audio | LayerKind::Music => (l.pieces(PIECE_MAX_MS), true),
         };
         run_of.entry(l.id).or_insert(runs.len());
         runs.push(Run {
@@ -512,8 +598,7 @@ pub(crate) fn run_pass(
     }
     let mut pool = Pool::default();
     let mut mixer = Mixer::new(&comp.ducking);
-    let mut canvas = Canvas::new(out.width, out.height)?;
-    let grade = (!comp.colour.is_identity()).then(|| comp.colour.matrix());
+    let mut drawer = Drawer::new(comp, out)?;
     let mut encoder = crate::start_encoder(out, req.encoders, spool)?;
     let frames_total = comp.frame_count(out.fps);
     let mut report = |done: u64| {
@@ -546,51 +631,12 @@ pub(crate) fn run_pass(
                 run.step(t, &pool, &ctx)?;
             }
         }
-        let mut items: Vec<Item<'_>> = Vec::with_capacity(visible.len());
-        for l in &visible {
-            let Some(run) = run_of.get(&l.id).and_then(|&r| runs.get(r)) else {
-                continue;
-            };
-            let Some(frame) = run.frame() else {
-                continue;
-            };
-            let native = match (l.kind, media.get(run.media).and_then(|m| m.facts.as_ref())) {
-                (LayerKind::Video, Some(f)) => (f.width, f.height),
-                _ => (frame.info.width(), frame.info.height()),
-            };
-            let fit = fitted(
-                l.kind,
-                l.source == Media::Main,
-                native,
-                comp.crop.width,
-                canvas_size,
-            );
-            items.push(Item {
-                frame,
-                placement: place(l.transform_at(t), fit.0, fit.1, out.width, out.height),
-                opacity: l.opacity_at(t),
-                opaque: l.kind == LayerKind::Video,
-            });
-        }
-        let active: Vec<&Cue> = comp
-            .texts_at(t)
-            .filter_map(|l| cues.iter().find(|c| c.id == l.id))
-            .collect();
-        let buffer = match items.as_slice() {
-            [only] if grade.is_none() && canvas.is_passthrough(only) => {
-                if active.is_empty() {
-                    only.frame.buffer.copy()
-                } else {
-                    crate::composed(only.frame, out, &active)?
-                }
-            }
-            _ => {
-                let mut b = canvas.compose(&items, grade.as_ref())?;
-                draw_cues(&mut b, out, &active)?;
-                b
-            }
-        };
-        drop(items);
+        let buffer = drawer.draw(t, &visible, |l| {
+            let run = run_of.get(&l.id).and_then(|&r| runs.get(r))?;
+            let frame = run.frame()?;
+            let facts = media.get(run.media).and_then(|m| m.facts.as_ref());
+            Some((frame, native_size(l, facts, frame)))
+        })?;
         encoder.push_frame(buffer, i)?;
         i = i.saturating_add(1);
         if i.is_multiple_of(15) {

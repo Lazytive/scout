@@ -34,10 +34,16 @@ fn probe_bytes(d: &[u8]) -> Result<Mp4Info, Mp4Error> {
 
 #[test]
 fn faststart_clip() {
-    let marks = vec![Marker {
-        at: 11 * NANOS_PER_SEC,
-        title: "Bookmark".into(),
-    }];
+    let marks = vec![
+        Marker {
+            at: 11 * NANOS_PER_SEC,
+            title: "Bookmark".into(),
+        },
+        Marker {
+            at: 10 * NANOS_PER_SEC + NANOS_PER_SEC / 2,
+            title: "Ace\u{7}!".into(),
+        },
+    ];
     let info = probe_bytes(&clip(&marks)).unwrap();
     assert_eq!(info.duration_ms, Some(2000));
     assert_eq!(info.creation_time_unix, 1_760_000_000);
@@ -46,7 +52,9 @@ fn faststart_clip() {
     assert_eq!((v.width, v.height), (1280, 720));
     assert!((v.fps.unwrap() - 60.0).abs() < 0.01, "{:?}", v.fps);
     assert_eq!(info.audio_tracks, 1);
-    assert_eq!(info.chapters_ms, vec![1000]);
+    // Sorted by time, with their titles (control characters dropped).
+    assert_eq!(info.chapters_ms, vec![500, 1000]);
+    assert_eq!(info.chapter_titles, vec!["Ace!", "Bookmark"]);
     assert!(!info.fragmented);
 }
 

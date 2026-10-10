@@ -63,6 +63,17 @@ and writing the project file.
   checked by `fixtures/advanced/*.json` here (`tests/advanced_fixtures.rs`) and in the
   front end (`src/lib/keyframes.test.ts`). `Project::has_advanced_edits` = the section
   isn't empty or unknown keys exist; a Normal-mode save keeps the section untouched.
+  Montages (M9.4): `Advanced::append_clips(&[(source, len)], at_ms)` places clips whole,
+  one after the other, on the first video track (a new `Montage` track when there is
+  none); `fit_library_clips(length_of)` shortens library clips that run past their
+  file's end (unknown or missing clips are left alone).
+- `compose` (M9.3, M9.4): `compose(&Project, &SourceInfo)` / `compose_with(…, clips)` =
+  the `Composition` both renderers draw. Markers: every clip's chapters where it plays
+  (Normal segments for the main clip, `Layer::output_ms` — the inverse of
+  `source_ms` — for clips on Advanced tracks, `clips` giving the montage clips'
+  `SourceInfo` by key): a titled chapter (`SourceInfo::events`) is an `Event` marker
+  with its title, the others are `Bookmark n` (numbered among bookmarks); then the
+  user's markers; sorted, de-duplicated, at most 255.
 - `plan` (M8.3): `Render::new(&Project, &SourceInfo)` = what `klip-export` renders:
   the crop (`format::crop_rect` on the probed size), the output segments
   (`timeline::segments` after clamping the project to the clip's length), the text

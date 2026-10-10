@@ -295,20 +295,61 @@ fn append_rgb_rows(
     Ok((w, h))
 }
 
-/// Encode tightly packed RGB as a JPEG.
-fn encode_rgb_jpeg(
+/// Encode tightly packed RGB as a JPEG (`quality` 1..=100, as text).
+pub fn encode_rgb_jpeg(
     rgb: &[u8],
     width: u32,
     height: u32,
     quality: &str,
 ) -> Result<Vec<u8>, CaptureError> {
-    let info = gst_video::VideoInfo::builder(gst_video::VideoFormat::Rgb, width, height)
+    encode_jpeg(
+        rgb,
+        gst_video::VideoFormat::Rgb,
+        3,
+        width,
+        height,
+        quality,
+        false,
+    )
+}
+
+/// Encode tightly packed BGRA (alpha ignored) as a baseline YCbCr JPEG, the kind every
+/// decoder reads (`quality` 1..=100, as text).
+pub fn encode_bgra_jpeg(
+    bgra: &[u8],
+    width: u32,
+    height: u32,
+    quality: &str,
+) -> Result<Vec<u8>, CaptureError> {
+    encode_jpeg(
+        bgra,
+        gst_video::VideoFormat::Bgrx,
+        4,
+        width,
+        height,
+        quality,
+        true,
+    )
+}
+
+/// Encode tightly packed pixels of `format` (`px` bytes each) as a JPEG; `yuv`
+/// converts to I420 first (otherwise RGB input makes an RGB-coded JPEG).
+fn encode_jpeg(
+    pixels: &[u8],
+    format: gst_video::VideoFormat,
+    px: usize,
+    width: u32,
+    height: u32,
+    quality: &str,
+    yuv: bool,
+) -> Result<Vec<u8>, CaptureError> {
+    let info = gst_video::VideoInfo::builder(format, width, height)
         .fps(gst::Fraction::new(0, 1))
         .build()
         .map_err(gst_err)?;
     let row = usize::try_from(width)
         .map_err(gst_err)?
-        .checked_mul(3)
+        .checked_mul(px)
         .ok_or_else(|| bad("picture too wide"))?;
     let stride = info
         .stride()
@@ -316,7 +357,7 @@ fn encode_rgb_jpeg(
         .and_then(|s| usize::try_from(*s).ok())
         .ok_or_else(|| bad("bad stride"))?;
     let mut padded = vec![0u8; info.size()];
-    for (y, line) in rgb.chunks_exact(row).enumerate() {
+    for (y, line) in pixels.chunks_exact(row).enumerate() {
         let start = y.checked_mul(stride).ok_or_else(|| bad("bad stride"))?;
         let end = start.checked_add(row).ok_or_else(|| bad("bad stride"))?;
         padded
@@ -330,8 +371,16 @@ fn encode_rgb_jpeg(
     props::set_str(&jpeg, "quality", quality);
     let sink = make("appsink")?;
     props::set_str(&sink, "sync", "false");
-    pipeline.add_many([&src, &jpeg, &sink]).map_err(gst_err)?;
-    gst::Element::link_many([&src, &jpeg, &sink]).map_err(gst_err)?;
+    let mut chain = vec![src.clone()];
+    if yuv {
+        chain.push(make("videoconvert")?);
+        // Full range (JFIF): decoders read a JPEG as 0–255.
+        chain.push(capsfilter("video/x-raw,format=I420,colorimetry=1:4:0:0")?);
+    }
+    chain.push(jpeg);
+    chain.push(sink.clone());
+    pipeline.add_many(&chain).map_err(gst_err)?;
+    gst::Element::link_many(&chain).map_err(gst_err)?;
     let appsrc = src
         .downcast::<gst_app::AppSrc>()
         .map_err(|_| bad("appsrc is not an AppSrc"))?;

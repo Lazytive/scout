@@ -22,8 +22,8 @@ tags, never clips. Pure: file I/O only.
   dot folders (`.klip`), deeper folders. A missing folder scans as empty.
 - Info index (`index.rs`): `load_index` / `save_index` / `refresh_index(files, index)`:
   per clip its size and modification time and `ClipInfo` read by `klip_mp4::probe`
-  (duration, creation time, codec, width, height, fps, audio tracks, bookmark times) or
-  the error; changed files are probed again, gone ones dropped; `thumbs_failed` keeps a
+  (duration, creation time, codec, width, height, fps, audio tracks, bookmark times,
+  `events`: chapters with a title other than `Bookmark <n>`, M9.4) or the error; changed files are probed again, gone ones dropped; `thumbs_failed` keeps a
   clip whose thumbnails failed from being retried until it changes. Unreadable → empty
   (it's a cache).
 - Thumbnail cache (`thumbs.rs`): `thumb_path(key, Poster|Strip)` (`<key>.jpg` /
@@ -32,7 +32,8 @@ tags, never clips. Pure: file I/O only.
   older than an hour). Sizes: posters 320 px, strips 16 frames of 240 px.
 - Per-clip caches (`caches.rs`, M8.4): `project_path(key)` (`.klip/projects/<key>.json`,
   the editor's project: a user's edits, kept while the clip exists), `proxy_path(key)`
-  (`.klip/proxies/<key>.mp4`), `render_dir(key)` (`.klip/render/<key>/`); keys escaped
+  (`.klip/proxies/<key>.mp4`), `render_dir(key)` (`.klip/render/<key>/`),
+  `history_dir(key)` (`.klip/history/<key>/`, the project's snapshots, M9.4); keys escaped
   like thumbnails; `move_caches` (called by `rename`), `remove_caches`, `prune_caches
   (keys)` (only with a complete key set). `unique_sibling(clip, suffix)`: a free
   `<name> - <suffix>.mp4` next to the clip (` (2)`, ` (3)`…; also skips a `.part` being

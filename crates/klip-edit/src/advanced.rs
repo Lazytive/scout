@@ -471,6 +471,102 @@ impl Advanced {
     }
 }
 
+/// Name of the track [`Advanced::append_clips`] creates.
+pub const MONTAGE_TRACK: &str = "Montage";
+
+impl Advanced {
+    /// Library clips that run past the end of their file (it was trimmed, or the
+    /// project came from elsewhere) end where the file does; `length_of(key)` is a
+    /// clip's length as probed (`None`: unknown or missing, left alone: a missing clip
+    /// is reported, never dropped).
+    pub fn fit_library_clips(&mut self, length_of: impl Fn(&str) -> Option<u64>) -> Vec<Issue> {
+        let mut issues = Vec::new();
+        for (ti, t) in self.tracks.iter_mut().enumerate() {
+            for (ci, c) in t.clips.iter_mut().enumerate() {
+                let Source::Library { key } = &c.source else {
+                    continue;
+                };
+                let Some(len) = length_of(key).filter(|l| *l > 0) else {
+                    continue;
+                };
+                if c.out_ms > len && c.in_ms < len {
+                    c.out_ms = len;
+                    issues.push(Issue::new(
+                        format!("advanced.tracks[{ti}].clips[{ci}].out_ms"),
+                        "past the end of the clip; shortened",
+                    ));
+                }
+            }
+        }
+        issues
+    }
+
+    /// Append clips (`source`, length in ms) one after the other from `at_ms` on the
+    /// first video track (a new "Montage" track when there is none), each whole and at
+    /// normal speed. Returns the track's id.
+    pub fn append_clips(&mut self, clips: &[(Source, u64)], at_ms: u64) -> Result<u32, String> {
+        if clips
+            .iter()
+            .any(|(_, len)| *len == 0 || *len > MAX_SOURCE_MS)
+        {
+            return Err("a clip has no usable length".into());
+        }
+        let ti = match self.tracks.iter().position(|t| t.kind == TrackKind::Video) {
+            Some(i) => i,
+            None => {
+                if self.tracks.len() >= MAX_TRACKS {
+                    return Err(format!("a project has at most {MAX_TRACKS} tracks"));
+                }
+                let id = self
+                    .tracks
+                    .iter()
+                    .map(|t| t.id)
+                    .max()
+                    .map_or(1, |m| m.saturating_add(1));
+                self.tracks.push(Track {
+                    id,
+                    kind: TrackKind::Video,
+                    name: MONTAGE_TRACK.into(),
+                    muted: false,
+                    clips: Vec::new(),
+                });
+                self.tracks.len().saturating_sub(1)
+            }
+        };
+        let mut next_id = self
+            .tracks
+            .iter()
+            .flat_map(|t| &t.clips)
+            .map(|c| c.id)
+            .max()
+            .map_or(1, |m| m.saturating_add(1));
+        let track = self
+            .tracks
+            .get_mut(ti)
+            .ok_or_else(|| "the track went away".to_string())?;
+        if track.clips.len().saturating_add(clips.len()) > MAX_CLIPS {
+            return Err(format!("a track holds at most {MAX_CLIPS} clips"));
+        }
+        let mut at = at_ms;
+        for (source, len) in clips {
+            if at > MAX_SOURCE_MS {
+                return Err("the montage would be too long".into());
+            }
+            track.clips.push(PlacedClip {
+                id: next_id,
+                source: source.clone(),
+                in_ms: 0,
+                out_ms: *len,
+                at_ms: at,
+                ..PlacedClip::default()
+            });
+            next_id = next_id.saturating_add(1);
+            at = at.saturating_add(*len);
+        }
+        Ok(track.id)
+    }
+}
+
 fn track_from_value(v: Value, i: usize, issues: &mut Vec<Issue>) -> Track {
     let path = format!("advanced.tracks[{i}]");
     let Value::Object(mut map) = v else {
@@ -758,5 +854,73 @@ mod tests {
         assert!(again.is_empty(), "{again:?}");
         assert!(!a.is_empty());
         assert!(Advanced::default().is_empty());
+    }
+
+    #[test]
+    fn append_clips_builds_a_montage_track() {
+        let lib = |k: &str| Source::Library { key: k.into() };
+        let mut a = Advanced::default();
+        a.tracks.push(Track {
+            id: 4,
+            kind: TrackKind::Music,
+            ..Track::default()
+        });
+        let id = a
+            .append_clips(&[(lib("G/b.mp4"), 3_000), (lib("G/c.mp4"), 2_000)], 10_000)
+            .unwrap();
+        assert_eq!(id, 5, "a new video track after the music one");
+        let t = &a.tracks[1];
+        assert_eq!((t.kind, t.name.as_str()), (TrackKind::Video, MONTAGE_TRACK));
+        let placed: Vec<(u32, u64, u64, u64)> = t
+            .clips
+            .iter()
+            .map(|c| (c.id, c.in_ms, c.out_ms, c.at_ms))
+            .collect();
+        assert_eq!(placed, vec![(1, 0, 3_000, 10_000), (2, 0, 2_000, 13_000)]);
+        // More goes onto the same track, with fresh ids.
+        a.append_clips(&[(Source::Main, 1_000)], 15_000).unwrap();
+        assert_eq!(a.tracks[1].clips[2].id, 3);
+        assert!(a.repair().is_empty(), "appending makes nothing to repair");
+        // Refusals.
+        assert!(a.append_clips(&[(lib("x"), 0)], 0).is_err());
+        assert!(a.append_clips(&[(lib("x"), 1)], MAX_SOURCE_MS + 1).is_err());
+        let many = vec![(lib("x"), 1); MAX_CLIPS];
+        assert!(a.append_clips(&many, 0).is_err());
+        assert_eq!(
+            a.tracks[1].clips.len(),
+            3,
+            "a refused append changes nothing"
+        );
+    }
+
+    #[test]
+    fn library_clips_end_where_their_file_does() {
+        let mut a = Advanced::default();
+        let clip = |id: u32, key: &str, in_ms: u64, out_ms: u64| PlacedClip {
+            id,
+            source: Source::Library { key: key.into() },
+            in_ms,
+            out_ms,
+            ..PlacedClip::default()
+        };
+        a.tracks.push(Track {
+            id: 1,
+            clips: vec![
+                clip(1, "short.mp4", 0, 5_000),
+                clip(2, "short.mp4", 4_500, 6_000),
+                clip(3, "gone.mp4", 0, 9_000),
+                clip(4, "short.mp4", 0, 3_000),
+            ],
+            ..Track::default()
+        });
+        let issues = a.fit_library_clips(|k| (k == "short.mp4").then_some(4_000));
+        let outs: Vec<u64> = a.tracks[0].clips.iter().map(|c| c.out_ms).collect();
+        assert_eq!(
+            outs,
+            vec![4_000, 6_000, 9_000, 3_000],
+            "starts past the end and unknown clips are left alone"
+        );
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].path, "advanced.tracks[0].clips[0].out_ms");
     }
 }
