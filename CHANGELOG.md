@@ -5,6 +5,13 @@ reason)`.
 
 ## Unreleased
 
+- M9.5.9 — Preview sound checked in the real app with trusted clicks (CDP
+  `Input.dispatchMouseEvent`) and an output meter in `window.__klipSound()`: Normal mode
+  peak 0.274 playing, Mic 0 % mutes only the Microphone track (0.251 from Game), both
+  0 % silent; Advanced 0.274; one graph, context running. Fixed: M9.5.8's follower
+  effect read the state it wrote, so it re-ran and leaked a second graph (stuck
+  suspended, tracks paused); `play()` refusals are recorded on the element for the
+  diagnostic. (Claude Opus 5.5: the human asked to check the preview sound)
 - M9.5.8 — Preview sound fixes found by review: Normal mode's tracks were never
   attached when they loaded before the `<video>` appeared (the sliders then did
   nothing: the video played its own Mix), and Advanced mode's player kept the Mix when

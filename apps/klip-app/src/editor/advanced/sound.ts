@@ -65,6 +65,8 @@ export class SoundGraph {
   private duck: GainNode | null = null;
   private voiceBus: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
+  /** What leaves the graph (both buses), for the diagnostic's level. */
+  private meter: AnalyserNode | null = null;
   private block: Float32Array<ArrayBuffer> | null = null;
   private strands = new Map<HTMLMediaElement, Strand>();
   private ducking: Ducking = { enabled: false, duck_db: -12, attack_ms: 100, release_ms: 600 };
@@ -86,8 +88,15 @@ export class SoundGraph {
 
   /** The context's state and each strand's gain, bus and element time. */
   report(): unknown {
+    let peak = 0;
+    if (this.meter) {
+      const buf = new Float32Array(this.meter.fftSize);
+      this.meter.getFloatTimeDomainData(buf);
+      for (const v of buf) peak = Math.max(peak, Math.abs(v));
+    }
     return {
       state: this.ctx?.state ?? 'none',
+      peak: Math.round(peak * 1000) / 1000,
       duck: Math.round(this.duckGain() * 1000) / 1000,
       strands: [...this.strands.values()].map((s) => ({
         tag: s.el.tagName,
@@ -96,6 +105,8 @@ export class SoundGraph {
         gain: Math.round(s.gain.gain.value * 1000) / 1000,
         paused: s.el.paused,
         muted: s.el.muted,
+        ready: s.el.readyState,
+        error: s.el.dataset.playError ?? null,
         t: Math.round(s.el.currentTime * 1000),
       })),
     };
@@ -117,6 +128,12 @@ export class SoundGraph {
       mainBus.connect(ctx.destination);
       musicBus.connect(duck).connect(ctx.destination);
       voiceBus.connect(analyser).connect(sink).connect(ctx.destination);
+      const meter = ctx.createAnalyser();
+      meter.fftSize = 2048;
+      mainBus.connect(meter);
+      duck.connect(meter);
+      meter.connect(sink);
+      this.meter = meter;
       this.ctx = ctx;
       this.mainBus = mainBus;
       this.musicBus = musicBus;
@@ -231,6 +248,7 @@ export class SoundGraph {
     this.ctx = null;
     this.mainBus = this.musicBus = this.duck = this.voiceBus = null;
     this.analyser = null;
+    this.meter = null;
   }
 }
 
@@ -309,7 +327,10 @@ export class FollowSound {
       if (el.playbackRate !== v.playbackRate) el.playbackRate = v.playbackRate;
       if (el.paused) {
         el.currentTime = v.currentTime;
-        void el.play().catch(() => {});
+        void el.play().then(
+          () => delete el.dataset.playError,
+          (e: unknown) => (el.dataset.playError = e instanceof Error ? e.name : 'refused'),
+        );
       } else if (!el.seeking && Math.abs(el.currentTime - v.currentTime) > 0.12) el.currentTime = v.currentTime;
     }
     this.raf = requestAnimationFrame(this.loop);

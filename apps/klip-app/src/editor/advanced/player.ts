@@ -448,7 +448,10 @@ export class Player {
           if (el.playbackRate !== rate) el.playbackRate = rate;
           if (el.paused) {
             if (Math.abs(el.currentTime - want) > RESYNC_S / 2) el.currentTime = want;
-            void el.play().catch(() => {});
+            void el.play().then(
+              () => delete el.dataset.playError,
+              (e: unknown) => (el.dataset.playError = e instanceof Error ? e.name : 'refused'),
+            );
           } else if (!el.seeking && Math.abs(el.currentTime - want) > RESYNC_S) el.currentTime = want;
         }
         for (const st of s.sounds) this.sound.setGain(st.el, this.gainOf(l, s, st, t));

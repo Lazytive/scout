@@ -90,10 +90,11 @@
   $effect(() => {
     const v = video;
     if (!v || !usable) return;
-    sound?.destroy();
-    sound = new FollowSound(v);
+    // Not reading `sound` here: this effect writes it.
+    const s = new FollowSound(v);
+    sound = s;
     return () => {
-      sound?.destroy();
+      s.destroy();
       sound = null;
     };
   });
