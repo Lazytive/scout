@@ -14,6 +14,8 @@ export interface SourceInfo {
   duration_ms: number;
   fps: number | null;
   bookmarks_ms: number[];
+  /** Chapters with a title of their own (auto-clip events). */
+  events?: { at_ms: number; title: string }[];
 }
 
 export interface TextPreset {

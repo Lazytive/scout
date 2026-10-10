@@ -1,0 +1,1005 @@
+{
+  "about": "compose_with shared with apps/klip-app/src/lib/compose.ts. Inputs are hand-written (already repaired projects); every `expect` is written by `KLIP_BLESS=1 cargo test -p klip-edit --test advanced_fixtures` and checked by both sides.",
+  "cases": [
+    {
+      "clips": [],
+      "expect": {
+        "colour": {
+          "brightness": 0.0,
+          "contrast": 1.0,
+          "saturation": 1.0
+        },
+        "crop": {
+          "height": 1080,
+          "width": 606,
+          "x": 328,
+          "y": 0
+        },
+        "ducking": {
+          "attack_ms": 100,
+          "duck_db": -12.0,
+          "enabled": true,
+          "release_ms": 600
+        },
+        "duration_ms": 15000,
+        "layers": [
+          {
+            "at_ms": 0,
+            "end_ms": 5000,
+            "id": 1,
+            "kind": "video",
+            "muted": false,
+            "opacity": [],
+            "source": {
+              "kind": "main"
+            },
+            "speed": [
+              {
+                "at_ms": 0,
+                "rate_pct": 100
+              }
+            ],
+            "src_in_ms": 1000,
+            "src_out_ms": 6000,
+            "track": 0,
+            "transform": [],
+            "volume": [],
+            "z": 0
+          },
+          {
+            "at_ms": 5000,
+            "end_ms": 13000,
+            "id": 2,
+            "kind": "video",
+            "muted": false,
+            "opacity": [],
+            "source": {
+              "kind": "main"
+            },
+            "speed": [
+              {
+                "at_ms": 0,
+                "rate_pct": 50
+              }
+            ],
+            "src_in_ms": 8000,
+            "src_out_ms": 12000,
+            "track": 0,
+            "transform": [],
+            "volume": [],
+            "z": 0
+          },
+          {
+            "at_ms": 13000,
+            "end_ms": 15000,
+            "id": 3,
+            "kind": "video",
+            "muted": false,
+            "opacity": [],
+            "source": {
+              "kind": "main"
+            },
+            "speed": [
+              {
+                "at_ms": 0,
+                "rate_pct": 200
+              }
+            ],
+            "src_in_ms": 14000,
+            "src_out_ms": 18000,
+            "track": 0,
+            "transform": [],
+            "volume": [],
+            "z": 0
+          }
+        ],
+        "main_volumes": {
+          "game": 0.75,
+          "mic": 1.5
+        },
+        "markers": [
+          {
+            "at_ms": 2000,
+            "kind": "bookmark",
+            "title": "Bookmark 1"
+          },
+          {
+            "at_ms": 7000,
+            "kind": "event",
+            "title": "Ace"
+          },
+          {
+            "at_ms": 13500,
+            "kind": "bookmark",
+            "title": "Bookmark 2"
+          }
+        ],
+        "source": {
+          "bookmarks_ms": [
+            3000,
+            9000,
+            15000
+          ],
+          "duration_ms": 20000,
+          "events": [
+            {
+              "at_ms": 9000,
+              "title": "Ace"
+            },
+            {
+              "at_ms": 12000,
+              "title": "Clutch"
+            }
+          ],
+          "fps": 60.0,
+          "height": 1080,
+          "width": 1920
+        },
+        "texts": [
+          {
+            "end_ms": 2500,
+            "id": 1,
+            "position": "middle",
+            "preset": "bold",
+            "start_ms": 500,
+            "text": "Hi"
+          },
+          {
+            "end_ms": 15000,
+            "id": 2,
+            "position": "bottom",
+            "preset": "caption",
+            "start_ms": 14500,
+            "text": "late"
+          }
+        ]
+      },
+      "name": "Normal mode: pieces at three speeds, 9:16, a text cue, bookmarks and events",
+      "project": {
+        "format": {
+          "crop_x": 0.25,
+          "kind": "tall"
+        },
+        "mode": "normal",
+        "pieces": [
+          {
+            "end_ms": 6000,
+            "speed": 1,
+            "start_ms": 1000
+          },
+          {
+            "end_ms": 12000,
+            "speed": 0.5,
+            "start_ms": 8000
+          },
+          {
+            "end_ms": 18000,
+            "speed": 2,
+            "start_ms": 14000
+          }
+        ],
+        "source_ms": 20000,
+        "text": [
+          {
+            "end_ms": 2500,
+            "id": 1,
+            "position": "middle",
+            "preset": "bold",
+            "start_ms": 500,
+            "text": "Hi"
+          },
+          {
+            "end_ms": 15000,
+            "id": 2,
+            "position": "bottom",
+            "preset": "caption",
+            "start_ms": 14500,
+            "text": "late"
+          }
+        ],
+        "version": 1,
+        "volumes": {
+          "game": 0.75,
+          "mic": 1.5
+        }
+      },
+      "source": {
+        "bookmarks_ms": [
+          3000,
+          9000,
+          15000
+        ],
+        "duration_ms": 20000,
+        "events": [
+          {
+            "at_ms": 9000,
+            "title": "Ace"
+          },
+          {
+            "at_ms": 12000,
+            "title": "Clutch"
+          }
+        ],
+        "fps": 60.0,
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    {
+      "clips": [
+        [
+          "a",
+          {
+            "bookmarks_ms": [
+              1000,
+              5500
+            ],
+            "duration_ms": 6000,
+            "events": [
+              {
+                "at_ms": 5500,
+                "title": "Triple"
+              }
+            ],
+            "fps": 60.0,
+            "height": 1080,
+            "width": 1920
+          }
+        ],
+        [
+          "b",
+          {
+            "bookmarks_ms": [
+              1500,
+              4000
+            ],
+            "duration_ms": 9000,
+            "events": [],
+            "fps": 60.0,
+            "height": 1080,
+            "width": 1920
+          }
+        ]
+      ],
+      "expect": {
+        "colour": {
+          "brightness": 0.25,
+          "contrast": 1.5,
+          "saturation": 0.5
+        },
+        "crop": {
+          "height": 720,
+          "width": 1280,
+          "x": 0,
+          "y": 0
+        },
+        "ducking": {
+          "attack_ms": 50,
+          "duck_db": -18.0,
+          "enabled": true,
+          "release_ms": 400
+        },
+        "duration_ms": 60000,
+        "layers": [
+          {
+            "at_ms": 0,
+            "end_ms": 10000,
+            "id": 1,
+            "kind": "video",
+            "muted": false,
+            "opacity": [],
+            "source": {
+              "kind": "main"
+            },
+            "speed": [
+              {
+                "at_ms": 0,
+                "rate_pct": 100
+              }
+            ],
+            "src_in_ms": 0,
+            "src_out_ms": 10000,
+            "track": 0,
+            "transform": [],
+            "volume": [],
+            "z": 0
+          },
+          {
+            "at_ms": 10000,
+            "end_ms": 16000,
+            "id": 2,
+            "kind": "video",
+            "muted": false,
+            "opacity": [],
+            "source": {
+              "key": "a",
+              "kind": "library"
+            },
+            "speed": [],
+            "src_in_ms": 0,
+            "src_out_ms": 6000,
+            "track": 3,
+            "transform": [],
+            "volume": [],
+            "z": 1
+          },
+          {
+            "at_ms": 15000,
+            "end_ms": 21500,
+            "id": 3,
+            "kind": "video",
+            "muted": false,
+            "opacity": [
+              {
+                "at_ms": 0,
+                "ease": "linear",
+                "value": 0.0
+              },
+              {
+                "at_ms": 1000,
+                "ease": "linear",
+                "value": 1.0
+              }
+            ],
+            "source": {
+              "key": "b",
+              "kind": "library"
+            },
+            "speed": [
+              {
+                "at_ms": 0,
+                "rate_pct": 100
+              },
+              {
+                "at_ms": 2000,
+                "rate_pct": 50
+              },
+              {
+                "at_ms": 4000,
+                "rate_pct": 200
+              }
+            ],
+            "src_in_ms": 1000,
+            "src_out_ms": 9000,
+            "track": 3,
+            "transform": [],
+            "volume": [],
+            "z": 1
+          },
+          {
+            "at_ms": 26000,
+            "end_ms": 29000,
+            "id": 4,
+            "kind": "video",
+            "muted": false,
+            "opacity": [
+              {
+                "at_ms": 0,
+                "ease": "linear",
+                "value": 0.0
+              },
+              {
+                "at_ms": 500,
+                "ease": "linear",
+                "value": 1.0
+              }
+            ],
+            "source": {
+              "kind": "main"
+            },
+            "speed": [],
+            "src_in_ms": 0,
+            "src_out_ms": 3000,
+            "track": 3,
+            "transform": [],
+            "volume": [
+              {
+                "at_ms": 0,
+                "ease": "hold",
+                "value": 0.5
+              }
+            ],
+            "z": 1
+          },
+          {
+            "at_ms": 1000,
+            "end_ms": 4000,
+            "id": 5,
+            "kind": "image",
+            "muted": false,
+            "opacity": [
+              {
+                "at_ms": 0,
+                "ease": "linear",
+                "value": 0.5
+              }
+            ],
+            "source": {
+              "kind": "image",
+              "path": "C:/s.png"
+            },
+            "speed": [],
+            "src_in_ms": 0,
+            "src_out_ms": 3000,
+            "track": 5,
+            "transform": [
+              {
+                "at_ms": 0,
+                "ease": "linear",
+                "value": {
+                  "x": 0.25,
+                  "y": -0.25,
+                  "zoom": 0.5
+                }
+              },
+              {
+                "at_ms": 3000,
+                "ease": "hold",
+                "value": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "zoom": 1.5
+                }
+              }
+            ],
+            "volume": [],
+            "z": 2
+          },
+          {
+            "at_ms": 2500,
+            "end_ms": 4000,
+            "id": 6,
+            "kind": "audio",
+            "muted": true,
+            "opacity": [],
+            "source": {
+              "kind": "file",
+              "path": "C:/boom.wav"
+            },
+            "speed": [],
+            "src_in_ms": 0,
+            "src_out_ms": 1500,
+            "track": 7,
+            "transform": [],
+            "volume": [],
+            "z": 3
+          },
+          {
+            "at_ms": 0,
+            "end_ms": 60000,
+            "id": 7,
+            "kind": "music",
+            "muted": false,
+            "opacity": [],
+            "source": {
+              "kind": "file",
+              "path": "C:/m.mp3"
+            },
+            "speed": [],
+            "src_in_ms": 5000,
+            "src_out_ms": 65000,
+            "track": 9,
+            "transform": [],
+            "volume": [
+              {
+                "at_ms": 0,
+                "ease": "linear",
+                "value": 0.25
+              },
+              {
+                "at_ms": 4000,
+                "ease": "linear",
+                "value": 1.0
+              }
+            ],
+            "z": 4
+          }
+        ],
+        "main_volumes": {
+          "game": 1.0,
+          "mic": 1.0
+        },
+        "markers": [
+          {
+            "at_ms": 500,
+            "kind": "user",
+            "title": "Start"
+          },
+          {
+            "at_ms": 2000,
+            "kind": "bookmark",
+            "title": "Bookmark 1"
+          },
+          {
+            "at_ms": 2000,
+            "kind": "user",
+            "title": "Marker"
+          },
+          {
+            "at_ms": 11000,
+            "kind": "bookmark",
+            "title": "Bookmark 2"
+          },
+          {
+            "at_ms": 15500,
+            "kind": "bookmark",
+            "title": "Bookmark 3"
+          },
+          {
+            "at_ms": 15500,
+            "kind": "event",
+            "title": "Triple"
+          },
+          {
+            "at_ms": 19000,
+            "kind": "bookmark",
+            "title": "Bookmark 4"
+          },
+          {
+            "at_ms": 28000,
+            "kind": "bookmark",
+            "title": "Bookmark 5"
+          }
+        ],
+        "source": {
+          "bookmarks_ms": [
+            2000
+          ],
+          "duration_ms": 10000,
+          "events": [],
+          "fps": 30.0,
+          "height": 720,
+          "width": 1280
+        },
+        "texts": []
+      },
+      "name": "Montage: library clips with a crossfade and a dip, a ramp, a sticker, muted sound, music, markers, colour",
+      "project": {
+        "advanced": {
+          "colour": {
+            "brightness": 0.25,
+            "contrast": 1.5,
+            "saturation": 0.5
+          },
+          "ducking": {
+            "attack_ms": 50,
+            "duck_db": -18.0,
+            "enabled": true,
+            "release_ms": 400
+          },
+          "markers": [
+            {
+              "at_ms": 500,
+              "kind": "user",
+              "title": "Start"
+            },
+            {
+              "at_ms": 2000,
+              "kind": "user",
+              "title": ""
+            },
+            {
+              "at_ms": 50000000,
+              "kind": "user",
+              "title": "after the end"
+            }
+          ],
+          "tracks": [
+            {
+              "clips": [
+                {
+                  "at_ms": 10000,
+                  "id": 1,
+                  "in_ms": 0,
+                  "opacity": [],
+                  "out_ms": 6000,
+                  "source": {
+                    "key": "a",
+                    "kind": "library"
+                  },
+                  "speed": [],
+                  "transform": [],
+                  "volume": []
+                },
+                {
+                  "at_ms": 16000,
+                  "id": 2,
+                  "in_ms": 1000,
+                  "opacity": [],
+                  "out_ms": 9000,
+                  "source": {
+                    "key": "b",
+                    "kind": "library"
+                  },
+                  "speed": [
+                    {
+                      "at_ms": 0,
+                      "rate_pct": 100
+                    },
+                    {
+                      "at_ms": 2000,
+                      "rate_pct": 50
+                    },
+                    {
+                      "at_ms": 4000,
+                      "rate_pct": 200
+                    }
+                  ],
+                  "transform": [],
+                  "volume": []
+                },
+                {
+                  "at_ms": 26000,
+                  "id": 4,
+                  "in_ms": 0,
+                  "opacity": [],
+                  "out_ms": 3000,
+                  "source": {
+                    "kind": "main"
+                  },
+                  "speed": [],
+                  "transform": [],
+                  "volume": [
+                    {
+                      "at_ms": 0,
+                      "ease": "hold",
+                      "value": 0.5
+                    }
+                  ]
+                }
+              ],
+              "id": 3,
+              "kind": "video",
+              "muted": false,
+              "name": "Montage"
+            },
+            {
+              "clips": [
+                {
+                  "at_ms": 1000,
+                  "id": 6,
+                  "in_ms": 0,
+                  "opacity": [
+                    {
+                      "at_ms": 0,
+                      "ease": "linear",
+                      "value": 0.5
+                    }
+                  ],
+                  "out_ms": 3000,
+                  "source": {
+                    "kind": "image",
+                    "path": "C:/s.png"
+                  },
+                  "speed": [],
+                  "transform": [
+                    {
+                      "at_ms": 0,
+                      "ease": "linear",
+                      "value": {
+                        "x": 0.25,
+                        "y": -0.25,
+                        "zoom": 0.5
+                      }
+                    },
+                    {
+                      "at_ms": 3000,
+                      "ease": "hold",
+                      "value": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "zoom": 1.5
+                      }
+                    }
+                  ],
+                  "volume": []
+                }
+              ],
+              "id": 5,
+              "kind": "video",
+              "muted": false,
+              "name": "Stickers"
+            },
+            {
+              "clips": [
+                {
+                  "at_ms": 2500,
+                  "id": 8,
+                  "in_ms": 0,
+                  "opacity": [],
+                  "out_ms": 1500,
+                  "source": {
+                    "kind": "file",
+                    "path": "C:/boom.wav"
+                  },
+                  "speed": [],
+                  "transform": [],
+                  "volume": []
+                }
+              ],
+              "id": 7,
+              "kind": "audio",
+              "muted": true,
+              "name": "Sound"
+            },
+            {
+              "clips": [
+                {
+                  "at_ms": 0,
+                  "id": 10,
+                  "in_ms": 5000,
+                  "opacity": [],
+                  "out_ms": 65000,
+                  "source": {
+                    "kind": "file",
+                    "path": "C:/m.mp3"
+                  },
+                  "speed": [],
+                  "transform": [],
+                  "volume": [
+                    {
+                      "at_ms": 0,
+                      "ease": "linear",
+                      "value": 0.25
+                    },
+                    {
+                      "at_ms": 4000,
+                      "ease": "linear",
+                      "value": 1.0
+                    }
+                  ]
+                }
+              ],
+              "id": 9,
+              "kind": "music",
+              "muted": false,
+              "name": "Music"
+            }
+          ],
+          "transitions": [
+            {
+              "after_clip": 1,
+              "kind": "crossfade",
+              "ms": 1000,
+              "track": 3
+            },
+            {
+              "after_clip": 2,
+              "kind": "dip",
+              "ms": 500,
+              "track": 3
+            }
+          ]
+        },
+        "format": {
+          "crop_x": 0.5,
+          "kind": "wide"
+        },
+        "mode": "advanced",
+        "pieces": [],
+        "source_ms": 10000,
+        "text": [],
+        "version": 1,
+        "volumes": {
+          "game": 1.0,
+          "mic": 1.0
+        }
+      },
+      "source": {
+        "bookmarks_ms": [
+          2000
+        ],
+        "duration_ms": 10000,
+        "events": [],
+        "fps": 30.0,
+        "height": 720,
+        "width": 1280
+      }
+    },
+    {
+      "clips": [],
+      "expect": {
+        "colour": {
+          "brightness": 0.0,
+          "contrast": 1.0,
+          "saturation": 1.0
+        },
+        "crop": {
+          "height": 480,
+          "width": 270,
+          "x": 370,
+          "y": 0
+        },
+        "ducking": {
+          "attack_ms": 100,
+          "duck_db": -12.0,
+          "enabled": false,
+          "release_ms": 600
+        },
+        "duration_ms": 4000,
+        "layers": [
+          {
+            "at_ms": 0,
+            "end_ms": 4000,
+            "id": 1,
+            "kind": "video",
+            "muted": false,
+            "opacity": [],
+            "source": {
+              "kind": "main"
+            },
+            "speed": [
+              {
+                "at_ms": 0,
+                "rate_pct": 100
+              }
+            ],
+            "src_in_ms": 0,
+            "src_out_ms": 4000,
+            "track": 0,
+            "transform": [],
+            "volume": [],
+            "z": 0
+          },
+          {
+            "at_ms": 0,
+            "end_ms": 4000,
+            "id": 2,
+            "kind": "video",
+            "muted": true,
+            "opacity": [],
+            "source": {
+              "key": "gone",
+              "kind": "library"
+            },
+            "speed": [
+              {
+                "at_ms": 0,
+                "rate_pct": 25
+              }
+            ],
+            "src_in_ms": 0,
+            "src_out_ms": 1000,
+            "track": 1,
+            "transform": [],
+            "volume": [],
+            "z": 1
+          },
+          {
+            "at_ms": 3700,
+            "end_ms": 4000,
+            "id": 3,
+            "kind": "video",
+            "muted": true,
+            "opacity": [
+              {
+                "at_ms": 0,
+                "ease": "linear",
+                "value": 0.0
+              },
+              {
+                "at_ms": 300,
+                "ease": "linear",
+                "value": 1.0
+              }
+            ],
+            "source": {
+              "key": "gone",
+              "kind": "library"
+            },
+            "speed": [],
+            "src_in_ms": 0,
+            "src_out_ms": 300,
+            "track": 1,
+            "transform": [],
+            "volume": [],
+            "z": 1
+          }
+        ],
+        "main_volumes": {
+          "game": 0.0,
+          "mic": 2.0
+        },
+        "markers": [],
+        "source": {
+          "bookmarks_ms": [],
+          "duration_ms": 0,
+          "events": [],
+          "fps": null,
+          "height": 480,
+          "width": 640
+        },
+        "texts": []
+      },
+      "name": "Edges: unknown main length, a 25 % ramp, a transition longer than its clip, a missing clip",
+      "project": {
+        "advanced": {
+          "colour": {
+            "brightness": 0.0,
+            "contrast": 1.0,
+            "saturation": 1.0
+          },
+          "ducking": {
+            "attack_ms": 100,
+            "duck_db": -12.0,
+            "enabled": false,
+            "release_ms": 600
+          },
+          "markers": [],
+          "tracks": [
+            {
+              "clips": [
+                {
+                  "at_ms": 0,
+                  "id": 1,
+                  "in_ms": 0,
+                  "opacity": [],
+                  "out_ms": 1000,
+                  "source": {
+                    "key": "gone",
+                    "kind": "library"
+                  },
+                  "speed": [
+                    {
+                      "at_ms": 0,
+                      "rate_pct": 25
+                    }
+                  ],
+                  "transform": [],
+                  "volume": []
+                },
+                {
+                  "at_ms": 4000,
+                  "id": 2,
+                  "in_ms": 0,
+                  "opacity": [],
+                  "out_ms": 300,
+                  "source": {
+                    "key": "gone",
+                    "kind": "library"
+                  },
+                  "speed": [],
+                  "transform": [],
+                  "volume": []
+                }
+              ],
+              "id": 1,
+              "kind": "video",
+              "muted": true,
+              "name": "V"
+            }
+          ],
+          "transitions": [
+            {
+              "after_clip": 1,
+              "kind": "crossfade",
+              "ms": 5000,
+              "track": 1
+            }
+          ]
+        },
+        "format": {
+          "crop_x": 1.0,
+          "kind": "tall"
+        },
+        "mode": "advanced",
+        "pieces": [],
+        "source_ms": 4000,
+        "text": [],
+        "version": 1,
+        "volumes": {
+          "game": 0.0,
+          "mic": 2.0
+        }
+      },
+      "source": {
+        "bookmarks_ms": [],
+        "duration_ms": 0,
+        "events": [],
+        "fps": null,
+        "height": 480,
+        "width": 640
+      }
+    }
+  ]
+}

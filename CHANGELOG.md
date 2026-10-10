@@ -5,6 +5,17 @@ reason)`.
 
 ## Unreleased
 
+- M9.5.1 — Advanced mode's shared math on the front end: `keyframes.ts` gets the
+  placement math (`fitIn`/`fitContain`/`fitted`/`place`/`visible`, f32 values widened
+  like Rust) and the colour grade (`colourMatrix`, `svgColourMatrix`); `compose.ts`
+  ports `compose_with` (track 0 from Normal mode, Advanced tracks, transitions as
+  overlaps/fades, chapter markers); `advanced.ts` holds the types and the workspace's
+  edits (place/move/trim/split/remove clips, lane keys, speed points, transitions,
+  markers, colour, ducking, tracks) keeping `repair`'s invariants. New shared fixtures
+  `fixtures/advanced/{placement,compose}.json`: expectations written by Rust
+  (`KLIP_BLESS=1`), checked by Rust and vitest (both agree). `EditError` takes an
+  optional message. (Claude Opus 5.5: M9.5.1, so the preview's canvas draws what the
+  export draws)
 - M9.4 — Engine + control for Advanced mode. Montage projects: `editor.montage {path,
   add}` appends library clips whole on the first video track (`Advanced::append_clips`);
   `editor.project.get` lists the clips a project places (`clips: {key, name, status: ok

@@ -3,7 +3,26 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { type Keyframe, type SpeedPoint, type TransformKey, outputLength, sourceOffset, transformAt, valueAt } from './keyframes';
+import {
+  type Colour,
+  type Keyframe,
+  type PictureKind,
+  type Placement,
+  type SpeedPoint,
+  type Transform,
+  type TransformKey,
+  colourMatrix,
+  fitContain,
+  fitIn,
+  fitted,
+  outputLength,
+  place,
+  sourceOffset,
+  svgColourMatrix,
+  transformAt,
+  valueAt,
+  visible,
+} from './keyframes';
 
 const dir = new URL('../../../../crates/klip-edit/fixtures/advanced/', import.meta.url);
 const read = (name: string) => JSON.parse(readFileSync(new URL(name, dir), 'utf8')) as Record<string, unknown>;
@@ -35,5 +54,44 @@ describe('shared fixtures (crates/klip-edit/fixtures/advanced)', () => {
       expect(outputLength(points, src), `src=${src}`).toBe(want);
     }
     expect(outputLength([], 1234)).toBe(1234);
+  });
+});
+
+describe('placement fixture (crates/klip-edit/fixtures/advanced/placement.json)', () => {
+  const fx = read('placement.json') as Record<string, Record<string, unknown>[]>;
+
+  it('fits like klip-edit', () => {
+    for (const c of fx.fit!) {
+      const [w, h, mw, mh] = c.args as number[];
+      const want = c.expect as { fit_in: number[]; fit_contain: number[] };
+      expect(fitIn(w!, h!, mw!, mh!), JSON.stringify(c.args)).toEqual(want.fit_in);
+      expect(fitContain(w!, h!, mw!, mh!), JSON.stringify(c.args)).toEqual(want.fit_contain);
+    }
+    for (const c of fx.fitted!) {
+      const got = fitted(c.kind as PictureKind, c.main as boolean, c.native as [number, number], c.crop_w as number, c.canvas as [number, number]);
+      expect(got, JSON.stringify(c)).toEqual(c.expect);
+    }
+  });
+
+  it('places and clips like klip-edit', () => {
+    for (const c of fx.place!) {
+      const [fw, fh] = c.fit as number[];
+      const [ow, oh] = c.out as number[];
+      expect(place(c.t as Transform, fw!, fh!, ow!, oh!), JSON.stringify(c)).toEqual(c.expect);
+    }
+    for (const c of fx.visible!) {
+      const [sw, sh] = c.src as number[];
+      const [ow, oh] = c.out as number[];
+      expect(visible(c.p as Placement, sw!, sh!, ow!, oh!), JSON.stringify(c)).toEqual(c.expect);
+    }
+  });
+
+  it('grades like klip-edit', () => {
+    for (const c of fx.colour!) {
+      const got = colourMatrix(c.c as Colour).flat();
+      const want = (c.expect as number[][]).flat();
+      got.forEach((v, i) => expect(v, `${JSON.stringify(c.c)}[${i}]`).toBeCloseTo(want[i]!, 6));
+    }
+    expect(svgColourMatrix({ brightness: 0, contrast: 1, saturation: 1 })).toBe('1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0');
   });
 });

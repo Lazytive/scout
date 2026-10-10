@@ -67,9 +67,12 @@ export const SPEEDS: Speed[] = [0.5, 1, 2];
 export type EditErrorKind = 'unknown_duration' | 'bad_range' | 'nothing_left' | 'too_many_pieces';
 
 export class EditError extends Error {
-  constructor(public readonly kind: EditErrorKind) {
+  constructor(
+    public readonly kind: EditErrorKind,
+    message?: string,
+  ) {
     super(
-      {
+      message ?? {
         unknown_duration: "the clip's length isn't known yet",
         bad_range: 'the range is empty or outside the edit',
         nothing_left: 'that would remove the whole clip',

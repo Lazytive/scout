@@ -106,3 +106,118 @@ fn advanced_survives_a_normal_mode_round_trip() {
     assert!(!plain.has_advanced_edits());
     assert!(plain.to_value().unwrap().get("advanced").is_none());
 }
+
+/// `KLIP_BLESS=1`: write what Rust computes as each case's `expect` instead of checking.
+fn bless() -> bool {
+    std::env::var_os("KLIP_BLESS").is_some()
+}
+
+/// Equal, numbers within 1e-9 (serde_json's float parsing may differ in the last bit).
+fn same(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => {
+            (x.as_f64().unwrap() - y.as_f64().unwrap()).abs() <= 1e-9
+        }
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(a, b)| same(a, b))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| same(v, w)))
+        }
+        _ => a == b,
+    }
+}
+
+fn check(case: &mut Value, got: Value) {
+    if bless() {
+        case["expect"] = got;
+    } else {
+        assert!(
+            same(&case["expect"], &got),
+            "case {case}
+ got {got}"
+        );
+    }
+}
+
+fn save_if_blessed(name: &str, fx: &Value) {
+    if bless() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("advanced")
+            .join(name);
+        std::fs::write(path, serde_json::to_string_pretty(fx).unwrap() + "\n").unwrap();
+    }
+}
+
+fn u(v: &Value) -> u32 {
+    u32::try_from(v.as_u64().unwrap()).unwrap()
+}
+
+fn pair(v: &Value) -> (u32, u32) {
+    (u(&v[0]), u(&v[1]))
+}
+
+#[test]
+fn placement_matches_the_fixture() {
+    use klip_edit::compose::{Placement, fit_contain, fit_in, fitted, place, visible};
+    let mut fx = fixture("placement.json");
+    for case in fx["fit"].as_array_mut().unwrap() {
+        let a = case["args"].clone();
+        let (w, h, mw, mh) = (u(&a[0]), u(&a[1]), u(&a[2]), u(&a[3]));
+        let got = serde_json::json!({
+            "fit_in": fit_in(w, h, mw, mh),
+            "fit_contain": fit_contain(w, h, mw, mh),
+        });
+        check(case, got);
+    }
+    for case in fx["fitted"].as_array_mut().unwrap() {
+        let kind: klip_edit::LayerKind = serde_json::from_value(case["kind"].clone()).unwrap();
+        let got = fitted(
+            kind,
+            case["main"].as_bool().unwrap(),
+            pair(&case["native"]),
+            u(&case["crop_w"]),
+            pair(&case["canvas"]),
+        );
+        check(case, serde_json::json!(got));
+    }
+    for case in fx["place"].as_array_mut().unwrap() {
+        let t: Transform = serde_json::from_value(case["t"].clone()).unwrap();
+        let (fw, fh) = pair(&case["fit"]);
+        let (ow, oh) = pair(&case["out"]);
+        check(
+            case,
+            serde_json::to_value(place(t, fw, fh, ow, oh)).unwrap(),
+        );
+    }
+    for case in fx["visible"].as_array_mut().unwrap() {
+        let p: Placement = serde_json::from_value(case["p"].clone()).unwrap();
+        let (sw, sh) = pair(&case["src"]);
+        let (ow, oh) = pair(&case["out"]);
+        check(
+            case,
+            serde_json::to_value(visible(p, sw, sh, ow, oh)).unwrap(),
+        );
+    }
+    for case in fx["colour"].as_array_mut().unwrap() {
+        let c: klip_edit::advanced::Colour = serde_json::from_value(case["c"].clone()).unwrap();
+        check(case, serde_json::to_value(c.matrix()).unwrap());
+    }
+    save_if_blessed("placement.json", &fx);
+}
+
+#[test]
+fn compose_matches_the_fixture() {
+    let mut fx = fixture("compose.json");
+    for case in fx["cases"].as_array_mut().unwrap() {
+        let (project, issues) = klip_edit::Project::from_value(case["project"].clone());
+        assert!(issues.is_empty(), "{}: {issues:?}", case["name"]);
+        let source: klip_edit::SourceInfo = serde_json::from_value(case["source"].clone()).unwrap();
+        let clips: Vec<(String, klip_edit::SourceInfo)> =
+            serde_json::from_value(case["clips"].clone()).unwrap();
+        let comp = klip_edit::compose_with(&project, &source, &clips);
+        check(case, serde_json::to_value(&comp).unwrap());
+    }
+    save_if_blessed("compose.json", &fx);
+}
