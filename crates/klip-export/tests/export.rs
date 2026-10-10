@@ -16,6 +16,7 @@
 )]
 
 use std::path::{Path, PathBuf};
+use std::str::FromStr as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -893,4 +894,174 @@ fn diag_make_clip() {
     spec.markers = vec![2.0, 7.5];
     make_clip(&enc, &path, &spec);
     println!("wrote {}", path.display());
+}
+
+/// M9.1 spike (ADR 0018): can a compositor pipeline carry Advanced mode? Two 1080p60
+/// clips, the second zoomed by a keyframe (1x → 2x over 10 s) and crossfaded in over
+/// 1 s, composed by `compositor` (system memory; and `d3d11compositor` where it works)
+/// into the recorder's encode chain. Prints the throughput; the ADR wants ≥ 2x realtime.
+/// Not part of `cargo xtask e2e` (a diagnostic): `cargo test -p klip-export --release
+/// --test export -- --ignored diag_compositor_spike --nocapture`.
+#[test]
+#[ignore = "diagnostic: compositor throughput for ADR 0018"]
+fn diag_compositor_spike() {
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let seconds = 10u32;
+    let mut spec = ClipSpec::hd(seconds, 20_000);
+    spec.width = 1920;
+    spec.height = 1080;
+    let a = dir.path().join("a.mp4");
+    let b = dir.path().join("b.mp4");
+    make_clip(&enc, &a, &spec);
+    make_clip(&enc, &b, &spec);
+    for variant in ["compositor", "d3d11compositor"] {
+        match compose_spike(&enc, &a, &b, seconds, variant) {
+            Ok((elapsed, frames)) => println!(
+                "{variant}: {frames} frames of 1920x1080@60 in {:.2} s = {:.1}x realtime",
+                elapsed.as_secs_f64(),
+                f64::from(seconds) / elapsed.as_secs_f64()
+            ),
+            Err(e) => println!("{variant}: not usable here: {e}"),
+        }
+    }
+}
+
+fn compose_spike(
+    encoder: &EncoderChoice,
+    a: &Path,
+    b: &Path,
+    seconds: u32,
+    variant: &str,
+) -> Result<(Duration, usize), String> {
+    let (w, h) = (1920i32, 1080i32);
+    let pipeline = gst::Pipeline::new();
+    let comp = gst::ElementFactory::make(variant)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let d3d = variant == "d3d11compositor";
+    let out_caps = gst::ElementFactory::make("capsfilter").build().unwrap();
+    let caps = if d3d {
+        gst::Caps::from_str(&format!(
+            "video/x-raw(memory:D3D11Memory),width={w},height={h},framerate=60/1"
+        ))
+        .unwrap()
+    } else {
+        gst::Caps::from_str(&format!(
+            "video/x-raw,format=NV12,width={w},height={h},framerate=60/1"
+        ))
+        .unwrap()
+    };
+    out_caps.set_property("caps", &caps);
+    pipeline.add_many([&comp, &out_caps]).unwrap();
+    comp.link(&out_caps).map_err(|e| e.to_string())?;
+    let cfg = EncodeConfig {
+        encoder: encoder.clone(),
+        bitrate_kbps: 20_000,
+        keyframe_interval: FPS,
+        max_bitrate_kbps: None,
+        leaky_queue: false,
+    };
+    let chain = klip_capture::build_encode_chain(&pipeline, &cfg, w as u32, h as u32, FPS)
+        .map_err(|e| e.to_string())?;
+    if d3d {
+        out_caps.link(&chain.input).map_err(|e| e.to_string())?;
+    } else {
+        let up = gst::ElementFactory::make("d3d11upload")
+            .build()
+            .map_err(|e| e.to_string())?;
+        pipeline.add(&up).unwrap();
+        out_caps.link(&up).map_err(|e| e.to_string())?;
+        up.link(&chain.input).map_err(|e| e.to_string())?;
+    }
+    let sink = Arc::new(Collect::default());
+    let stats = Arc::new(CaptureStats::default());
+    let dyn_sink: Arc<dyn PacketSink> = sink.clone();
+    chain.attach(0, dyn_sink, stats, Timing::AsIs);
+
+    // Two sources: decodebin → queue → convert(+upload) → compositor pad.
+    for (i, path) in [a, b].into_iter().enumerate() {
+        let src = gst::ElementFactory::make("filesrc")
+            .property("location", path.to_string_lossy().as_ref())
+            .build()
+            .unwrap();
+        let dec = gst::ElementFactory::make("decodebin").build().unwrap();
+        let queue = gst::ElementFactory::make("queue").build().unwrap();
+        let conv = gst::ElementFactory::make("videoconvert").build().unwrap();
+        let tail: gst::Element = if d3d {
+            gst::ElementFactory::make("d3d11upload").build().unwrap()
+        } else {
+            gst::ElementFactory::make("identity").build().unwrap()
+        };
+        pipeline
+            .add_many([&src, &dec, &queue, &conv, &tail])
+            .unwrap();
+        src.link(&dec).unwrap();
+        gst::Element::link_many([&queue, &conv, &tail]).unwrap();
+        let pad = comp
+            .request_pad_simple("sink_%u")
+            .ok_or("no compositor pad")?;
+        tail.static_pad("src")
+            .unwrap()
+            .link(&pad)
+            .map_err(|e| format!("{e:?}"))?;
+        pad.set_property("zorder", i as u32);
+        if i == 1 {
+            // Keyframes: zoom 1x → 2x over the clip (centred), alpha 0 → 1 over 4–5 s.
+            let total_ns = u64::from(seconds) * NANOS_PER_SEC as u64;
+            pad.set_property("alpha", 0.0f64);
+            let comp_pad = pad.clone();
+            tail.static_pad("src")
+                .unwrap()
+                .add_probe(gst::PadProbeType::BUFFER, move |_, info| {
+                    if let Some(gst::PadProbeData::Buffer(buf)) = &info.data
+                        && let Some(pts) = buf.pts()
+                    {
+                        let t = pts.nseconds() as f64 / total_ns as f64;
+                        let zoom = 1.0 + t;
+                        let zw = (f64::from(w) * zoom) as i32;
+                        let zh = (f64::from(h) * zoom) as i32;
+                        comp_pad.set_property("width", zw);
+                        comp_pad.set_property("height", zh);
+                        comp_pad.set_property("xpos", (w - zw) / 2);
+                        comp_pad.set_property("ypos", (h - zh) / 2);
+                        let s = pts.seconds_f64();
+                        comp_pad.set_property("alpha", (s - 4.0).clamp(0.0, 1.0));
+                    }
+                    gst::PadProbeReturn::Ok
+                });
+        }
+        let qsink = queue.static_pad("sink").unwrap();
+        dec.connect_pad_added(move |_, p| {
+            if p.current_caps()
+                .and_then(|c| c.structure(0).map(|s| s.name().starts_with("video/")))
+                .unwrap_or(false)
+            {
+                let _ = p.link(&qsink);
+            }
+        });
+    }
+    let started = Instant::now();
+    pipeline
+        .set_state(gst::State::Playing)
+        .map_err(|e| e.to_string())?;
+    let bus = pipeline.bus().unwrap();
+    let msg = bus
+        .timed_pop_filtered(
+            Some(gst::ClockTime::from_seconds(120)),
+            &[gst::MessageType::Eos, gst::MessageType::Error],
+        )
+        .ok_or("no EOS within 120 s")?;
+    let elapsed = started.elapsed();
+    let r = match msg.view() {
+        gst::MessageView::Error(e) => Err(format!("{} ({:?})", e.error(), e.debug())),
+        _ => Ok(()),
+    };
+    pipeline.set_state(gst::State::Null).unwrap();
+    r?;
+    let frames = sink.packets.lock().unwrap().first().map_or(0, Vec::len);
+    if frames < usize::try_from(seconds * FPS).unwrap() * 9 / 10 {
+        return Err(format!("only {frames} frames came out"));
+    }
+    Ok((elapsed, frames))
 }

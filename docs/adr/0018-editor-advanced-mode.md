@@ -59,10 +59,13 @@ in text yet (M8.2), the in-memory muxing cap (IMPROVEMENTS G1).
   video, and a `editor.frame` command renders any single output frame through the real
   compositor for scrubbing and for the parity test (preview canvas vs engine frame,
   PSNR ≥ 35 dB on synthetic content).
-- **Spike first (M9.1).** Before building on option 2: a measured check that
-  `compositor`/`d3d11compositor` with two 1080p60 sources, keyframed zoom and a
-  crossfade sustains ≥ 2x realtime on the dev machine from the media worker. If it
-  doesn't, option 1 is taken for Advanced mode only, with the parity test unchanged.
+- **Spike first (M9.1): done, option 2 confirmed.** `diag_compositor_spike`
+  (`crates/klip-export/tests/export.rs`) composes two 1080p60 clips, the second zoomed
+  1x → 2x by a per-frame keyframe and crossfaded in, into the NVENC chain: `compositor`
+  (system memory) 4.6x realtime, `d3d11compositor` 8.4x, on the dev machine
+  (2026-10-10, i7-14700KF + RTX; software decode). Both clear the 2x bar, so Advanced
+  mode extends `klip-export`; `d3d11compositor` is the first choice on Windows with
+  `compositor` as the fallback (and Linux's path).
 - **Custom export** is `Preset::Custom {width, height, fps, bitrate_kbps, codec}` in
   `klip-export`, validated like the recording's custom quality.
 
