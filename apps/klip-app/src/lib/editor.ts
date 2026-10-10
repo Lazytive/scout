@@ -59,6 +59,46 @@ export const EXPORT_PRESETS: { id: ExportPreset; label: string; detail: string }
   { id: 'discord', label: 'Discord', detail: 'H.264 under the Discord size limit' },
 ];
 
+/** A Custom export's bounds (`klip_export::{MAX_SIDE, MAX_FPS, CUSTOM_KBPS}`). */
+export const CUSTOM_LIMITS = { side: [2, 4096], fps: [1, 240], kbps: [100, 200_000] } as const;
+
+export const CUSTOM_CODECS: { value: 'h264' | 'hevc' | 'av1'; label: string }[] = [
+  { value: 'h264', label: 'H.264' },
+  { value: 'hevc', label: 'HEVC' },
+  { value: 'av1', label: 'AV1' },
+];
+
+export interface CustomSettings {
+  width: number;
+  height: number;
+  fps: number;
+  bitrate_kbps: number;
+  codec: 'h264' | 'hevc' | 'av1';
+}
+
+function within(v: number, [lo, hi]: readonly [number, number]): number {
+  return Math.min(hi, Math.max(lo, Math.round(Number.isFinite(v) ? v : lo)));
+}
+
+/** Custom settings clamped to what the engine takes (even sides). */
+export function clampCustom(c: CustomSettings): CustomSettings {
+  const side = (v: number) => Math.max(2, within(v, CUSTOM_LIMITS.side) & ~1);
+  return {
+    width: side(c.width),
+    height: side(c.height),
+    fps: within(c.fps, CUSTOM_LIMITS.fps),
+    bitrate_kbps: within(c.bitrate_kbps, CUSTOM_LIMITS.kbps),
+    codec: CUSTOM_CODECS.some((x) => x.value === c.codec) ? c.codec : 'h264',
+  };
+}
+
+/** The other side for `side` keeping `w x h`'s aspect (even). */
+export function keepAspect(side: number, w: number, h: number, changed: 'width' | 'height'): number {
+  if (w <= 0 || h <= 0) return side;
+  const v = changed === 'width' ? (side * h) / w : (side * w) / h;
+  return Math.max(2, Math.round(v) & ~1);
+}
+
 /** How long a new text cue lasts. */
 export const TEXT_CUE_MS = 3_000;
 

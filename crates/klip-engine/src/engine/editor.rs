@@ -108,6 +108,8 @@ pub(super) struct Placed {
     /// `ok`, `missing` (no such file) or `unreadable`.
     pub status: &'static str,
     pub info: Option<SourceInfo>,
+    /// The clip's file, when it is there.
+    pub path: Option<PathBuf>,
 }
 
 /// A project with what the editor and the renderer need around it.
@@ -279,9 +281,9 @@ impl Inner {
         keys.into_iter()
             .map(|key| {
                 let file = library_file(lib, key).filter(|p| p.is_file());
-                let (status, info) = match file {
+                let (status, info) = match &file {
                     None => ("missing", None),
-                    Some(p) => match self.clip_info(lib, &p, key) {
+                    Some(p) => match self.clip_info(lib, p, key) {
                         Ok(i) => ("ok", Some(source_of(&i))),
                         Err(_) => ("unreadable", None),
                     },
@@ -290,6 +292,7 @@ impl Inner {
                     key: key.to_string(),
                     status,
                     info,
+                    path: file,
                 }
             })
             .collect()
@@ -430,6 +433,7 @@ impl Inner {
                     "name": c.key.rsplit('/').next().unwrap_or(&c.key),
                     "status": c.status,
                     "source": c.info,
+                    "path": c.path.as_ref().map(|p| p.to_string_lossy()),
                 })
             })
             .collect();

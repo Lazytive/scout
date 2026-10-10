@@ -1,17 +1,57 @@
 <!--
-  The export dialog: pick a preset, watch the passes go by, then "Show in folder".
+  The export dialog: pick a preset (or Custom: size, frame rate, bitrate, codec, kept
+  per viewer), watch the passes go by, then "Show in folder".
   Everything it shows comes from the editor store (export.start / export_progress /
   export_done); closing while an export runs leaves it running.
 -->
 <script lang="ts">
-  import { EXPORT_PRESETS, progressPct } from '../lib/editor';
-  import type { ExportPreset } from '../lib/editor';
+  import { CUSTOM_CODECS, CUSTOM_LIMITS, EXPORT_PRESETS, clampCustom, keepAspect, outputSize, progressPct } from '../lib/editor';
+  import type { CustomSettings, ExportPreset } from '../lib/editor';
   import { cancelExport, ed, revealPath, startExport } from '../lib/editor.svelte';
+  import NumberField from '../lib/forms/NumberField.svelte';
+  import Segmented from '../lib/forms/Segmented.svelte';
+  import Toggle from '../lib/forms/Toggle.svelte';
   import { formatBytes, formatDuration } from '../lib/format';
 
   let { limitMb, onclose }: { limitMb: number; onclose: () => void } = $props();
 
-  let preset = $state<ExportPreset>('youtube');
+  const CUSTOM_KEY = 'klip.export.custom';
+  /** The edit's own size and rate: where Custom starts. */
+  const base = $derived.by(() => {
+    const p = ed.project;
+    const s = ed.source;
+    const size = p && s ? outputSize(p.format.kind, p.format.crop_x, s.width, s.height) : { width: 1920, height: 1080 };
+    return { ...size, fps: Math.round(s?.fps ?? 60) || 60 };
+  });
+
+  function loadCustom(): CustomSettings {
+    const d: CustomSettings = { width: base.width, height: base.height, fps: base.fps, bitrate_kbps: 20_000, codec: 'h264' };
+    try {
+      const raw = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? 'null') as Partial<CustomSettings> | null;
+      if (raw && typeof raw === 'object') return clampCustom({ ...d, ...raw, width: d.width, height: d.height });
+    } catch {
+      // Defaults.
+    }
+    return d;
+  }
+
+  let preset = $state<ExportPreset | 'custom'>('youtube');
+  let custom = $state<CustomSettings>(loadCustom());
+  let lockAspect = $state(true);
+
+  function setCustom(patch: Partial<CustomSettings>, changed?: 'width' | 'height') {
+    let next = { ...custom, ...patch };
+    if (lockAspect && changed) {
+      const other = keepAspect(changed === 'width' ? next.width : next.height, base.width, base.height, changed);
+      next = changed === 'width' ? { ...next, height: other } : { ...next, width: other };
+    }
+    custom = clampCustom(next);
+    try {
+      localStorage.setItem(CUSTOM_KEY, JSON.stringify({ fps: custom.fps, bitrate_kbps: custom.bitrate_kbps, codec: custom.codec }));
+    } catch {
+      // Not kept; fine.
+    }
+  }
   let dialog = $state<HTMLDivElement | null>(null);
 
   const run = $derived(ed.exporting);
@@ -47,7 +87,31 @@
           <span class="detail muted">{p.id === 'discord' ? `H.264 under ${limitMb} MB (Settings → Export)` : p.detail}</span>
         </label>
       {/each}
+      <label class="preset" class:on={preset === 'custom'}>
+        <input type="radio" name="preset" value="custom" checked={preset === 'custom'} disabled={run !== null} onchange={() => (preset = 'custom')} />
+        <span class="name">Custom</span>
+        <span class="detail muted">{custom.width}×{custom.height} · {custom.fps} fps · {Math.round(custom.bitrate_kbps / 100) / 10} Mbit/s · {CUSTOM_CODECS.find((c) => c.value === custom.codec)?.label}</span>
+      </label>
     </div>
+
+    {#if preset === 'custom'}
+      <div class="custom">
+        <span class="label">Size</span>
+        <span class="pair">
+          <NumberField label="Width" value={custom.width} min={CUSTOM_LIMITS.side[0]} max={CUSTOM_LIMITS.side[1]} step={2} unit="×" disabled={run !== null} onchange={(v) => setCustom({ width: v }, 'width')} />
+          <NumberField label="Height" value={custom.height} min={CUSTOM_LIMITS.side[0]} max={CUSTOM_LIMITS.side[1]} step={2} disabled={run !== null} onchange={(v) => setCustom({ height: v }, 'height')} />
+        </span>
+        <span></span>
+        <Toggle label="Keep the edit's shape" checked={lockAspect} onchange={(v) => (lockAspect = v)} />
+        <span class="label">Frame rate</span>
+        <NumberField label="Frame rate" value={custom.fps} min={CUSTOM_LIMITS.fps[0]} max={CUSTOM_LIMITS.fps[1]} step={1} unit="fps" disabled={run !== null} onchange={(v) => setCustom({ fps: v })} />
+        <span class="label">Bitrate</span>
+        <NumberField label="Bitrate" value={custom.bitrate_kbps} min={CUSTOM_LIMITS.kbps[0]} max={CUSTOM_LIMITS.kbps[1]} step={500} unit="kbit/s" disabled={run !== null} onchange={(v) => setCustom({ bitrate_kbps: v })} />
+        <span class="label">Codec</span>
+        <Segmented label="Codec" value={custom.codec} options={CUSTOM_CODECS} onchange={(v) => setCustom({ codec: v })} />
+      </div>
+      <p class="muted hint">HEVC and AV1 need a graphics card that encodes them; the export says so if yours doesn't.</p>
+    {/if}
 
     {#if run}
       <div class="progress" role="status">
@@ -84,7 +148,7 @@
       {/if}
       <span class="grow"></span>
       <button onclick={onclose}>Close</button>
-      <button class="primary" disabled={run !== null} onclick={() => void startExport(preset)}>
+      <button class="primary" disabled={run !== null} onclick={() => void (preset === 'custom' ? startExport('custom', custom) : startExport(preset))}>
         {result ? 'Export again' : 'Export'}
       </button>
     </div>
@@ -92,6 +156,26 @@
 </div>
 
 <style>
+  .custom {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin: var(--space-2) 0;
+  }
+  .custom .label {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+  .pair {
+    display: inline-flex;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  .hint {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-sm);
+  }
   .scrim {
     position: fixed;
     inset: 0;

@@ -465,6 +465,11 @@ fn montage_missing_clips_history_and_rename() {
         (&json!("ok"), &json!("B.mp4"))
     );
     assert_eq!(clips[0]["source"]["duration_ms"], 3_000);
+    assert!(
+        PathBuf::from(clips[0]["path"].as_str().unwrap()).ends_with("Game/B.mp4"),
+        "{}",
+        clips[0]["path"]
+    );
     assert!(project_file(dir.path(), "Game/A.mp4").is_file());
     assert!(
         !history_dir(dir.path(), "Game/A.mp4").exists(),

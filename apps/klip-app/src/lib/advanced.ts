@@ -221,10 +221,10 @@ function sortClips(track: Track): void {
 
 const TRACK_NAMES: Record<TrackKind, string> = { video: 'Video', text: 'Text', audio: 'Sound', music: 'Music' };
 
-function newTrack(a: Advanced, kind: TrackKind): Track {
+function newTrack(a: Advanced, kind: TrackKind, base = TRACK_NAMES[kind]): Track {
   if (a.tracks.length >= MAX_TRACKS) throw new EditError('too_many_pieces', `A project has at most ${MAX_TRACKS} tracks`);
-  const n = a.tracks.filter((t) => t.kind === kind).length + 1;
-  const track: Track = { id: nextTrackId(a), kind, name: `${TRACK_NAMES[kind]} ${n}`, muted: false, clips: [] };
+  const n = a.tracks.filter((t) => t.name.startsWith(base)).length + 1;
+  const track: Track = { id: nextTrackId(a), kind, name: n === 1 ? base : `${base} ${n}`, muted: false, clips: [] };
   a.tracks.push(track);
   return track;
 }
@@ -251,7 +251,10 @@ export function addClip(p: Project, kind: TrackKind, source: Source, inMs: numbe
   const len = end - start;
   let track = trackId === undefined ? undefined : a.tracks.find((t) => t.id === trackId);
   if (track && (track.kind !== kind || overlaps(track, at, at + len, null))) track = undefined;
-  track ??= a.tracks.find((t) => t.kind === kind && !overlaps(t, at, at + len, null)) ?? newTrack(a, kind);
+  // Pictures go on picture tracks (over the video), videos on video tracks.
+  const picture = source.kind === 'image';
+  const sameSort = (t: Track) => t.clips.length > 0 && t.clips.every((c) => (c.source.kind === 'image') === picture);
+  track ??= a.tracks.find((t) => t.kind === kind && sameSort(t) && !overlaps(t, at, at + len, null)) ?? newTrack(a, kind, picture ? 'Stickers' : undefined);
   if (track.clips.length >= MAX_CLIPS) throw new EditError('too_many_pieces', `A track holds at most ${MAX_CLIPS} clips`);
   const id = nextClipId(a);
   track.clips.push({ id, source, in_ms: start, out_ms: end, at_ms: at, transform: [], opacity: [], volume: [], speed: [] });

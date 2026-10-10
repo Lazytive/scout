@@ -1,69 +1,72 @@
 <!--
-  The Editor workspace (ADR 0017, Normal mode): tools on the left (format, speed,
+  The Editor workspace. Normal mode (ADR 0017): tools on the left (format, speed,
   split/cut/trim, text presets, volumes, templates, mode), the preview and the
-  filmstrip in the middle, the export on the right. Every edit is saved to the engine
-  after a moment; Ctrl+Z / Ctrl+Y undo and redo; Space plays; S splits; Delete cuts the
+  filmstrip in the middle, the export on the right. Advanced mode (ADR 0018, M9.5):
+  `editor/advanced/Workspace.svelte`. The mode switches live; Normal mode keeps
+  Advanced edits and says so with a badge. Every edit is saved to the engine after a
+  moment; Ctrl+Z / Ctrl+Y undo and redo; Space plays; S splits; Delete cuts the
   selection; arrow keys step a frame.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  import Workspace from './editor/advanced/Workspace.svelte';
   import ExportDialog from './editor/ExportDialog.svelte';
   import Filmstrip from './editor/Filmstrip.svelte';
+  import NormalTools from './editor/NormalTools.svelte';
   import Preview from './editor/Preview.svelte';
   import type { Overlay } from './editor/Preview.svelte';
+  import { hasAdvancedEdits } from './lib/advanced';
   import { call, thumbUrl } from './lib/api';
-  import { FORMATS, POSITIONS, SPEED_OPTIONS, TEXT_PRESETS, outputSize, trimText } from './lib/editor';
+  import { outputSize } from './lib/editor';
   import {
-    addText,
-    applyTemplate,
     closeEditor,
     cutSelection,
     ed,
+    edit,
+    editDuration,
     redo,
     removeText,
     requestMedia,
     seek,
     select,
     setCropX,
-    setFormat,
-    setVolumes,
-    speedSelection,
     splitAtPlayhead,
     trimEnd,
     trimStart,
-    trimToSelection,
     undo,
     updateText,
   } from './lib/editor.svelte';
-  import Segmented from './lib/forms/Segmented.svelte';
-  import Select from './lib/forms/Select.svelte';
-  import Slider from './lib/forms/Slider.svelte';
   import { formatTimecode } from './lib/format';
   import Panel from './lib/Panel.svelte';
   import { app } from './lib/store.svelte';
-  import type { Speed } from './lib/timeline';
   import { outputDurationMs } from './lib/timeline';
 
   const clip = $derived(ed.clip);
   const project = $derived(ed.project);
   const source = $derived(ed.source);
+  const advanced = $derived(project?.mode === 'advanced');
   const duration = $derived(project ? outputDurationMs(project) : 0);
   const strip = $derived(clip?.thumbs.strip ? thumbUrl('strip', clip.key, clip.thumbs.strip) : null);
-  const selectedText = $derived(project?.text.find((t) => t.id === ed.textId) ?? null);
   const limitMb = $derived(app.settings?.export.discord_limit_mb ?? 10);
   const frameMs = $derived(source?.fps ? Math.max(1, Math.round(1000 / source.fps)) : 17);
+  const badge = $derived(project !== null && !advanced && hasAdvancedEdits(project));
+
+  function setMode(mode: 'normal' | 'advanced') {
+    if (!project || project.mode === mode) return;
+    ed.playing = false;
+    edit((p) => {
+      p.mode = mode;
+    }, mode === 'advanced' ? 'Advanced mode' : 'Normal mode');
+  }
 
   // Text cues as the engine draws them, re-rendered when a layer or the format changes.
-  let overlays = $state<Overlay[]>([]);
   let renderTimer: ReturnType<typeof setTimeout> | null = null;
-  const renderKey = $derived(
-    project && source ? JSON.stringify([project.text, project.format, source.width, source.height]) : '',
-  );
+  const renderKey = $derived(project && source ? JSON.stringify([project.text, project.format, source.width, source.height]) : '');
   $effect(() => {
     const key = renderKey;
     if (!key || !clip || !project || !source) {
-      overlays = [];
+      ed.cues = [];
       return;
     }
     if (renderTimer) clearTimeout(renderTimer);
@@ -94,12 +97,11 @@
         // A layer that can't be drawn is simply not shown.
       }
     }
-    if (renderKey === key) overlays = next;
+    if (renderKey === key) ed.cues = next;
   }
 
-  let exportOpen = $state(false);
-
   function keydown(e: KeyboardEvent) {
+    if (advanced) return;
     const target = e.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -144,7 +146,7 @@
         seek(duration - 1);
         break;
       case 'Escape':
-        if (exportOpen) exportOpen = false;
+        if (ed.exportOpen) ed.exportOpen = false;
         else if (ed.selection) ed.selection = null;
         else ed.textId = null;
         break;
@@ -158,117 +160,75 @@
 
 <svelte:window onkeydown={keydown} />
 
-<div class="workspace">
-  <div class="left">
-    <Panel tabs={['Edit']}>
+{#snippet exportFacts()}
+  {#if project && source}
+    {@const out = outputSize(project.format.kind, project.format.crop_x, source.width, source.height)}
+    <dl class="facts">
+      <dt>Length</dt>
+      <dd class="mono">{formatTimecode(advanced ? editDuration() : duration)}</dd>
+      {#if advanced}
+        <dt>Clips</dt>
+        <dd class="mono">{1 + ed.clips.length}</dd>
+      {:else}
+        <dt>Pieces</dt>
+        <dd class="mono">{Math.max(1, project.pieces.length)}</dd>
+      {/if}
+      <dt>Text</dt>
+      <dd class="mono">{project.text.length}</dd>
+      <dt>Output</dt>
+      <dd class="mono">{out.width}×{out.height}</dd>
+    </dl>
+    {#if ed.clips.some((c) => c.status !== 'ok')}
+      <p class="error" role="alert">
+        Missing: {ed.clips.filter((c) => c.status !== 'ok').map((c) => c.name).join(', ')}. Put them back (or remove them) to export.
+      </p>
+    {/if}
+    <button class="primary wide" onclick={() => (ed.exportOpen = true)}>Export…</button>
+    {#if ed.exporting}
+      <p class="muted">Exporting ({ed.exporting.preset})…</p>
+    {:else if ed.exportResult?.ok}
+      <p class="muted">Saved as <span class="mono">{ed.exportResult.path}</span></p>
+    {/if}
+    {#if ed.issues.length > 0}
+      <p class="hint muted">Repaired: {ed.issues.join('; ')}</p>
+    {/if}
+  {/if}
+{/snippet}
+
+{#if project && source && advanced}
+  <Workspace {project} onmode={setMode} {exportFacts} />
+{:else}
+  <div class="workspace">
+    <div class="left">
+      <Panel tabs={['Edit']}>
         {#if project && source}
-          <section>
-            <h3>Format</h3>
-            <Segmented value={project.format.kind} options={FORMATS} label="Format" onchange={(v) => setFormat(v)} />
-            {#if project.format.kind === 'tall'}
-              <p class="hint muted">Drag the window on the preview to choose what the 9:16 shows.</p>
-            {/if}
-          </section>
-          <section>
-            <h3>Cut</h3>
-            <div class="row">
-              <button onclick={splitAtPlayhead} title="Split at the playhead (S)">Split</button>
-              <button disabled={!ed.selection} onclick={cutSelection} title="Remove the selection (Delete)">Cut</button>
-              <button disabled={!ed.selection} onclick={trimToSelection} title="Keep only the selection">Keep</button>
-            </div>
-            <p class="hint muted">
-              {#if ed.selection}
-                Selected {formatTimecode(ed.selection.start)} – {formatTimecode(ed.selection.end)}
-              {:else}
-                Drag on the filmstrip to select; drag its ends to trim.
-              {/if}
-            </p>
-          </section>
-          <section>
-            <h3>Speed</h3>
-            <div class="row">
-              {#each SPEED_OPTIONS as s (s.value)}
-                <button disabled={!ed.selection} onclick={() => speedSelection(s.value as Speed)}>{s.label}</button>
-              {/each}
-            </div>
-            <p class="hint muted">Applies to the selection; the pitch stays.</p>
-          </section>
-          <section>
-            <h3>Text</h3>
-            <div class="row wrap">
-              {#each TEXT_PRESETS as t (t.id)}
-                <button onclick={() => addText(t.id)} title={t.hint}>+ {t.label}</button>
-              {/each}
-            </div>
-            {#if selectedText}
-              <div class="text-edit">
-                <textarea
-                  rows="2"
-                  maxlength="200"
-                  value={selectedText.text}
-                  aria-label="Text"
-                  oninput={(e) => updateText(selectedText.id, { text: trimText((e.currentTarget as HTMLTextAreaElement).value) })}
-                ></textarea>
-                <Select
-                  label="Style"
-                  value={selectedText.preset}
-                  options={TEXT_PRESETS.map((t) => ({ value: t.id, label: t.label }))}
-                  onchange={(v) => updateText(selectedText.id, { preset: String(v) })}
-                />
-                <Segmented
-                  value={selectedText.position}
-                  options={POSITIONS}
-                  label="Position"
-                  onchange={(v) => updateText(selectedText.id, { position: v })}
-                />
-                <p class="hint muted mono">
-                  {formatTimecode(selectedText.start_ms)} – {formatTimecode(selectedText.end_ms)}
-                </p>
-                <div class="row">
-                  <button onclick={() => updateText(selectedText.id, { start_ms: ed.playhead, end_ms: ed.playhead + (selectedText.end_ms - selectedText.start_ms) })}>
-                    Start here
-                  </button>
-                  <button onclick={() => updateText(selectedText.id, { end_ms: Math.max(ed.playhead + 1, selectedText.start_ms + 1) })}>End here</button>
-                  <button class="danger" onclick={() => removeText(selectedText.id)}>Remove</button>
-                </div>
-              </div>
-            {:else if project.text.length > 0}
-              <p class="hint muted">Click a cue on the filmstrip to edit it.</p>
-            {/if}
-          </section>
-          <section>
-            <h3>Sound</h3>
-            <Slider label="Game" value={project.volumes.game} min={0} max={2} step={0.05} format={(v) => `${Math.round(v * 100)} %`} onchange={(v) => setVolumes(v, project.volumes.mic)} />
-            <Slider label="Mic" value={project.volumes.mic} min={0} max={2} step={0.05} format={(v) => `${Math.round(v * 100)} %`} onchange={(v) => setVolumes(project.volumes.game, v)} />
-          </section>
-          <section>
-            <h3>Templates</h3>
-            <button onclick={() => applyTemplate('shorts')} title="9:16, centred, the clip's name as a caption">Shorts</button>
-          </section>
+          <NormalTools {project} />
           <section>
             <h3>Mode</h3>
-            <Segmented
-              value={project.mode}
-              options={[
-                { value: 'normal', label: 'Normal' },
-                { value: 'advanced', label: 'Advanced' },
-              ]}
-              label="Mode"
-              onchange={() => {}}
-            />
-            <p class="hint muted">Advanced mode (tracks, keyframes, montage) comes with M9.</p>
+            <div class="mode" role="group" aria-label="Mode">
+              <button class="flat on" aria-pressed="true">Normal</button>
+              <button class="flat" onclick={() => setMode('advanced')}>Advanced</button>
+            </div>
+            {#if badge}
+              <p class="badge" title="Tracks, keyframes, a montage, colour or markers made in Advanced mode. They are kept and exported; switch to Advanced to see them.">
+                Advanced edits
+              </p>
+            {:else}
+              <p class="hint muted">Advanced: tracks, keyframes, montages, stickers, music, colour.</p>
+            {/if}
           </section>
         {:else if ed.loading}
           <p class="muted">Loading…</p>
         {/if}
-    </Panel>
-  </div>
+      </Panel>
+    </div>
 
-  <div class="center">
-    <Panel tabs={[clip?.name ?? 'Editor']}>
-      {#snippet actions()}
-        <button class="flat" onclick={closeEditor}>← Library</button>
-      {/snippet}
+    <div class="center">
+      <Panel tabs={[clip?.name ?? 'Editor']}>
+        {#snippet actions()}
+          {#if badge}<span class="badge small" title="This project has Advanced-mode edits; they are kept and exported">Advanced edits</span>{/if}
+          <button class="flat" onclick={closeEditor}>← Library</button>
+        {/snippet}
         {#if clip && project && source}
           <div class="stage">
             <Preview
@@ -279,7 +239,8 @@
               {project}
               playhead={ed.playhead}
               playing={ed.playing}
-              {overlays}
+              overlays={ed.cues}
+              tracks={ed.tracks.flatMap((t) => (t.url ? [{ name: t.name, url: t.url }] : []))}
               onplayhead={(ms) => (ed.playhead = ms)}
               onended={() => (ed.playing = false)}
               oncrop={setCropX}
@@ -293,8 +254,8 @@
               <span class="grow"></span>
               {#if ed.media.status === 'making'}<span class="muted">Making a preview…</span>{/if}
               {#if ed.saving}<span class="muted">Saving…</span>{:else if ed.dirty}<span class="muted">Edited</span>{/if}
-              <button class="flat" disabled={ed.undo.length === 0} onclick={undo} title="Undo (Ctrl+Z)">Undo</button>
-              <button class="flat" disabled={ed.redo.length === 0} onclick={redo} title="Redo (Ctrl+Y)">Redo</button>
+              <button class="flat" disabled={ed.undo.length === 0} onclick={() => undo()} title="Undo (Ctrl+Z)">Undo</button>
+              <button class="flat" disabled={ed.redo.length === 0} onclick={() => redo()} title="Redo (Ctrl+Y)">Redo</button>
             </div>
             <Filmstrip
               {strip}
@@ -323,47 +284,21 @@
         {:else}
           <p class="muted">Loading…</p>
         {/if}
-    </Panel>
-  </div>
+      </Panel>
+    </div>
 
-  <div class="right">
-    <Panel tabs={['Export']}>
-        {#if project && source}
-          <dl class="facts">
-            <dt>Length</dt>
-            <dd class="mono">{formatTimecode(duration)}</dd>
-            <dt>Pieces</dt>
-            <dd class="mono">{Math.max(1, project.pieces.length)}</dd>
-            <dt>Text</dt>
-            <dd class="mono">{project.text.length}</dd>
-            <dt>Output</dt>
-            <dd class="mono">
-              {outputSize(project.format.kind, project.format.crop_x, source.width, source.height).width}×{outputSize(
-                project.format.kind,
-                project.format.crop_x,
-                source.width,
-                source.height,
-              ).height}
-            </dd>
-          </dl>
-          <button class="primary wide" onclick={() => (exportOpen = true)}>Export…</button>
-          {#if ed.exporting}
-            <p class="muted">Exporting ({ed.exporting.preset})…</p>
-          {:else if ed.exportResult?.ok}
-            <p class="muted">Saved as <span class="mono">{ed.exportResult.path}</span></p>
-          {/if}
-          {#if ed.issues.length > 0}
-            <p class="hint muted">Repaired: {ed.issues.join('; ')}</p>
-          {/if}
-          {#if ed.error}<p class="error" role="alert">{ed.error}</p>{/if}
-        {/if}
-    </Panel>
+    <div class="right">
+      <Panel tabs={['Export']}>
+        {@render exportFacts()}
+        {#if ed.error}<p class="error" role="alert">{ed.error}</p>{/if}
+      </Panel>
+    </div>
   </div>
+{/if}
 
-  {#if exportOpen}
-    <ExportDialog {limitMb} onclose={() => (exportOpen = false)} />
-  {/if}
-</div>
+{#if ed.exportOpen}
+  <ExportDialog {limitMb} onclose={() => (ed.exportOpen = false)} />
+{/if}
 
 <style>
   .workspace {
@@ -400,32 +335,34 @@
     letter-spacing: 0.06em;
     color: var(--text-muted);
   }
-  .row {
-    display: flex;
-    gap: var(--space-2);
-  }
-  .row.wrap {
-    flex-wrap: wrap;
-  }
   .hint {
     margin: 0;
     font-size: var(--text-sm);
   }
-  .text-edit {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  textarea {
-    width: 100%;
-    resize: vertical;
-    background: var(--input);
-    color: var(--text);
-    border: 1px solid var(--border-strong);
+  .mode {
+    display: inline-flex;
+    align-self: flex-start;
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: var(--space-2);
-    font: inherit;
-    user-select: text;
+    overflow: hidden;
+  }
+  .mode .on {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .badge {
+    margin: 0;
+    align-self: flex-start;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--warn) 22%, transparent);
+    color: var(--warn);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+  .badge.small {
+    font-size: var(--text-xs);
+    padding: 1px 6px;
   }
   .stage {
     display: flex;
@@ -465,7 +402,7 @@
     color: var(--bad);
     font-size: var(--text-sm);
   }
-  .danger {
-    color: var(--bad);
+  .mono {
+    font-family: var(--font-mono);
   }
 </style>

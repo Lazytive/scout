@@ -5,6 +5,30 @@ reason)`.
 
 ## Unreleased
 
+- M9.5.4–6 — The Advanced workspace. Preview (`src/editor/advanced/player.ts`,
+  `Canvas.svelte`): the composition drawn on a canvas with the export's numbers
+  (`fitted`/`place`/`visible`, opacity, the grade through an SVG `feColorMatrix` with
+  `color-interpolation-filters="sRGB"`, text cues on top), one muted `<video>` per
+  playing layer kept in step with a wall clock (resync past 120 ms, layers within 1.2 s
+  seeked ahead, paused frames by seeking), strip tiles when nothing plays (the mock).
+  Sound (`sound.ts`): every sound track through Web Audio, weighed like
+  `mixer::volume_for` (Game/Mic sliders for the main clip, Mix only without separate
+  tracks), the layers' volume keys, muted tracks silent, music ducking under the voice
+  (analyser RMS over −45 dBFS, attack/release as time constants). Normal mode's preview
+  plays the clip's tracks the same way (`FollowSound`), so **the Game/Mic sliders are
+  heard now** (the M8 bug). Workspace (`Workspace.svelte`): Media (montage from the
+  library via `editor.montage`; sticker/sound/music files), Effects (colour, ducking,
+  markers), Main clip (Normal mode's tools, `NormalTools.svelte`), the canvas with a
+  drag/scroll frame for the selected clip, transport with J/K/L shuttle, Inspector
+  (start, zoom/x/y/opacity/volume at the playhead with key toggles, speed points,
+  transition into the next clip, track), History (labelled undo steps to jump to, saved
+  versions to restore), Export; multi-track timeline (`Timeline.svelte`: ruler and
+  markers, tracks, drag/trim with snapping, key and speed lanes); swap sides and resize
+  (kept per viewer). The mode switches live; Normal mode shows an "Advanced edits"
+  badge. Undo steps have labels; drags and slider moves are one step each. Custom export
+  in the dialog (size with the edit's shape kept, fps, bitrate, codec; ranges as the
+  engine's). The engine's `clips` list carries each clip's `path`. (Claude Opus 5.5:
+  M9.5.4–6)
 - M9.5.3 — What the preview needs to play a montage and its sound. `editor.audio
   {path}`: the clip's audio tracks copied one per file (`klip_export::audio::
   split_audio`: `qtdemux` → `mp4mux`, no re-encode, in the media worker as an

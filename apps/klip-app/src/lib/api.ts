@@ -72,6 +72,36 @@ export async function pickFolder(current: string | null): Promise<string | null>
   return typeof picked === 'string' ? picked : null;
 }
 
+/** Picture and sound extensions the editor takes (the engine checks the same). */
+export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'];
+export const SOUND_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac', 'mp4', 'webm'];
+
+/** Demo files the browser mock offers instead of a file picker. */
+const DEMO_FILES: Record<'image' | 'audio', string> = {
+  image: 'C:/Users/You/Pictures/Klip demo sticker.png',
+  audio: 'C:/Users/You/Music/Klip demo sound.wav',
+};
+
+const DEMO_STICKER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect x="6" y="6" width="388" height="188" rx="40" fill="#ffd60a" stroke="#000" stroke-width="12"/><text x="200" y="128" text-anchor="middle" font-family="sans-serif" font-weight="900" font-size="84">GG!</text></svg>',
+)}`;
+
+/** Ask for a picture or a sound file (the system's picker in the app; a demo file in a browser). */
+export async function pickMediaFile(kind: 'image' | 'audio'): Promise<string | null> {
+  if (!inTauri) return DEMO_FILES[kind];
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const picked = await open({
+    directory: false,
+    multiple: false,
+    filters: [
+      kind === 'image'
+        ? { name: 'Pictures', extensions: IMAGE_EXTENSIONS }
+        : { name: 'Sound', extensions: SOUND_EXTENSIONS },
+    ],
+  });
+  return typeof picked === 'string' ? picked : null;
+}
+
 export type ThumbKind = 'poster' | 'strip';
 
 let thumbProvider: ((kind: ThumbKind, key: string, v: number) => string) | null = null;
@@ -119,7 +149,7 @@ async function viaTauri<T>(path: string, what: 'proxy' | 'audio' | 'files'): Pro
 
 /** A file the engine named, as a URL the page can load (Tauri's asset protocol). */
 export async function fileUrl(path: string): Promise<string | null> {
-  if (!inTauri) return null;
+  if (!inTauri) return path === DEMO_FILES.image ? DEMO_STICKER : null;
   const core = await import('@tauri-apps/api/core');
   return core.convertFileSrc(path);
 }

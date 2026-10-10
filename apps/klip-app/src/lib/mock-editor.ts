@@ -108,7 +108,7 @@ export function mockEditor(emit: (e: KlipEvent) => void, allClips: () => LibClip
     for (const t of readAdvanced(project).tracks) for (const c of t.clips) if (c.source.kind === 'library') keys.add(c.source.key);
     return [...keys].map((key) => {
       const c = byKey(key);
-      return c ? { key, name: c.name, status: 'ok', source: sourceOf(c) } : { key, name: key, status: 'missing', source: null };
+      return c ? { key, name: c.name, status: 'ok', source: sourceOf(c), path: c.path } : { key, name: key, status: 'missing', source: null, path: null };
     });
   };
   const infos = (project: Project): [string, SourceInfo][] =>

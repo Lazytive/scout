@@ -1,16 +1,21 @@
 <!--
   The editor's preview: the clip (or its proxy) in a <video>, played along the OUTPUT
   timeline (segments seeked in order at their speed), the 9:16 crop window to drag, and
-  the text cues as the engine renders them. Without playable media (the mock, an
-  unplayable codec) the strip picture of the current frame stands in.
+  the text cues as the engine renders them. The sound is the clip's tracks following
+  the video through Web Audio (`FollowSound`), so the Game/Mic sliders are heard. Without
+  playable media (the mock, an unplayable codec) the strip picture of the current frame
+  stands in.
 -->
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+
   import { cropRect, msToPct, tileFor } from '../lib/editor';
   import type { SourceInfo } from '../lib/editor';
   import { formatTimecode } from '../lib/format';
   import { stripPosition } from '../lib/library';
   import type { Project } from '../lib/timeline';
   import { outputDurationMs, outputTime, segments, sourceTime } from '../lib/timeline';
+  import { FollowSound } from './advanced/sound';
 
   export interface Overlay {
     id: number;
@@ -34,6 +39,7 @@
     playhead,
     playing,
     overlays,
+    tracks = [],
     onplayhead,
     onended,
     oncrop,
@@ -46,6 +52,8 @@
     playhead: number;
     playing: boolean;
     overlays: Overlay[];
+    /** The clip's sound tracks, one playable file each (empty: the video's own sound). */
+    tracks?: { name: string; url: string }[];
     onplayhead: (outMs: number) => void;
     onended: () => void;
     oncrop: (x: number) => void;
@@ -75,6 +83,28 @@
   const scale = $derived(source.width > 0 ? frame.w / source.width : 0);
   const usable = $derived(src !== null && !failed);
   const visible = $derived(overlays.filter((o) => playhead >= o.start_ms && playhead < o.end_ms));
+
+  // The sound: the tracks follow the video, weighed by the sliders.
+  let sound: FollowSound | null = null;
+  $effect(() => {
+    const v = video;
+    if (!v || !usable) return;
+    sound?.destroy();
+    sound = new FollowSound(v);
+    return () => {
+      sound?.destroy();
+      sound = null;
+    };
+  });
+  $effect(() => {
+    const list = tracks;
+    if (sound && video) sound.setTracks(list);
+  });
+  $effect(() => {
+    const vols = project.volumes;
+    sound?.setVolumes(vols);
+  });
+  onDestroy(() => sound?.destroy());
 
   function observe(el: HTMLDivElement) {
     const ro = new ResizeObserver(() => {
@@ -115,6 +145,7 @@
       segIndex = i;
       v.currentTime = (sourceTime(project, playhead) ?? seg.src_start_ms) / 1000;
       v.playbackRate = seg.speed;
+      sound?.resume();
       void v.play().catch(() => (failed = true));
     }
   });
@@ -169,6 +200,7 @@
       <video
         bind:this={video}
         {src}
+        crossorigin="anonymous"
         preload="auto"
         playsinline
         ontimeupdate={tick}

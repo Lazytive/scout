@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyShorts, cropRect, gaps, msToPct, newText, outputSize, progressPct, pxToMs, tileFor, trimText } from './editor';
+import { applyShorts, clampCustom, cropRect, gaps, keepAspect, msToPct, newText, outputSize, progressPct, pxToMs, tileFor, trimText } from './editor';
 import { newProject } from './timeline';
 
 describe('crop', () => {
@@ -77,5 +77,30 @@ describe('text and templates', () => {
     expect(progressPct(5, 10)).toBe(50);
     expect(progressPct(5, 0)).toBe(0);
     expect(progressPct(20, 10)).toBe(100);
+  });
+});
+
+describe('custom export settings', () => {
+  it('clamps to what the engine takes, sides even', () => {
+    expect(clampCustom({ width: 1281, height: 1, fps: 0, bitrate_kbps: 1e9, codec: 'vp9' as never })).toEqual({
+      width: 1280,
+      height: 2,
+      fps: 1,
+      bitrate_kbps: 200_000,
+      codec: 'h264',
+    });
+    expect(clampCustom({ width: 9000, height: 721, fps: 59.94, bitrate_kbps: 99, codec: 'av1' })).toEqual({
+      width: 4096,
+      height: 720,
+      fps: 60,
+      bitrate_kbps: 100,
+      codec: 'av1',
+    });
+  });
+
+  it('keeps the shape', () => {
+    expect(keepAspect(1280, 1920, 1080, 'width')).toBe(720);
+    expect(keepAspect(1920, 606, 1080, 'height')).toBe(1076);
+    expect(keepAspect(100, 0, 0, 'width')).toBe(100);
   });
 });
