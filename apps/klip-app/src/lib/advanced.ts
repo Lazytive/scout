@@ -204,6 +204,19 @@ export function clipEnd(c: PlacedClip): number {
   return c.at_ms + clipLength(c);
 }
 
+/**
+ * How far a clip is pulled under the one before it by a crossfade (ms; 0 without):
+ * where `compose` really places it is `at_ms` minus this.
+ */
+export function overlapOf(a: Advanced, track: Track, clip: PlacedClip): number {
+  const i = track.clips.findIndex((c) => c.id === clip.id);
+  const prev = i > 0 ? track.clips[i - 1] : undefined;
+  if (!prev) return 0;
+  const tr = a.transitions.find((t) => t.track === track.id && t.after_clip === prev.id);
+  if (!tr || tr.kind !== 'crossfade') return 0;
+  return Math.min(tr.ms, Math.max(0, clip.out_ms - clip.in_ms), clip.at_ms);
+}
+
 /** Which track kinds a source may sit on. */
 export function fitsTrack(source: Source, kind: TrackKind): boolean {
   if (source.kind === 'image') return kind === 'video';

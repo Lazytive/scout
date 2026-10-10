@@ -187,7 +187,9 @@ export function openEditor(clip: LibClip): void {
 /** Open the editor on a clip path (test override `KLIP_START_CLIP`). */
 export async function openEditorByPath(path: string): Promise<void> {
   await refreshLibrary();
-  const clip = lib.listing?.clips.find((c) => c.path === path);
+  // The library's spelling may differ in slashes and case (Windows).
+  const norm = (p: string) => p.replaceAll('\\', '/').toLowerCase();
+  const clip = lib.listing?.clips.find((c) => norm(c.path) === norm(path));
   if (clip) openEditor(clip);
   else {
     app.page = 'library';

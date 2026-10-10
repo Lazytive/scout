@@ -322,8 +322,42 @@ Measured 2026-10-10, same machine:
 | `frames_of_a_montage` (`klip-engine`, `editor.frame` end to end, in-process, 640x360 clips) | first frame **431 ms** (GStreamer start-up), then **34–56 ms**; a tall unsaved project gives a 180x320 frame |
 | `montage_missing_clips_history_and_rename` (`klip-engine`, not hardware) | append, Custom export job, history coalescing and restore, rename followed, deleted clip reported `missing` and kept, export refused by name |
 
+### The Advanced workspace's preview (M9.5)
+
+Measured 2026-10-10, same machine, the real app (debug build) off-screen, driven through
+WebView2's remote-debugging port; two 12 s barcoded 1280x720 H.264 clips with Game and
+Microphone tracks; the project: the main clip cut to 0–6 s, the second clip after it
+with a zoom ramp (1 → 1.6, x +0.1), the main clip again crossfading in over 1 s, a
+half-transparent PNG sticker zoomed 0.8 and moved, the grade brightness +0.05 /
+contrast 1.1 / saturation 1.3.
+
+| Check | Result |
+|---|---|
+| Canvas preview vs `editor.frame` (the export's own drawing step, JPEG) at the same time and size (1280x720), RGB PSNR | 3 s (main only, graded) **66.8 dB**; 7.5 s (mid-zoom) **41.6 dB**; 9.5 s (zoomed) **41.5 dB**; 11.5 s (crossfade + sticker) **39.9 dB**; 14 s (main + sticker) **44.0 dB**: all ≥ 35 dB (the bar). Each check (frame, seek, draw) 85–193 ms. |
+| Playback, Advanced: picture vs the clip's split sound tracks after 2 s | video 10.960 s, Game and Microphone 11.000 s of the source (within one 40 ms sample), video muted |
+| Playback, Normal mode (the Sound sliders' bug): picture vs tracks after 2 s | video 1.954 s, both tracks 1.991 s, playing; video muted, the tracks carry the sound through the gains |
+| `editor.audio` split (`klip-export` hardware test): a 4 s two-track clip | 6–28 ms; every beep of each file where the clip's track has it (±5 ms) |
+| `editor.audio` through the engine (`klip-engine`, not hardware) | names `Game`/`Microphone`, one audio track per file, length 2.0 s as made, not remade when asked again, remade when the clip changes, follows a rename |
+| Shared math, Rust vs vitest | `placement.json` (fit, fitted, place, visible, colour matrix) and `compose.json` (three projects: Normal cut, montage with crossfade/dip/ramp/sticker/sound/music/markers, edge cases): identical |
+
 ## Approximate / not done yet
 
+- **The Advanced preview (M9.5)**:
+  - Seen and measured in the app, **not heard**: the sound graph (track weights, volume
+    keys, mute, music ducking under voices) is checked by unit tests and element
+    timing, not by ear. Ducking in the preview follows the voice through an analyser
+    every frame (≈ 16 ms), the export per 10 ms block: close, not identical.
+  - Speeds below 0.5x or above 4x may be silent in the preview (Chromium mutes media
+    outside its pitch-keeping range); the export is right.
+  - Reverse shuttle (J) steps back by seeking, so it is choppy; forward 2x/4x plays.
+  - A sticker or sound added in a session is shown through the file dialog's own
+    permission; after reopening, `editor.files` allows it again (picked files with an
+    odd extension are refused by the engine and show as missing).
+  - Several HEVC montage clips: their proxies are made one at a time (the second one
+    starts when the first is done; until then its strip tile shows).
+  - Dip transition on an upper track fades that track out and in again, so the tracks
+    below show through (black only on the lowest track). Decided: that is the
+    behaviour; the inspector says so.
 - **Editor frames and montages (M9.4)**:
   - `editor.frame` opens every clip on screen per call (no cache): fine for a paused
     preview and parity checks, too slow to scrub with (the canvas preview, M9.5, is for
@@ -607,6 +641,39 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    should have no voice. Set Game to 0 %: only voice.
 5. **Close the app while an export runs**: the file must not appear half-written
    (there is no `.part` left behind; the export is cancelled).
+
+## Manual checks for the human (M9.5, the Advanced editor)
+
+Use the release app (`target\release\Start Klip.cmd`) and two of your own clips.
+
+1. **Sound sliders (the M8 bug).** Open a clip that has your voice. In Normal mode
+   press Play, then drag **Mic** to 0 %: your voice must go away while it plays; drag
+   **Game** to 0 %: the game sound must go away. Tell me if you hear any echo or delay.
+2. **Switch to Advanced.** In the Mode section click **Advanced**. The layout changes:
+   Media/Effects/Main clip on the left, Inspector/History/Export on the right, the
+   timeline at the bottom. Click **Normal** at the top of the preview: back; an
+   orange **Advanced edits** badge appears once you made Advanced changes.
+3. **Montage.** Advanced → Media → tick two other clips → **Add 2 clips**. They appear
+   one after the other on the "Montage" track, after your clip. Click the first of the
+   two; in the Inspector under **Into the next clip** choose **Crossfade**. Play across
+   the join: the pictures must blend for half a second, and both clips' sound must play.
+4. **Zoom and move.** Select a montage clip, put the playhead in it, set **Zoom** to
+   1.5 in the Inspector. Drag the blue frame on the preview to move the picture; scroll
+   on it to zoom more. Click ◆ at another time, change Zoom there: it must glide
+   between the two when you play.
+5. **Sticker and music.** Media → **+ Sticker** (pick a PNG) and **+ Music** (pick an
+   MP3). The sticker shows over the video for 3 s; the music plays on its own track.
+   Talk over a part (a clip with your voice): the music must get quieter while you
+   speak (Effects → Music under voices).
+6. **Colour.** Effects → Colour: drag Saturation to 0: the preview turns grey (the
+   text, if any, keeps its colours).
+7. **Undo history.** Right side → History: every step has a name; click one further
+   down to go back to it, then click a grey one above "Now" to go forward again.
+8. **Export → Custom.** Export… → **Custom** → 1280 wide (720 follows), 30 fps,
+   8000 kbit/s, H.264 → Export. Play the result: it must look like the preview, at that
+   size (check the file's properties).
+9. **J / K / L.** With the timeline focused: L plays, L again plays 2x, K stops, J goes
+   backwards. Tell me if anything feels sluggish (how long a montage, how many clips).
 
 ## Known bugs
 

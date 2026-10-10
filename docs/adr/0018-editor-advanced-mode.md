@@ -91,6 +91,17 @@ in text yet (M8.2), the in-memory muxing cap (IMPROVEMENTS G1).
   whose other clips are library keys; a clip that is gone is reported (`missing`) and
   kept, never dropped, and a renamed one is followed. Project history is file
   snapshots of the project a save replaces (at most one a minute, 30 kept).
+- **The preview (M9.5, 2026-10-10)** is a canvas the front end draws with the shared
+  math ported to TypeScript (`compose.ts`, `keyframes.ts`; Rust writes the expectations
+  of `fixtures/advanced/{placement,compose}.json`, both sides check them), one media
+  element per playing layer on a wall-clock master, the grade as an SVG
+  `feColorMatrix` in sRGB, text cues as the engine's own bitmaps. Sound: a `<video>`
+  plays only a file's first audio track, so the engine copies a clip's tracks one per
+  file (`editor.audio`, remuxed, cached per clip) and Web Audio weighs them like the
+  export's mixer (Normal mode's Game/Mic sliders included). The app lets the page read
+  only a bounded set of files the engine named (`editor_media` with `what`). Measured
+  in the app: canvas vs `editor.frame` 39.9–66.8 dB at 1280x720 (bar: 35 dB). A dip on
+  an upper track fades to what is below it (black only on the lowest track).
 
 ## Consequences
 - Normal mode stays as fast and simple as it is; the Advanced UI is a second workspace

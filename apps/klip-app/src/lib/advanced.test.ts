@@ -9,6 +9,7 @@ import {
   hasAdvancedEdits,
   laneValue,
   moveClip,
+  overlapOf,
   readAdvanced,
   removeClip,
   setColour,
@@ -150,6 +151,11 @@ describe('keys, speed, transitions', () => {
     addClip(p, 'video', lib('b'), 0, 4000, 4000);
     setTransition(p, a, 'crossfade', 500);
     expect(readAdvanced(p).transitions).toEqual([{ track: 1, after_clip: a, kind: 'crossfade', ms: 500 }]);
+    // The timeline draws the clip where compose places it: pulled under the one before.
+    const b = readAdvanced(p).tracks[0]!.clips[1]!;
+    const layer = compose(p, SOURCE, [['b', { ...SOURCE, duration_ms: 4000 }]]).layers.find((l) => l.track !== 0 && l.src_out_ms === 4000 && l.at_ms > 0)!;
+    expect(layer.at_ms).toBe(b.at_ms - overlapOf(readAdvanced(p), readAdvanced(p).tracks[0]!, b));
+    expect(overlapOf(readAdvanced(p), readAdvanced(p).tracks[0]!, b)).toBe(500);
     setTransition(p, a, 'cut', 0);
     expect(readAdvanced(p).transitions).toEqual([]);
     const q = project();

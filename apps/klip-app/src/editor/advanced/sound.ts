@@ -203,8 +203,14 @@ export class FollowSound {
   private strands: { el: HTMLMediaElement; name: string }[] = [];
   private volumes: Volumes = { game: 1, mic: 1 };
   private raf = 0;
+  private host: HTMLElement;
 
   constructor(private video: HTMLVideoElement) {
+    // In the document (like the player's elements), out of sight.
+    this.host = document.createElement('div');
+    this.host.style.cssText = 'position:fixed;left:-10px;top:-10px;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none';
+    this.host.dataset.sound = 'follow';
+    document.body.appendChild(this.host);
     this.loop();
   }
 
@@ -215,6 +221,7 @@ export class FollowSound {
         s.el.pause();
         s.el.removeAttribute('src');
         s.el.load();
+        s.el.remove();
       }
     }
     this.strands = [];
@@ -225,6 +232,7 @@ export class FollowSound {
       a.crossOrigin = 'anonymous';
       a.preload = 'auto';
       a.src = t.url;
+      this.host.appendChild(a);
       this.strands.push({ el: a, name: t.name });
     }
     for (const s of this.strands) this.graph.attach(s.el, 'main', isVoice(s.name));
@@ -270,5 +278,6 @@ export class FollowSound {
     cancelAnimationFrame(this.raf);
     this.setTracks([]);
     this.graph.close();
+    this.host.remove();
   }
 }

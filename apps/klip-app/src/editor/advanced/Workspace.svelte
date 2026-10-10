@@ -10,7 +10,7 @@
   import { onDestroy, onMount } from 'svelte';
 
   import type { Source } from '../../lib/advanced';
-  import { clipEnd, clipLength, findClip, laneValue, readAdvanced, removeClip, setLane, splitClip, trimClipEnd, trimClipStart, addMarker } from '../../lib/advanced';
+  import { addMarker, clipLength, findClip, laneValue, overlapOf, readAdvanced, removeClip, setLane, splitClip, trimClipEnd, trimClipStart } from '../../lib/advanced';
   import { call, thumbUrl } from '../../lib/api';
   import { compose, layerActive } from '../../lib/compose';
   import type { Layer } from '../../lib/compose';
@@ -145,6 +145,12 @@
 
   // ---- the selected clip on the canvas ----
   const found = $derived(ed.clipId === null ? null : findClip(readAdvanced(project), ed.clipId));
+  /** How far the selected clip plays before its `at_ms` (a crossfade into it). */
+  const shift = $derived(found ? overlapOf(readAdvanced(project), found.track, found.clip) : 0);
+  /** The playhead in the selected clip's own time. */
+  function localOf(f: NonNullable<typeof found>): number {
+    return Math.min(clipLength(f.clip), Math.max(0, ed.playhead - (f.clip.at_ms - shift)));
+  }
   const selectedLayer = $derived.by((): Layer | null => {
     const f = found;
     if (!f) return null;
@@ -158,7 +164,7 @@
   function onmove(dx: number, dy: number, done: boolean) {
     const f = found;
     if (!f) return;
-    const local = Math.min(clipLength(f.clip), Math.max(0, ed.playhead - f.clip.at_ms));
+    const local = localOf(f);
     if (!moveBase) {
       moveBase = { x: laneValue(f.clip, 'x', local), y: laneValue(f.clip, 'y', local) };
       beginGesture();
@@ -176,7 +182,7 @@
   function onzoom(factor: number) {
     const f = found;
     if (!f) return;
-    const local = Math.min(clipLength(f.clip), Math.max(0, ed.playhead - f.clip.at_ms));
+    const local = localOf(f);
     const z = laneValue(f.clip, 'zoom', local) * factor;
     liveEdit((p) => setLane(p, f.clip.id, 'zoom', local, z), 'Zoom');
   }
@@ -314,7 +320,7 @@
         break;
       case 's':
       case 'S':
-        if (f && ed.playhead > f.clip.at_ms && ed.playhead < clipEnd(f.clip)) edit((p) => void splitClip(p, f.clip.id, ed.playhead), 'Split clip');
+        if (f && localOf(f) > 0 && localOf(f) < clipLength(f.clip)) edit((p) => void splitClip(p, f.clip.id, f.clip.at_ms + localOf(f)), 'Split clip');
         else splitAtPlayhead();
         break;
       case 'Delete':
@@ -329,10 +335,10 @@
         edit((p) => addMarker(p, ed.playhead, ''), 'Add a marker');
         break;
       case '[':
-        if (f) edit((p) => trimClipStart(p, f.clip.id, ed.playhead), 'Trim clip');
+        if (f) edit((p) => trimClipStart(p, f.clip.id, ed.playhead + shift), 'Trim clip');
         break;
       case ']':
-        if (f) edit((p) => trimClipEnd(p, f.clip.id, ed.playhead, sourceMs(f.clip)), 'Trim clip');
+        if (f) edit((p) => trimClipEnd(p, f.clip.id, ed.playhead + shift, sourceMs(f.clip)), 'Trim clip');
         break;
       case 'ArrowLeft':
         e.preventDefault();

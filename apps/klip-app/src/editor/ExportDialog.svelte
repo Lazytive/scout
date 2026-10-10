@@ -10,7 +10,6 @@
   import { cancelExport, ed, revealPath, startExport } from '../lib/editor.svelte';
   import NumberField from '../lib/forms/NumberField.svelte';
   import Segmented from '../lib/forms/Segmented.svelte';
-  import Toggle from '../lib/forms/Toggle.svelte';
   import { formatBytes, formatDuration } from '../lib/format';
 
   let { limitMb, onclose }: { limitMb: number; onclose: () => void } = $props();
@@ -37,11 +36,10 @@
 
   let preset = $state<ExportPreset | 'custom'>('youtube');
   let custom = $state<CustomSettings>(loadCustom());
-  let lockAspect = $state(true);
-
   function setCustom(patch: Partial<CustomSettings>, changed?: 'width' | 'height') {
     let next = { ...custom, ...patch };
-    if (lockAspect && changed) {
+    // The export fits the edit into the size, so the other side follows its shape.
+    if (changed) {
       const other = keepAspect(changed === 'width' ? next.width : next.height, base.width, base.height, changed);
       next = changed === 'width' ? { ...next, height: other } : { ...next, width: other };
     }
@@ -102,7 +100,7 @@
           <NumberField label="Height" value={custom.height} min={CUSTOM_LIMITS.side[0]} max={CUSTOM_LIMITS.side[1]} step={2} disabled={run !== null} onchange={(v) => setCustom({ height: v }, 'height')} />
         </span>
         <span></span>
-        <Toggle label="Keep the edit's shape" checked={lockAspect} onchange={(v) => (lockAspect = v)} />
+        <span class="muted hint">The edit keeps its shape inside this size.</span>
         <span class="label">Frame rate</span>
         <NumberField label="Frame rate" value={custom.fps} min={CUSTOM_LIMITS.fps[0]} max={CUSTOM_LIMITS.fps[1]} step={1} unit="fps" disabled={run !== null} onchange={(v) => setCustom({ fps: v })} />
         <span class="label">Bitrate</span>

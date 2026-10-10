@@ -5,6 +5,17 @@ reason)`.
 
 ## Unreleased
 
+- M9.5.7 — Acceptance in the real app, off-screen, driven through WebView2's
+  remote-debugging port: the canvas preview vs `editor.frame` at 1280x720 on a montage
+  with a zoom ramp, a crossfade, a sticker and a grade: 39.9–66.8 dB (bar 35 dB);
+  picture and split sound tracks within 40 ms while playing, in both modes. Fixes found
+  on the way: a crossfaded clip is drawn and keyed where it plays (`overlapOf`; lane
+  clicks used the wrong origin); stickers get their own track; `KLIP_START_CLIP` matches
+  regardless of slashes/case; the timeline's fit zoom no longer feeds on its own width;
+  sub-second ruler labels. Custom size always keeps the edit's shape (the export fits
+  it into the box anyway). Test hook `window.__klipTest.parity`. Docs: ADR 0018
+  (preview), app README, ROADMAP (numbers, approximations, human checklist).
+  (Claude Opus 5.5: M9.5.7)
 - M9.5.4–6 — The Advanced workspace. Preview (`src/editor/advanced/player.ts`,
   `Canvas.svelte`): the composition drawn on a canvas with the export's numbers
   (`fitted`/`place`/`visible`, opacity, the grade through an SVG `feColorMatrix` with

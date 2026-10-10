@@ -19,6 +19,7 @@
     moveClip,
     moveTrack,
     nextOnTrack,
+    overlapOf,
     rateAt,
     readAdvanced,
     removeClip,
@@ -50,8 +51,14 @@
     return null;
   });
 
-  function local(c: PlacedClip): number {
-    return Math.min(clipLength(c), Math.max(0, ed.playhead - c.at_ms));
+  /** Where the clip starts playing (a crossfade pulls it under the one before). */
+  function start(t: Track, c: PlacedClip): number {
+    return c.at_ms - overlapOf(adv, t, c);
+  }
+
+  /** The playhead in the clip's own time (what its keys are in). */
+  function local(t: Track, c: PlacedClip): number {
+    return Math.min(clipLength(c), Math.max(0, ed.playhead - start(t, c)));
   }
 
   function lanesFor(t: Track, c: PlacedClip): typeof LANES {
@@ -79,16 +86,17 @@
 {#if found}
   {@const t = found.track}
   {@const c = found.clip}
-  {@const at = local(c)}
+  {@const at = local(t, c)}
+  {@const from = start(t, c)}
   {@const next = nextOnTrack(adv, c.id)}
   {@const tr = transitionAfter(adv, t.id, c.id)}
   <section>
     <h3>{sourceLabel(c.source, mainName, names)}</h3>
     <p class="hint muted mono">
-      {formatTimecode(c.at_ms)} – {formatTimecode(c.at_ms + clipLength(c))} · {t.name || 'Track'}
+      {formatTimecode(from)} – {formatTimecode(from + clipLength(c))} · {t.name || 'Track'}
     </p>
     <div class="row">
-      <button title="Split at the playhead (S)" onclick={() => edit((p) => void splitClip(p, c.id, ed.playhead), 'Split clip')}>Split</button>
+      <button title="Split at the playhead (S)" onclick={() => edit((p) => void splitClip(p, c.id, c.at_ms + at), 'Split clip')}>Split</button>
       <button class="danger" title="Remove (Delete)" onclick={() => {
         edit((p) => removeClip(p, c.id), 'Remove clip');
         ed.clipId = null;
@@ -131,7 +139,7 @@
     {#if keys(c).length > 0}
       <div class="row wrap">
         {#each keys(c) as k (k)}
-          <button class="flat tiny mono" title="Go to this key" onclick={() => seek(c.at_ms + k)}>{formatTimecode(k)}</button>
+          <button class="flat tiny mono" title="Go to this key" onclick={() => seek(from + k)}>{formatTimecode(k)}</button>
         {/each}
       </div>
     {/if}
@@ -148,7 +156,7 @@
         <ul class="points">
           {#each c.speed as s (s.at_ms)}
             <li>
-              <button class="flat tiny mono" onclick={() => seek(c.at_ms + s.at_ms)}>{formatTimecode(s.at_ms)}</button>
+              <button class="flat tiny mono" onclick={() => seek(from + s.at_ms)}>{formatTimecode(s.at_ms)}</button>
               <span class="mono">{s.rate_pct} %</span>
               {#if s.at_ms > 0}
                 <button class="flat tiny" title="Remove" onclick={() => edit((p) => removeSpeedPoint(p, c.id, s.at_ms), 'Remove a speed point')}>×</button>
@@ -170,6 +178,9 @@
         options={TRANSITIONS}
         onchange={(k) => edit((p) => setTransition(p, c.id, k, tr?.ms ?? 500), k === 'cut' ? 'Remove transition' : 'Set transition')}
       />
+      {#if tr?.kind === 'dip'}
+        <p class="hint muted">Fades out and back in: through black on the lowest track, through the tracks below on an upper one.</p>
+      {/if}
       {#if tr}
         <div class="lane">
           <span class="name">Length</span>

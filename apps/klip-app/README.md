@@ -116,6 +116,29 @@ same tokens.
   `npx tauri icon src-tauri/icons/app-icon.svg -o src-tauri/icons` (desktop sizes kept).
 - CSP: scripts and styles from the app only, no remote URLs.
 
+## Advanced workspace (M9.5)
+
+`src/editor/advanced/`: `Workspace.svelte` (layout: swap sides, resizable panels and
+timeline kept in `localStorage` `klip.editor.layout`; keys Space, J/K/L, S, Delete, M,
+[ ], arrows, Home/End, Ctrl+Z/Y), `Canvas.svelte` + `player.ts` (the composition from
+`src/lib/compose.ts` drawn with the shared placement math; one muted `<video>` per
+playing layer on a wall-clock master; paused frames by seeking; strip tiles when nothing
+plays), `sound.ts` (`SoundGraph`: Web Audio buses, track weights as
+`mixer::volume_for`, volume keys, music ducking; `FollowSound`: Normal mode's tracks
+following its `<video>`), `Timeline.svelte`, `Inspector.svelte`, `MediaPanel.svelte`,
+`EffectsPanel.svelte`, `HistoryPanel.svelte`; `src/editor/NormalTools.svelte` is shared
+by both modes. Media elements use `crossorigin="anonymous"` (Tauri's asset protocol
+answers with the window's origin), so Web Audio hears them and the canvas stays
+readable. The project's files and every placed clip's media come through
+`editor_media` with `what: proxy | audio | files` (`src/lib/api.ts`).
+
+Test hook: `window.__klipTest.parity(out_ms, width, images?)` (only while the Advanced
+workspace is open) draws the canvas at the size `editor.frame` returns for the same
+time and gives the RGB PSNR between them. To drive the real app from a script, start it
+with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` (plus the
+off-screen variables below) and evaluate through the Chrome DevTools Protocol
+(`http://127.0.0.1:9333/json`, `Runtime.evaluate`, `Page.captureScreenshot`).
+
 ## Build and run
 
 ```

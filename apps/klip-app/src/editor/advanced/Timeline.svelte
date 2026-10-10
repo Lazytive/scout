@@ -16,6 +16,7 @@
     fitsTrack,
     moveClip,
     moveKey,
+    overlapOf,
     readAdvanced,
     removeKey,
     removeSpeedPoint,
@@ -218,10 +219,11 @@
 
   const laneFor = (lane: LaneId) => (lane === 'transform' ? 'zoom' : lane === 'speed' ? null : lane);
 
-  function laneClick(e: MouseEvent, c: PlacedClip, lane: LaneId) {
+  function laneClick(e: MouseEvent, c: PlacedClip, lane: LaneId, shift: number) {
+    // The lane box starts where the clip plays: x inside it is clip time.
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const local = Math.min(clipLength(c), Math.max(0, msAt(e.clientX - r.left) - c.at_ms));
-    seek(c.at_ms + local);
+    const local = Math.min(clipLength(c), Math.max(0, msAt(e.clientX - r.left)));
+    seek(c.at_ms - shift + local);
     if (lane === 'speed') edit((p) => setSpeedPoint(p, c.id, local, rateAt(c, local)), 'Add a speed point');
     else edit((p) => addKey(p, c.id, laneFor(lane)!, local), 'Add a key');
   }
@@ -254,7 +256,7 @@
     if (!k) return;
     if (!k.moved) {
       endGesture('Move a key');
-      seek(k.clip.at_ms + k.from);
+      seek(k.clip.at_ms - overlapOf(adv, selected?.track ?? adv.tracks[0]!, k.clip) + k.from);
       ed.playing = false;
       return;
     }
@@ -378,11 +380,14 @@
           >
             {#each t.clips as c (c.id)}
               {@const len = clipLength(c)}
+              {@const under = overlapOf(adv, t, c)}
               <div
                 class="clip {t.kind}"
                 class:sel={ed.clipId === c.id}
                 class:muted-track={t.muted}
-                style:left="{px(c.at_ms)}px"
+                class:faded={under > 0}
+                title={under > 0 ? `Crossfades in over ${under} ms` : undefined}
+                style:left="{px(c.at_ms - under)}px"
                 style:width="{Math.max(6, px(len))}px"
                 role="button"
                 tabindex="0"
@@ -422,6 +427,7 @@
           </div>
           {#if selected && selected.track.id === t.id}
             {@const c = selected.clip}
+            {@const shift = overlapOf(adv, t, c)}
             {#each LANES.filter((l) => (t.kind === 'video' ? (c.source.kind === 'image' ? l.id === 'transform' || l.id === 'opacity' : true) : l.id === 'volume' || l.id === 'speed')) as l (l.id)}
               <div class="lane" style:height="{LANE_H}px">
                 <div
@@ -429,9 +435,9 @@
                   role="button"
                   tabindex="-1"
                   title="Click to add a key"
-                  style:left="{px(c.at_ms)}px"
+                  style:left="{px(c.at_ms - shift)}px"
                   style:width="{px(clipLength(c))}px"
-                  onclick={(e) => laneClick(e, c, l.id)}
+                  onclick={(e) => laneClick(e, c, l.id, shift)}
                   onkeydown={() => {}}
                 >
                   {#each laneTimes(c, l.id) as at (at)}
@@ -655,6 +661,9 @@
   }
   .clip.muted-track {
     opacity: 0.55;
+  }
+  .clip.faded {
+    background-image: linear-gradient(90deg, rgb(255 255 255 / 18%), transparent 40px);
   }
   .label {
     white-space: nowrap;
