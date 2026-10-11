@@ -728,37 +728,44 @@ Use the release app (`target\release\Start Klip.cmd`) and two of your own clips.
 Use the release app (`target\release\Start Klip.cmd`) and a few of your own clips.
 Quit and restart Klip first, so the new version runs.
 
-1. **The layout.** Open a clip, switch to **Advanced**. It should look like FilmCraft's
+1. ✅ (2026-10-11) **The layout.** Open a clip, switch to **Advanced**. It should look like FilmCraft's
    Editing workspace: Effect Controls top-left, the Program preview in the middle,
    Properties top-right; Project, the Timeline and two level meters along the bottom.
    Drag the dark gaps between panels to resize them; reopen the editor: the sizes stay.
-2. **Clicks don't move clips.** Add two clips (drag them from **Project** onto the
+2. ✅ (2026-10-11) **Clicks don't move clips.** Add two clips (drag them from **Project** onto the
    empty track above the video tracks, or tick them and click **Add**). Click a clip
    several times without moving the mouse: it must not move. Drag it: it moves.
-3. **Rows never hide.** Add music (**+ Music** at the bottom of Project) and make the
+3. ✅ (2026-10-11) **Rows never hide.** Add music (**+ Music** at the bottom of Project) and make the
    tracks taller by dragging the bottom edge of a track's name on the left. Scroll the
    timeline down: the music clip must still show and be clickable.
-4. **Transitions on the timeline.** Hover the join between two touching clips: a blue
+4. ✅ (2026-10-11; Dip to black unclear to the user: on an upper track it dips through what is below, not black; fix in M9.8, recheck) **Transitions on the timeline.** Hover the join between two touching clips: a blue
    **+** appears; click it: a striped "Crossfade" block sits on the join. Drag its left
    edge: it gets longer. Right-click it: switch to **Dip to black**, then **Remove**.
-5. **Crossfade from your clip into the montage.** Click the montage's first clip. In
+5. ✅ (2026-10-11) **Crossfade from your clip into the montage.** Click the montage's first clip. In
    **Properties**, under **From the clip before**, choose **Crossfade** (or click the
    **+** at the start of that clip). Play across it: your original clip must blend into
    the montage clip instead of cutting.
-6. **Effect Controls.** Select a montage clip, put the playhead in it. In Effect
+6. ✅ (2026-10-11; the user also found the WebView's own Print / Save as (HTML): M9.8) **Effect Controls.** Select a montage clip, put the playhead in it. In Effect
    Controls drag the blue **Zoom** number sideways: the picture zooms. Click the
    stopwatch next to **Motion** (it turns blue), move the playhead, drag Zoom again:
    diamonds appear on the right; play: it glides. Click the stopwatch again: the
    diamonds go and the zoom stays where it was.
-7. **Thumbnails, waveforms, meters.** Clips on video tracks show little pictures;
+7. ✅ (2026-10-11, after M9.7.6: pictures fill zoomed clips; a quiet PAYDAY 3 clip, peaks −41 dB in the file itself, showed almost no waveform: floor to −60 dB in M9.8) **Thumbnails, waveforms, meters.** Clips on video tracks show little pictures;
    sound and music show a light-blue waveform. Press Play: the two meters on the right
    of the timeline bounce with the sound.
-8. **Export.** Export the edit with **YouTube** and play it: the from-below crossfade
+8. ✅ (2026-10-11: the from-below crossfade, zoom, music and game sound all in the export; 10–15 s) **Export.** Export the edit with **YouTube** and play it: the from-below crossfade
    and the zoom must be there, like in the preview.
 
 Tell me what looks or feels wrong, and anything that still doesn't feel like FilmCraft.
 
 ## Known bugs
+
+- The WebView's own browser UI leaks into the app: its right-click menu and keys such as
+  Ctrl+P (Print) and Ctrl+S (Save as, saves the page's HTML) work in the real app (found
+  by the user in the M9.7 checks). Harmless, but not Klip. Fix in M9.8: swallow the
+  default context menu (not in text fields) and browser accelerator keys in the page
+  (Tauri 2.12 doesn't expose WebView2's `AreBrowserAcceleratorKeysEnabled` /
+  `AreDefaultContextMenusEnabled`; wry 0.57 has them).
 
 - e2e `m3_hdr::sdr_game_on_hdr_desktop_is_unchanged` fails since the evening of
   2026-10-09 with every grey level ~10 % darker (patch 16 → 13, 64 → 59, checker
