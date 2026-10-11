@@ -1,5 +1,5 @@
-<!-- The Library workspace, Scout's start page: the recorder bar on top (M11.2, the old
-     Home), filters on the left, the clip grid (search, sort, card size, day headings,
+<!-- The Library workspace, Scout's start page (M11.2: the old Home folded in; its
+     recorder bar lives in the app's title bar since M11.3): filters on the left, the clip grid (search, sort, card size, day headings,
      hover-scrub, multi-select, keyboard, context menu) and the details of the selection
      on the right, docked like the Photocraft / FilmCraft panels. -->
 <script lang="ts">
@@ -8,7 +8,6 @@
   import ClipCard from './library/ClipCard.svelte';
   import Details from './library/Details.svelte';
   import Filters from './library/Filters.svelte';
-  import RecorderBar from './library/RecorderBar.svelte';
   import { openEditor } from './lib/editor.svelte';
   import { formatBytes, formatDuration } from './lib/format';
   import Select from './lib/forms/Select.svelte';
@@ -170,9 +169,6 @@
 <svelte:window onclick={() => (menu = null)} />
 
 <div class="workspace">
-  <div class="top">
-    <RecorderBar />
-  </div>
   <div class="left">
     <Panel tabs={['Browse']}>
       <Filters />
@@ -241,9 +237,9 @@
                 <p class="muted">
                   {#if firstKey}
                     Press <span class="combo">{#each (firstKey.keys ?? '').split('+') as k, i (i)}<kbd>{k}</kbd>{/each}</span>
-                    in a game to save the last {formatDuration((firstKey.secs ?? 30) * 1000)}, or use <b>Save</b> above.
+                    in a game to save the last {formatDuration((firstKey.secs ?? 30) * 1000)}, or use <b>Save</b> at the top.
                   {:else}
-                    Use <b>Save</b> above while a game runs.
+                    Use <b>Save</b> at the top while a game runs.
                   {/if}
                 </p>
                 <p class="muted">Your clips show up here, newest first. Scout keeps them as plain MP4 files in {listing.folder}.</p>
@@ -366,13 +362,8 @@
   .workspace {
     display: grid;
     grid-template-columns: 220px minmax(0, 1fr) 320px;
-    grid-template-rows: auto minmax(0, 1fr);
     gap: 2px;
     height: 100%;
-  }
-  .top {
-    grid-column: 1 / -1;
-    min-width: 0;
   }
   .combo {
     display: inline-flex;

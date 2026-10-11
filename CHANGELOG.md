@@ -5,6 +5,15 @@ reason)`.
 
 ## Unreleased
 
+- M11.3 — One bar as the title bar (Windows): the system title bar is off and Scout's
+  bar holds the workspaces, the recorder (moved up from the Library), the theme menu and
+  minimize / maximize / close drawn like Windows 11's (`src/lib/WindowButtons.svelte`,
+  `src/lib/window-chrome.ts`). Empty parts move the window, a double press maximizes;
+  shadow, rounded corners, resize edges and snapping stay. Narrow windows drop recorder
+  pieces in order; the ⓘ pop-up now also has Record, Bookmark and every Save length.
+  Linux keeps its title bar with the same bar under it. Window permissions added one by
+  one; ADR 0014 amended. (Claude Opus 5.5: the user, "is it possible to have a custom
+  title bar and have this in it?" → "Yeah please")
 - M11.2 — The app bar's middle title ("Waiting for a game", "ELDEN RING — buffering")
   is hidden on the Library, whose recorder bar says the same; Settings and the Editor
   keep it. (Claude Opus 5.5: the user, "remove the waiting for game at the top middle")

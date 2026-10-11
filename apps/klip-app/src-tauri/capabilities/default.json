@@ -1,11 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main and overlay windows: core APIs (events), title-bar theme, file and folder pickers, a save dialog (theme export), and the app's `klip` and `overlay_close` commands.",
+  "description": "The main and overlay windows: core APIs (events), title-bar theme, Scout's own title bar on Windows (move, minimize, maximize, close), file and folder pickers, a save dialog (theme export), and the app's `klip` and `overlay_close` commands.",
   "windows": ["main", "overlay"],
   "permissions": [
     "core:default",
     "core:window:allow-set-theme",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
     "dialog:allow-open",
     "dialog:allow-save"
   ]

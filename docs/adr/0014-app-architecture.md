@@ -96,6 +96,18 @@ windows are hard to drive from tests.
   more than the effect). Capture asks Windows for at most twice the recording rate
   (`MinUpdateInterval`); skipping frames in Klip was tried and dropped (it left slots
   empty).
+- **Window chrome (amended M11.3, 2026-10-11, the user's request):** on Windows the main
+  window has no system title bar (`decorations(false)`, `shadow(true)`): Scout's own bar
+  is the title bar (workspaces, the recorder, the theme menu, then minimize / maximize /
+  close drawn like Windows 11's). A press on anything in it that isn't a control moves
+  the window (`startDragging`), a double press maximizes; close goes through the same
+  close-to-tray handling as before. tao keeps the window's caption and thick-frame
+  styles, so the shadow, rounded corners, resize edges (WM_NCHITTEST answers left/right/
+  top/bottom/corners) and Aero snap stay. Not done: Windows 11's Snap layouts flyout on
+  hovering maximize (it needs the button to answer HTMAXBUTTON natively). Linux keeps
+  the desktop's title bar: KDE users expect it, and an undecorated window there can't be
+  resized from its edges without more work. The window permissions it needs are granted
+  one by one (`start-dragging`, `minimize`, `toggle-maximize`, `is-maximized`, `close`).
 
 ## Consequences
 - Settings, game rules and storage policy are unit- and property-tested in pure crates;

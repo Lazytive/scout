@@ -4,10 +4,13 @@
   import Editor from './Editor.svelte';
   import FirstRun from './FirstRun.svelte';
   import Library from './Library.svelte';
+  import RecorderBar from './library/RecorderBar.svelte';
   import { ed, openEditorByPath } from './lib/editor.svelte';
   import { formatDuration } from './lib/format';
   import ThemeMenu from './lib/ThemeMenu.svelte';
   import Settings from './Settings.svelte';
+  import { customChrome, dragsWindow, startDrag, toggleMaximize } from './lib/window-chrome';
+  import WindowButtons from './lib/WindowButtons.svelte';
   import { app, connect, type Page } from './lib/store.svelte';
 
   // KLIP_START_PAGE / KLIP_START_CLIP (tests): the app injects the page (and clip) to open on.
@@ -22,13 +25,15 @@
   ]);
 
   const st = $derived(app.status);
-  const title = $derived.by(() => {
-    if (!st) return 'Scout';
-    const who = st.game?.name ?? (st.desktop ? 'Desktop' : null);
-    if (!who) return st.buffer_mode === 'off' ? 'Replay buffer off' : 'Waiting for a game';
-    if (st.starting) return `${who} — starting`;
-    return `${who} — ${st.session ? 'recording' : 'buffering'}`;
-  });
+
+  // Scout's own title bar (Windows, M11.3): its empty parts move the window, a double
+  // press maximizes, like the system's.
+  function barDown(e: MouseEvent) {
+    if (!customChrome || e.button !== 0 || !dragsWindow(e.target as Element | null)) return;
+    e.preventDefault();
+    if (e.detail === 2) void toggleMaximize();
+    else void startDrag();
+  }
 
   const hint = $derived.by(() => {
     const clip = st?.hotkeys.find((h) => h.action === 'clip.save' && !h.error);
@@ -48,7 +53,9 @@
 </script>
 
 <div class="shell">
-  <header class="appbar">
+  <!-- One bar (M11.3): workspaces, the recorder (M11.2) and, on Windows, the window's
+       own buttons in place of the system title bar. -->
+  <header class="appbar" class:chrome={customChrome} role="presentation" onmousedown={barDown}>
     <div class="left">
       <span class="logo" aria-hidden="true"></span>
       <nav aria-label="Workspaces">
@@ -66,16 +73,11 @@
         {/each}
       </nav>
     </div>
-    <div class="title" data-live={st?.recording ?? false} data-rec={st?.session ?? false}>
-      <!-- The Library's recorder bar says it already (the user, 2026-10-11). -->
-      {#if app.page !== 'library'}
-        {#if st?.recording}<span class="dot" aria-hidden="true"></span>{/if}
-        {title}
-      {/if}
-    </div>
+    <RecorderBar />
     <div class="right">
       <ThemeMenu />
     </div>
+    {#if customChrome}<WindowButtons />{/if}
   </header>
 
   <main>
@@ -109,19 +111,27 @@
     gap: 2px;
   }
   .appbar {
+    position: relative;
+    z-index: 10;
     background: var(--chrome);
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    display: flex;
     align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
     padding: 0 var(--space-3);
+    user-select: none;
+  }
+  .appbar.chrome {
+    padding-right: 0;
   }
   .right {
     display: flex;
-    justify-content: flex-end;
+    flex: none;
   }
   .left {
     display: flex;
     align-items: center;
+    flex: none;
     gap: var(--space-4);
   }
   .logo {
@@ -163,22 +173,6 @@
     bottom: 0;
     height: 1.5px;
     background: var(--text-strong);
-  }
-  .title {
-    font-size: var(--text-lg);
-    color: var(--text-strong);
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--good);
-  }
-  [data-rec='true'] .dot {
-    background: var(--rec);
   }
   main {
     min-height: 0;

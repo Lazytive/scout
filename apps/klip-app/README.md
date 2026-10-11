@@ -135,11 +135,15 @@ app sizes its window).
 - Plugins: `tauri-plugin-dialog` (folder picker), `tauri-plugin-autostart` (applied only
   when `app.autostart` changes, so the OS's own startup-apps choice isn't overridden at
   every start).
-- The Library is the start page (M11.2; Home was folded into it, the user's choice):
-  `src/library/RecorderBar.svelte` on top (state, game, buffer meter counting between
-  the 2 s polls, problem badge, Record / Bookmark / Save; narrow windows drop Bookmark,
-  the second Save and then the meter; the ⓘ pop-up has the recorder's details, problems
-  with a link to Settings → Hotkeys, and the activity log). Storage sits in the Details
+- The Library is the start page (M11.2; Home was folded into it, the user's choice).
+  The recorder (`src/library/RecorderBar.svelte`: state, game, buffer meter counting
+  between the 2 s polls, problem badge, Record / Save, Bookmark and the other lengths on
+  wide windows; the ⓘ pop-up has every action, the recorder's details, problems with a
+  link to Settings → Hotkeys, and the activity log) sits in the app bar, which is the
+  window's title bar on Windows (M11.3, ADR 0014): `decorations(false)` there, the app
+  draws minimize / maximize / close (`src/lib/WindowButtons.svelte`) and a press on a
+  non-control part of the bar moves the window (`src/lib/window-chrome.ts`; double press
+  maximizes). The mock shows the buttons with `?chrome`. Storage sits in the Details
   panel when nothing is selected; the empty grid names the first clip hotkey. No live
   capture preview (it would cost the game frames).
 - `src/lib/Panel.svelte` (panel with a tab strip), `src/App.svelte` (header, status bar).

@@ -68,6 +68,16 @@ fn create_main<R: Runtime>(
         .title("Scout")
         .inner_size(1180.0, 760.0)
         .min_inner_size(820.0, 520.0);
+    // Windows: Scout draws its own title bar (M11.3; the window keeps its shadow, rounded
+    // corners and resize edges). Linux keeps the desktop's (KDE users expect it, and an
+    // undecorated window there can't be resized from its edges).
+    #[cfg(windows)]
+    {
+        b = b
+            .decorations(false)
+            .shadow(true)
+            .initialization_script("window.__KLIP_CHROME__ = true;");
+    }
     if let Ok(page) = std::env::var("KLIP_START_PAGE")
         && matches!(page.as_str(), "library" | "editor" | "settings")
     {

@@ -1,6 +1,8 @@
-<!-- The recorder bar on top of the Library (M11.2, the old Home folded in): the replay
-     buffer's state, game and fill, Record / Bookmark / Save, a problem badge, and a
-     pop-up with the recorder's details, problems and the activity log. -->
+<!-- The recorder in the app's title bar (M11.2 the old Home, in the title bar since
+     M11.3): the replay buffer's state, game and fill, Record / Save (Bookmark and the
+     other lengths on wide windows), a problem badge, and a pop-up with every action, the
+     recorder's details, problems and the activity log. Narrow windows drop pieces in
+     order; the pop-up keeps them all. -->
 <script lang="ts">
   import { untrack } from 'svelte';
 
@@ -102,7 +104,7 @@
 />
 
 <div class="bar" data-mode={mode} bind:this={root}>
-  <span class="state"><span class="dot" aria-hidden="true"></span>{stateLabel}</span>
+  <span class="state" title={stateLabel}><span class="dot" aria-hidden="true"></span><span class="label">{stateLabel}</span></span>
   {#if who}<span class="who" title={who}>{who}</span>{/if}
   <div class="meter" title="Replay buffer: {formatTimecode(buffered)} of {formatTimecode(capacity)}">
     <span class="mono now">{formatTimecode(buffered)}</span>
@@ -112,12 +114,14 @@
     <span class="mono of">{formatTimecode(capacity)}</span>
   </div>
   {#if problems > 0}
-    <button class="flat problem" onclick={() => (open = true)} title="Show what went wrong">
-      {st?.last_error ? 'Recording couldn’t start' : `${brokenKeys.length} hotkey${brokenKeys.length === 1 ? '' : 's'} not working`}
+    {@const what = st?.last_error ? 'Recording couldn’t start' : `${brokenKeys.length} hotkey${brokenKeys.length === 1 ? '' : 's'} not working`}
+    <button class="flat problem" onclick={() => (open = true)} title="{what}: show what went wrong" aria-label={what}>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.7h-13z" /><path d="M8 6.2v3.6" /><circle class="fill-dot" cx="8" cy="11.6" r="0.8" /></svg>
+      <span class="label">{what}</span>
     </button>
   {/if}
   <span class="grow"></span>
-  <button disabled={!live || app.busy} onclick={() => run('session.toggle')}>
+  <button class="rec" disabled={!live || app.busy} onclick={() => run('session.toggle')}>
     <span class="rec-dot" class:on={st?.session} aria-hidden="true"></span>
     {st?.session ? 'Stop recording' : 'Record'}
   </button>
@@ -140,6 +144,16 @@
 
   {#if open}
     <div class="pop" role="dialog" aria-label="Recorder details and activity">
+      <div class="actions">
+        <button disabled={!live || app.busy} onclick={() => run('session.toggle')}>
+          <span class="rec-dot" class:on={st?.session} aria-hidden="true"></span>
+          {st?.session ? 'Stop recording' : 'Record'}
+        </button>
+        <button disabled={!live || app.busy} onclick={() => run('bookmark.add')}>Bookmark</button>
+        {#each clipLengths as secs (secs)}
+          <button disabled={!live || app.busy} onclick={() => run('clip.save', { last_ms: secs * 1000 })}>Save last {formatDuration(secs * 1000)}</button>
+        {/each}
+      </div>
       <section>
         <h3>Recorder</h3>
         <dl>
@@ -180,12 +194,15 @@
 <style>
   .bar {
     position: relative;
+    flex: 1;
+    align-self: stretch;
     display: flex;
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
-    padding: 6px var(--space-3);
-    background: var(--panel);
+    padding-left: var(--space-3);
+    border-left: 1px solid var(--border);
+    margin: 8px 0;
   }
   .state {
     display: flex;
@@ -252,8 +269,21 @@
   }
   .problem {
     flex: none;
+    gap: 5px;
     color: var(--warn);
     font-size: var(--text-sm);
+  }
+  .problem svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.3;
+    stroke-linejoin: round;
+  }
+  .problem .fill-dot {
+    fill: currentColor;
+    stroke: none;
   }
   .grow {
     flex: 1;
@@ -290,21 +320,38 @@
   .more.on {
     color: var(--accent-text);
   }
-  /* Narrow windows: the extra buttons and the clip times go first. */
-  @media (max-width: 1100px) {
+  /* Narrow windows drop pieces in order (all of them stay in the pop-up): the extra
+     buttons, the capacity and the problem's words; the ruler; the state's words and the
+     time; Record. Scout opens at 1180 px, its smallest is 820 px. */
+  @media (max-width: 1499px) {
     .bar > .extra,
-    .of {
+    .of,
+    .problem .label {
       display: none;
     }
   }
-  @media (max-width: 900px) {
-    .meter {
+  @media (max-width: 1249px) {
+    .ruler {
+      display: none;
+    }
+  }
+  @media (max-width: 999px) {
+    .state .label,
+    .now {
+      display: none;
+    }
+    .who {
+      max-width: 110px;
+    }
+  }
+  @media (max-width: 899px) {
+    .bar > .rec {
       display: none;
     }
   }
   .pop {
     position: absolute;
-    top: calc(100% + 4px);
+    top: calc(100% + 10px);
     right: var(--space-2);
     z-index: 20;
     width: min(640px, calc(100vw - 32px));
@@ -312,12 +359,20 @@
     overflow: auto;
     display: grid;
     grid-template-columns: 240px minmax(0, 1fr);
-    gap: var(--space-4);
+    gap: var(--space-3) var(--space-4);
     padding: var(--space-3) var(--space-4);
     background: var(--panel-raised);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  }
+  .actions {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border);
   }
   h3 {
     margin: 0 0 var(--space-2);

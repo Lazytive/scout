@@ -422,6 +422,7 @@ klip-edit` and `vitest`.
 | Main hidden / muted (compose fixture shared by Rust and TS, unit tests both sides) | Main's layers `hidden` / `muted`, the edit keeps its length, a locked track above still plays; the switches move onto the main track when V1 is arranged and back with "Back to the simple cut"; `append_clips` and `addClip` skip locked tracks and V1 |
 | Home: recent clips (mock, 61 clips) | 8 cards, newest first (21:22 down to 22:55 the day before); the star toggles; a click opens the editor; a rename through the engine shows on Home from the `library_changed` event alone; every clip deleted → "No clips yet" with the Alt+F10 hint |
 | Editor opened from Home (mock) | the Project panel lists the 61 clips (it listed none before the fix: the editor read the Library page's listing, which Home never loaded) |
+| One bar as the title bar (M11.3; mock with `?chrome`, release build off-screen) | no overflow at 1600 / 1180 / 1000 / 820 px; empty drag space 98 / 238 / 58 / 108 px (the state, game and meter drag too); 1600 shows everything, 1180 drops Bookmark, the second Save, the capacity and the problem's words, 1000 also the ruler, 820 also the state's words, the time and Record (all stay in the ⓘ pop-up). Real window: no system title bar, `__KLIP_CHROME__` set, the 3 caption buttons; WM_NCHITTEST answers 10/11/12/15/17 on the left/right/top/bottom edges and the bottom-right corner, 1 inside; the ACL lets `start_dragging`, `minimize`, `toggle_maximize`, `is_maximized`, `close` through and still refuses `maximize`, `set_size` |
 | The Library as the start page (M11.2, mock) | tabs Library · Settings (Editor once a clip is open), Library first; the recorder bar is 40 px high and never overflows: 1549 px shows state, game, meter, the problem badge and all 4 buttons; 1000 px drops Bookmark and the second Save; 820 px (the window's minimum) drops the meter too; the ⓘ pop-up lists the recorder, the broken hotkey (link to Settings → Hotkeys) and the activity, closes on Escape and outside clicks; Details with nothing selected adds Cap, Over the cap, Free on drive; with no clips the grid says how to save the first one (Alt+F10) |
 | Real app (release build, off-screen, own settings, 2 test-game clips) | Home: 2 cards with real posters; a click opens the editor, Project lists the other clip; V2 locked + Main hidden and muted → the engine's saved project has `locked: true`, `main_hidden: true`, `main_muted: true`; after opening another clip and back: V2 still locked, V1 locked again, eye and M pressed and greyed; at 1 s the preview canvas is black (mean 0) and identical to `editor.frame` |
 
@@ -902,27 +903,35 @@ Appearance** (or click the sun at the top right → **Appearance settings…**).
 10. **Overlay.** With your theme in use, save a clip in a game: the "Clip saved" pop-up
     uses your theme's colours and corners.
 
-## Manual checks for the human (M9.8.10–11 and M11.2, locks and the Library start page)
+## Manual checks for the human (M9.8.10–11 and M11.2–3, locks, Library start page, title bar)
 
 Restart Scout with `Start Scout.cmd` first.
 
-1. **No more Home.** Scout opens on the **Library**. A bar on top shows what Home did:
-   Buffering / Waiting for a game, the game, how full the replay buffer is, and Record,
-   Bookmark and Save last 30 s. Start a game: the bar says Buffering and the time counts
-   up smoothly.
-2. **A new clip shows up.** Press Alt+F10 in the game: within a second or two the clip
-   is the first card under Today. The **Save last 30 s** button on the bar does the same.
-3. **Details.** Click the ⓘ at the right end of the bar: the recorder's details
-   (encoder, resolution, frame rate) and the activity log. Click anywhere else and it
-   closes. With no clip selected, the right panel shows your storage (cap, free space).
-   Make the window narrow: the bar drops buttons instead of overflowing.
-4. **Lock a track.** Add another clip to the montage (tick it in Project → **Add**). On
+1. **One bar.** Scout opens on the **Library** with a single bar at the top: Library /
+   Settings, then the recorder (Buffering / Waiting for a game, the game, the buffer
+   time), Record and Save last 30 s, ⓘ, the sun, and minimize / maximize / close at the
+   right end. There is no Windows title bar above it any more. Start a game: the bar
+   says Buffering and the time counts up smoothly.
+2. **It behaves like a title bar.** Drag the bar by an empty part (or the game name):
+   the window moves; drag it to the top of the screen or a side: it snaps. Double-click
+   an empty part: it maximizes (the window must stop at the taskbar, not cover it);
+   double-click again: back. The three buttons at the right minimize, maximize/restore
+   and close (close hides Scout to the tray as before). Resize the window from every
+   edge and corner, and try Win+Arrow keys. (Not there: the Snap layouts menu when you
+   hover maximize.)
+3. **A new clip shows up.** Press Alt+F10 in the game: within a second or two the clip
+   is the first card under Today. **Save last 30 s** on the bar does the same.
+4. **Details.** Click ⓘ: Record, Bookmark and every Save length, then the recorder's
+   details (encoder, resolution, frame rate) and the activity log. Click anywhere else
+   and it closes. With no clip selected, the right panel shows your storage. Make the
+   window narrow: the bar drops pieces instead of overflowing.
+5. **Lock a track.** Add another clip to the montage (tick it in Project → **Add**). On
    its track (V2) click the new lock: the lane gets thin stripes, and clicking, dragging
    or cutting its clip does nothing (the razor says the track is locked). Ctrl+A skips
    it. The eye and M on that track are greyed until you unlock it.
-5. **The lock is kept.** Close the editor and open the clip again: V2 is still locked
+6. **The lock is kept.** Close the editor and open the clip again: V2 is still locked
    (V1 is locked again as always). Click the lock to unlock it.
-6. **Hide and mute Main.** Unlock V1. Click the eye on V1: your clip's picture goes black
+7. **Hide and mute Main.** Unlock V1. Click the eye on V1: your clip's picture goes black
    in the preview but you still hear it. Click **M** on A1: the sound goes too. Export
    it: the exported video is black and silent where Main was, like the preview. Click
    both again to bring Main back.
