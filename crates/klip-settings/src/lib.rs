@@ -8,6 +8,7 @@ mod file;
 pub mod hotkey;
 mod lenient;
 pub mod preset;
+pub mod theme_file;
 mod validate;
 
 use std::collections::BTreeMap;
@@ -58,7 +59,7 @@ pub struct Issue {
 }
 
 impl Issue {
-    pub(crate) fn new(path: impl Into<String>, message: impl Into<String>) -> Issue {
+    pub fn new(path: impl Into<String>, message: impl Into<String>) -> Issue {
         Issue {
             path: path.into(),
             message: message.into(),
@@ -426,12 +427,57 @@ pub enum Theme {
     Light,
     /// Pure black backgrounds.
     Oled,
+    /// The custom theme `appearance.custom_theme` (M10).
+    Custom,
+}
+
+/// Spacing and control sizes (M10).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Density {
+    /// The standard look.
+    #[default]
+    Comfortable,
+    /// Tighter spacing and smaller controls.
+    Compact,
+}
+
+/// UI text size (M10): 90 %, 100 %, 115 %, 130 %.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TextSize {
+    Small,
+    #[default]
+    Default,
+    Large,
+    Larger,
+}
+
+/// Animations (M10).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Motion {
+    /// Follow the OS "reduce motion" setting.
+    #[default]
+    System,
+    /// No animations or transitions.
+    Reduce,
+    /// Always animate.
+    Full,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppearanceSettings {
     pub theme: Theme,
+    /// Id of the custom theme (a file in `<settings dir>/themes/`), used when `theme` is
+    /// `custom`; kept when another theme is picked.
+    pub custom_theme: Option<String>,
+    /// Accent colour `#rrggbb`; `None`: the theme's own.
+    pub accent: Option<String>,
+    pub density: Density,
+    pub text_size: TextSize,
+    pub motion: Motion,
 }
 
 /// When the replay buffer runs.

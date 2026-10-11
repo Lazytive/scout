@@ -7,10 +7,10 @@ use std::path::Path;
 
 use crate::preset::{BITRATE_RANGE, FPS_RANGE, HEIGHT_RANGE, Quality, WIDTH_RANGE};
 use crate::{
-    AUDIO_BITRATES, AudioSettings, BUFFER_SECS, CAP_GB_MAX, CLIP_SECS, ClipSettings,
-    DISCORD_LIMIT_MB, GameSettings, HotkeyAction, HotkeyBinding, Issue, LOW_DISK_GB_MAX,
-    MAX_HOTKEYS, MAX_LIST, MAX_NAME, MAX_PATH, MAX_PROFILES, OVERLAY_SECS, Profile,
-    RecordingSettings, SCHEMA_VERSION, Settings, game_key,
+    AUDIO_BITRATES, AppearanceSettings, AudioSettings, BUFFER_SECS, CAP_GB_MAX, CLIP_SECS,
+    ClipSettings, DISCORD_LIMIT_MB, GameSettings, HotkeyAction, HotkeyBinding, Issue,
+    LOW_DISK_GB_MAX, MAX_HOTKEYS, MAX_LIST, MAX_NAME, MAX_PATH, MAX_PROFILES, OVERLAY_SECS,
+    Profile, RecordingSettings, SCHEMA_VERSION, Settings, Theme, game_key, theme_file,
 };
 
 pub(crate) fn settings(s: &mut Settings, issues: &mut Vec<Issue>) {
@@ -44,6 +44,38 @@ pub(crate) fn settings(s: &mut Settings, issues: &mut Vec<Issue>) {
         issues,
     );
     games(&mut s.games, issues);
+    appearance(&mut s.appearance, issues);
+}
+
+fn appearance(a: &mut AppearanceSettings, issues: &mut Vec<Issue>) {
+    if let Some(c) = a.accent.as_mut() {
+        match theme_file::normalise_colour(c) {
+            Some(n) => *c = n,
+            None => {
+                issues.push(Issue::new(
+                    "appearance.accent",
+                    format!("{} is not a #rrggbb colour; using the theme's", short(c)),
+                ));
+                a.accent = None;
+            }
+        }
+    }
+    if let Some(id) = a.custom_theme.as_ref()
+        && !theme_file::valid_id(id)
+    {
+        issues.push(Issue::new(
+            "appearance.custom_theme",
+            "not a theme id; no custom theme",
+        ));
+        a.custom_theme = None;
+    }
+    if a.theme == Theme::Custom && a.custom_theme.is_none() {
+        issues.push(Issue::new(
+            "appearance.theme",
+            "custom needs appearance.custom_theme; following the system",
+        ));
+        a.theme = Theme::System;
+    }
 }
 
 /// Shorten untrusted text for messages.

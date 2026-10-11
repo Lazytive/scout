@@ -369,6 +369,55 @@ fn files_load_save_and_keep_bad_copies() {
     assert_eq!(l.settings, Settings::default());
 }
 
+#[test]
+fn appearance_m10_fields_repair_and_patch() {
+    let mut v = Settings::default().to_value().unwrap();
+    v["appearance"] = json!({
+        "theme": "custom", "custom_theme": "../evil", "accent": "#ABC",
+        "density": "compact", "text_size": "huge", "motion": "reduce",
+    });
+    let (s, issues) = lenient(&v);
+    let paths: Vec<&str> = issues.iter().map(|i| i.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "appearance.text_size",
+            "appearance.custom_theme",
+            "appearance.theme"
+        ],
+        "{issues:?}"
+    );
+    assert_eq!(s.appearance.theme, Theme::System);
+    assert_eq!(s.appearance.custom_theme, None);
+    assert_eq!(s.appearance.accent.as_deref(), Some("#aabbcc"));
+    assert_eq!(s.appearance.density, Density::Compact);
+    assert_eq!(s.appearance.text_size, TextSize::Default);
+    assert_eq!(s.appearance.motion, Motion::Reduce);
+
+    let cur = Settings::default();
+    let s = cur
+        .apply_patch(
+            &json!({"appearance": {"theme": "custom", "custom_theme": "neon-2",
+            "accent": "#e0601f", "text_size": "larger"}}),
+        )
+        .unwrap();
+    assert_eq!(s.appearance.theme, Theme::Custom);
+    assert_eq!(s.appearance.text_size, TextSize::Larger);
+    // Back to the theme's own accent.
+    let s = s
+        .apply_patch(&json!({"appearance": {"accent": null}}))
+        .unwrap();
+    assert_eq!(s.appearance.accent, None);
+    for bad in [
+        json!({"appearance": {"theme": "custom"}}),
+        json!({"appearance": {"accent": "blue"}}),
+        json!({"appearance": {"custom_theme": "A B"}}),
+        json!({"appearance": {"density": "cosy"}}),
+    ] {
+        assert!(cur.apply_patch(&bad).is_err(), "{bad}");
+    }
+}
+
 fn arb_json() -> impl Strategy<Value = Value> {
     let leaf = prop_oneof![
         Just(Value::Null),
@@ -420,6 +469,11 @@ fn arb_json() -> impl Strategy<Value = Value> {
             Just("voice_apps"),
             Just("mode"),
             Just("theme"),
+            Just("custom_theme"),
+            Just("accent"),
+            Just("density"),
+            Just("text_size"),
+            Just("motion"),
             Just("fps"),
         ]
         .prop_map(String::from);
