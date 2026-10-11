@@ -26,6 +26,7 @@
           {
             "at_ms": 0,
             "end_ms": 5000,
+            "hidden": false,
             "id": 1,
             "kind": "video",
             "muted": false,
@@ -49,6 +50,7 @@
           {
             "at_ms": 5000,
             "end_ms": 13000,
+            "hidden": false,
             "id": 2,
             "kind": "video",
             "muted": false,
@@ -72,6 +74,7 @@
           {
             "at_ms": 13000,
             "end_ms": 15000,
+            "hidden": false,
             "id": 3,
             "kind": "video",
             "muted": false,
@@ -284,6 +287,7 @@
           {
             "at_ms": 0,
             "end_ms": 10000,
+            "hidden": false,
             "id": 1,
             "kind": "video",
             "muted": false,
@@ -307,6 +311,7 @@
           {
             "at_ms": 10000,
             "end_ms": 16000,
+            "hidden": false,
             "id": 2,
             "kind": "video",
             "muted": false,
@@ -326,6 +331,7 @@
           {
             "at_ms": 15000,
             "end_ms": 21500,
+            "hidden": false,
             "id": 3,
             "kind": "video",
             "muted": false,
@@ -369,6 +375,7 @@
           {
             "at_ms": 26000,
             "end_ms": 29000,
+            "hidden": false,
             "id": 4,
             "kind": "video",
             "muted": false,
@@ -393,6 +400,7 @@
           {
             "at_ms": 21000,
             "end_ms": 26500,
+            "hidden": false,
             "id": 5,
             "kind": "black",
             "muted": false,
@@ -432,6 +440,7 @@
           {
             "at_ms": 1000,
             "end_ms": 4000,
+            "hidden": true,
             "id": 6,
             "kind": "image",
             "muted": false,
@@ -476,6 +485,7 @@
           {
             "at_ms": 2500,
             "end_ms": 4000,
+            "hidden": false,
             "id": 7,
             "kind": "audio",
             "muted": true,
@@ -495,6 +505,7 @@
           {
             "at_ms": 0,
             "end_ms": 60000,
+            "hidden": false,
             "id": 8,
             "kind": "music",
             "muted": false,
@@ -723,6 +734,7 @@
                   "volume": []
                 }
               ],
+              "hidden": true,
               "id": 5,
               "kind": "video",
               "muted": false,
@@ -849,6 +861,7 @@
           {
             "at_ms": 0,
             "end_ms": 4000,
+            "hidden": false,
             "id": 1,
             "kind": "video",
             "muted": false,
@@ -872,6 +885,7 @@
           {
             "at_ms": 0,
             "end_ms": 4000,
+            "hidden": false,
             "id": 2,
             "kind": "video",
             "muted": true,
@@ -896,6 +910,7 @@
           {
             "at_ms": 3700,
             "end_ms": 4000,
+            "hidden": false,
             "id": 3,
             "kind": "video",
             "muted": true,
@@ -1066,6 +1081,7 @@
           {
             "at_ms": 0,
             "end_ms": 10000,
+            "hidden": false,
             "id": 1,
             "kind": "video",
             "muted": false,
@@ -1089,6 +1105,7 @@
           {
             "at_ms": 9200,
             "end_ms": 12200,
+            "hidden": false,
             "id": 2,
             "kind": "video",
             "muted": false,
@@ -1119,6 +1136,7 @@
           {
             "at_ms": 13000,
             "end_ms": 15000,
+            "hidden": false,
             "id": 3,
             "kind": "video",
             "muted": false,

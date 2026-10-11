@@ -475,15 +475,25 @@ fn output_for(
     }
 }
 
-/// How many layers play at once, at most (muted sound layers never play; a dip's
-/// black reads no file).
+/// Whether a layer reads its file: not a dip's black (drawn, no file), nor one that can
+/// be neither seen nor heard (muted sound; a hidden picture; hidden and muted video).
+pub(crate) fn reads_file(l: &klip_edit::compose::Layer) -> bool {
+    match l.kind {
+        LayerKind::Black => false,
+        LayerKind::Audio | LayerKind::Music => !l.muted,
+        LayerKind::Image => !l.hidden,
+        LayerKind::Video => !(l.hidden && l.muted),
+    }
+}
+
+/// How many layers play at once, at most (only those that read a file).
 fn most_running(comp: &Composition) -> usize {
     let mut events: Vec<(u64, i32)> = Vec::new();
-    for l in comp.layers.iter().filter(|l| {
-        !(l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music))
-            && l.kind != LayerKind::Black
-            && l.end_ms > l.at_ms
-    }) {
+    for l in comp
+        .layers
+        .iter()
+        .filter(|l| reads_file(l) && l.end_ms > l.at_ms)
+    {
         events.push((l.at_ms, 1));
         events.push((l.end_ms, -1));
     }
@@ -584,9 +594,7 @@ fn media_files(
         facts: Some(main.clone()),
     }];
     for l in &comp.layers {
-        if l.kind == LayerKind::Black
-            || (l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music))
-        {
+        if !reads_file(l) {
             continue;
         }
         if files.iter().any(|m| m.source == l.source) {

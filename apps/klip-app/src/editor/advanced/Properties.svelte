@@ -115,7 +115,7 @@
         onchange={(k) => edit((p) => setTransition(p, c.id, k, tr?.ms ?? 500), k === 'cut' ? 'Remove transition' : 'Set transition')}
       />
       {#if tr?.kind === 'dip'}
-        <p class="hint muted">Fades out and back in: through black on the lowest track, through the tracks below on an upper one.</p>
+        <p class="hint muted">Fades to black and back in, whatever plays below.</p>
       {/if}
       {#if tr}
         <div class="lane">
@@ -136,6 +136,11 @@
       onchange={(e) => edit((p) => setTrack(p, t.id, { name: (e.currentTarget as HTMLInputElement).value }), 'Rename track')}
     />
     <div class="row wrap">
+      {#if t.kind === 'video' || t.kind === 'text'}
+        <button class:on={t.hidden} aria-pressed={t.hidden} title="Hide the track's picture (its sound stays)" onclick={() => edit((p) => setTrack(p, t.id, { hidden: !t.hidden }), t.hidden ? 'Show a track' : 'Hide a track')}>
+          {t.hidden ? 'Show' : 'Hide'}
+        </button>
+      {/if}
       <button class:on={t.muted} aria-pressed={t.muted} onclick={() => edit((p) => setTrack(p, t.id, { muted: !t.muted }), t.muted ? 'Unmute a track' : 'Mute a track')}>
         {t.muted ? 'Unmute' : 'Mute'}
       </button>

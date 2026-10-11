@@ -139,7 +139,10 @@ pub struct Track {
     pub id: u32,
     pub kind: TrackKind,
     pub name: String,
+    /// No sound from the track's clips (the M button).
     pub muted: bool,
+    /// No picture from the track's clips (the eye on a video track; M9.8.7).
+    pub hidden: bool,
     pub clips: Vec<PlacedClip>,
 }
 
@@ -542,6 +545,7 @@ impl Advanced {
                     kind: TrackKind::Video,
                     name: MONTAGE_TRACK.into(),
                     muted: false,
+                    hidden: false,
                     clips: Vec::new(),
                 });
                 self.tracks.len().saturating_sub(1)
@@ -599,6 +603,9 @@ fn track_from_value(v: Value, i: usize, issues: &mut Vec<Issue>) -> Track {
     }
     if let Some(v) = map.remove("muted") {
         t.muted = field(v, &format!("{path}.muted"), issues);
+    }
+    if let Some(v) = map.remove("hidden") {
+        t.hidden = field(v, &format!("{path}.hidden"), issues);
     }
     if let Some(v) = map.remove("clips") {
         t.clips = list(v, &format!("{path}.clips"), MAX_CLIPS, issues);

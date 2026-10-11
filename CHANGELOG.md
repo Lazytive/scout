@@ -5,6 +5,14 @@ reason)`.
 
 ## Unreleased
 
+- M9.8.7 — Hide and Mute are separate on video tracks: `Track.hidden` (project format,
+  defaults to false for older projects) carried into `Layer.hidden`; `visible_at` /
+  `visibleAt` skip hidden layers, their sound still plays unless the track is muted; the
+  export reads no file for a layer that can be neither seen nor heard (`reads_file`).
+  Timeline headers: eye (hide) + M (mute) on video tracks, M on sound tracks; Properties
+  has Hide/Show. Compose test, fixture case (a hidden sticker track) re-blessed. (Claude
+  Opus 5.5: the user: "there should be a mute and a hide button"; the eye used to only
+  mute)
 - M9.8.6 — Acceptance of M9.8: the mock in headless Edge (zoom kept at 32.69 px/s
   through edits; selection, marquee, ripple delete, razor, Ctrl+K, rolling a cut), the
   real app off-screen over CDP (trusted Ctrl+P/S/F, F5, Ctrl+Shift+I and right-clicks

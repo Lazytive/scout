@@ -57,7 +57,10 @@ export interface Track {
   id: number;
   kind: TrackKind;
   name: string;
+  /** No sound from its clips (M). */
   muted: boolean;
+  /** No picture from its clips (the eye on a video track). */
+  hidden: boolean;
   clips: PlacedClip[];
 }
 
@@ -110,6 +113,7 @@ export function readAdvanced(p: Project): Advanced {
   if (!isObj(raw)) return a;
   if (Array.isArray(raw.tracks)) a.tracks = raw.tracks.filter(isObj) as unknown as Track[];
   for (const t of a.tracks) if (!Array.isArray(t.clips)) t.clips = [];
+  for (const t of a.tracks) if (typeof t.hidden !== 'boolean') t.hidden = false;
   for (const t of a.tracks)
     for (const c of t.clips) {
       for (const k of ['transform', 'opacity', 'volume', 'speed'] as const) if (!Array.isArray(c[k])) c[k] = [];
@@ -242,7 +246,7 @@ const TRACK_NAMES: Record<TrackKind, string> = { video: 'Video', text: 'Text', a
 function newTrack(a: Advanced, kind: TrackKind, base = TRACK_NAMES[kind]): Track {
   if (a.tracks.length >= MAX_TRACKS) throw new EditError('too_many_pieces', `A project has at most ${MAX_TRACKS} tracks`);
   const n = a.tracks.filter((t) => t.name.startsWith(base)).length + 1;
-  const track: Track = { id: nextTrackId(a), kind, name: n === 1 ? base : `${base} ${n}`, muted: false, clips: [] };
+  const track: Track = { id: nextTrackId(a), kind, name: n === 1 ? base : `${base} ${n}`, muted: false, hidden: false, clips: [] };
   a.tracks.push(track);
   return track;
 }
@@ -815,11 +819,12 @@ export function setDucking(p: Project, patch: Partial<Ducking>): void {
   };
 }
 
-export function setTrack(p: Project, trackId: number, patch: Partial<Pick<Track, 'name' | 'muted'>>): void {
+export function setTrack(p: Project, trackId: number, patch: Partial<Pick<Track, 'name' | 'muted' | 'hidden'>>): void {
   const t = advancedOf(p).tracks.find((x) => x.id === trackId);
   if (!t) return;
   if (patch.name !== undefined) t.name = cleanTitle(patch.name);
   if (patch.muted !== undefined) t.muted = patch.muted;
+  if (patch.hidden !== undefined) t.hidden = patch.hidden;
 }
 
 /** Move a track up (towards the bottom of the picture: draw order follows the list). */

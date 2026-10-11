@@ -176,7 +176,7 @@ export function mockEditor(emit: (e: KlipEvent) => void, allClips: () => LibClip
         const adv = readAdvanced(next);
         let track = adv.tracks.find((t) => t.kind === 'video');
         if (!track) {
-          track = { id: adv.tracks.reduce((m, t) => Math.max(m, t.id), 0) + 1, kind: 'video', name: 'Montage', muted: false, clips: [] };
+          track = { id: adv.tracks.reduce((m, t) => Math.max(m, t.id), 0) + 1, kind: 'video', name: 'Montage', muted: false, hidden: false, clips: [] };
           adv.tracks.push(track);
         }
         let id = adv.tracks.reduce((m, t) => t.clips.reduce((n, c) => Math.max(n, c.id), m), 0) + 1;

@@ -30,7 +30,10 @@ export interface Layer {
   at_ms: number;
   end_ms: number;
   z: number;
+  /** No sound (a muted track). */
   muted: boolean;
+  /** No picture (a hidden track); its sound still plays unless muted. */
+  hidden: boolean;
   transform: TransformKey[];
   opacity: Keyframe[];
   volume: Keyframe[];
@@ -101,7 +104,7 @@ export function layerRateAt(l: Layer, outMs: number): number {
 /** Picture layers at `outMs`, bottom first. */
 export function visibleAt(c: Composition, outMs: number): Layer[] {
   return c.layers
-    .filter((l) => (l.kind === 'video' || l.kind === 'image' || l.kind === 'black') && layerActive(l, outMs))
+    .filter((l) => (l.kind === 'video' || l.kind === 'image' || l.kind === 'black') && !l.hidden && layerActive(l, outMs))
     .sort((a, b) => a.z - b.z || a.id - b.id);
 }
 
@@ -136,7 +139,7 @@ function fade(fromMs: number, toMs: number, from: number, to: number): Keyframe[
  * A dip's black over `from..until`: it fades in up to `blackAt` (where the clip before
  * ends), stays black to `backAt` (where the next one starts) and fades out by `until`.
  */
-function blackLayer(id: number, track: number, z: number, muted: boolean, from: number, blackAt: number, backAt: number, until: number): Layer {
+function blackLayer(id: number, track: number, z: number, [muted, hidden]: [boolean, boolean], from: number, blackAt: number, backAt: number, until: number): Layer {
   const key = (t: number, value: number): Keyframe => ({ at_ms: Math.max(0, t - from), value, ease: 'linear' });
   const opacity = [key(from, 0), key(blackAt, 1)];
   if (backAt > blackAt) opacity.push(key(backAt, 1));
@@ -152,6 +155,7 @@ function blackLayer(id: number, track: number, z: number, muted: boolean, from: 
     end_ms: until,
     z,
     muted,
+    hidden,
     transform: [],
     opacity,
     volume: [],
@@ -218,6 +222,7 @@ export function compose(project: Project, source: SourceInfo, clips: [string, So
       end_ms: seg.out_end_ms,
       z: 0,
       muted: false,
+      hidden: false,
       transform: [],
       opacity: [],
       volume: [],
@@ -271,6 +276,7 @@ export function compose(project: Project, source: SourceInfo, clips: [string, So
         end_ms: end,
         z,
         muted: track.muted,
+        hidden: track.hidden,
         transform: clip.transform,
         opacity,
         volume: clip.volume,
@@ -281,7 +287,7 @@ export function compose(project: Project, source: SourceInfo, clips: [string, So
       duration = Math.max(duration, end);
       if (dip && layers.length < MAX_LAYERS) {
         // Same z, a later id: over both clips, under the tracks above.
-        layers.push(blackLayer(nextId, Math.max(1, track.id), z, track.muted, dip[0], dip[1], at, at + Math.min(dip[2], outLen)));
+        layers.push(blackLayer(nextId, Math.max(1, track.id), z, [track.muted, track.hidden], dip[0], dip[1], at, at + Math.min(dip[2], outLen)));
         nextId++;
       }
     }

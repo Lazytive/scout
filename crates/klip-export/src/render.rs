@@ -579,11 +579,8 @@ pub(crate) fn run_pass(
     let mut runs: Vec<Run> = Vec::new();
     let mut run_of: HashMap<u32, usize> = HashMap::new();
     for (li, l) in comp.layers.iter().enumerate() {
-        // Muted sound never plays (its file isn't even among `media`); a dip's black
-        // reads no file.
-        if l.kind == LayerKind::Black
-            || (l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music))
-        {
+        // Only layers seen or heard play (the others' files aren't even among `media`).
+        if !crate::reads_file(l) {
             continue;
         }
         let mi = media

@@ -47,7 +47,11 @@ pub struct Layer {
     pub end_ms: u64,
     /// Draw order: higher on top.
     pub z: u32,
+    /// No sound (a muted track).
     pub muted: bool,
+    /// No picture (a hidden track); its sound still plays unless muted.
+    #[serde(default)]
+    pub hidden: bool,
     pub transform: Vec<TransformKey>,
     pub opacity: Vec<Keyframe>,
     pub volume: Vec<Keyframe>,
@@ -152,7 +156,8 @@ impl Composition {
                 matches!(
                     l.kind,
                     LayerKind::Video | LayerKind::Image | LayerKind::Black
-                ) && l.active(out_ms)
+                ) && !l.hidden
+                    && l.active(out_ms)
             })
             .collect();
         v.sort_by_key(|l| (l.z, l.id));
@@ -217,7 +222,7 @@ fn black_layer(
     id: u32,
     track: u32,
     z: u32,
-    muted: bool,
+    (muted, hidden): (bool, bool),
     (from, black_at, back_at, until): (u64, u64, u64, u64),
 ) -> Layer {
     let key = |t: u64, value: f32| Keyframe {
@@ -241,6 +246,7 @@ fn black_layer(
         end_ms: until,
         z,
         muted,
+        hidden,
         transform: Vec::new(),
         opacity,
         volume: Vec::new(),
@@ -318,6 +324,7 @@ pub fn compose_with(
             end_ms: seg.out_end_ms,
             z: 0,
             muted: false,
+            hidden: false,
             transform: Vec::new(),
             opacity: Vec::new(),
             volume: Vec::new(),
@@ -411,6 +418,7 @@ pub fn compose_with(
                 end_ms: end,
                 z,
                 muted: track.muted,
+                hidden: track.hidden,
                 transform: clip.transform.clone(),
                 opacity,
                 volume: clip.volume.clone(),
@@ -427,7 +435,7 @@ pub fn compose_with(
                     next_id,
                     track.id.max(1),
                     z,
-                    track.muted,
+                    (track.muted, track.hidden),
                     (from, black_at, at, at.saturating_add(ms.min(out_len))),
                 ));
                 next_id = next_id.saturating_add(1);
@@ -820,6 +828,7 @@ mod tests {
             end_ms,
             z: 0,
             muted: false,
+            hidden: false,
             transform: Vec::new(),
             opacity: Vec::new(),
             volume: Vec::new(),
@@ -1217,6 +1226,7 @@ mod tests {
             end_ms: 2_000 + ramp::output_length(&ramp_points(), 4_000),
             z: 1,
             muted: false,
+            hidden: false,
             transform: Vec::new(),
             opacity: Vec::new(),
             volume: Vec::new(),
@@ -1282,6 +1292,7 @@ mod tests {
             kind: TrackKind::Video,
             name: "Montage".into(),
             muted: false,
+            hidden: false,
             clips: vec![clip(1, 8_000), clip(2, 10_000)],
         }];
         p.advanced.markers = vec![Marker {
@@ -1353,6 +1364,7 @@ mod tests {
             kind: TrackKind::Video,
             name: "B-roll".into(),
             muted: false,
+            hidden: false,
             clips: vec![
                 PlacedClip {
                     id: 1,
@@ -1419,6 +1431,42 @@ mod tests {
     }
 
     #[test]
+    fn a_hidden_track_is_heard_not_seen() {
+        let mut p = Project::new(10_000);
+        p.advanced.tracks = vec![Track {
+            id: 1,
+            kind: TrackKind::Video,
+            name: String::new(),
+            muted: false,
+            hidden: true,
+            clips: vec![PlacedClip {
+                id: 1,
+                source: Source::Main,
+                in_ms: 0,
+                out_ms: 2_000,
+                at_ms: 1_000,
+                ..PlacedClip::default()
+            }],
+        }];
+        let c = compose(&p, &source());
+        assert!(c.layers[1].hidden);
+        let seen: Vec<u32> = c.visible_at(1_500).iter().map(|l| l.id).collect();
+        assert_eq!(seen, vec![1], "only Main is drawn");
+        let heard: Vec<u32> = c.audible_at(1_500).iter().map(|l| l.id).collect();
+        assert_eq!(heard, vec![1, 2], "Main and the hidden clip's sound");
+        p.advanced.tracks[0].muted = true;
+        let heard: Vec<u32> = compose(&p, &source())
+            .audible_at(1_500)
+            .iter()
+            .map(|l| l.id)
+            .collect();
+        assert_eq!(heard, vec![1], "hidden and muted: nothing from it");
+        // Older projects have no `hidden`: shown.
+        let old: Track = serde_json::from_str(r#"{"id":1,"kind":"video","clips":[]}"#).unwrap();
+        assert!(!old.hidden);
+    }
+
+    #[test]
     fn dip_goes_through_black() {
         let mut p = Project::new(10_000);
         p.advanced.tracks = vec![Track {
@@ -1426,6 +1474,7 @@ mod tests {
             kind: TrackKind::Video,
             name: String::new(),
             muted: false,
+            hidden: false,
             clips: vec![
                 PlacedClip {
                     id: 1,
@@ -1506,6 +1555,7 @@ mod tests {
             kind: TrackKind::Video,
             name: String::new(),
             muted: false,
+            hidden: false,
             clips: vec![clip(1, 10_000), clip(2, 12_000)],
         }];
         p.advanced.transitions = vec![Transition {
@@ -1537,6 +1587,7 @@ mod tests {
             kind: TrackKind::Music,
             name: String::new(),
             muted: true,
+            hidden: false,
             clips: vec![PlacedClip {
                 id: 1,
                 source: Source::File {

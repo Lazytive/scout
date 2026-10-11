@@ -1137,6 +1137,7 @@ fn track(id: u32, kind: TrackKind, clips: Vec<PlacedClip>) -> Track {
         kind,
         name: format!("track {id}"),
         muted: false,
+        hidden: false,
         clips,
     }
 }
@@ -1904,6 +1905,7 @@ fn frames_match_the_export() {
         ),
         Track {
             muted: true,
+            hidden: false,
             ..track(
                 2,
                 TrackKind::Music,

@@ -546,9 +546,12 @@
     }
   }
 
-  // ---- track headers: mute, rename, height ----
+  // ---- track headers: hide, mute, rename, height ----
   function mute(t: Track) {
     edit((p) => setTrack(p, t.id, { muted: !t.muted }), t.muted ? 'Unmute a track' : 'Mute a track');
+  }
+  function hide(t: Track) {
+    edit((p) => setTrack(p, t.id, { hidden: !t.hidden }), t.hidden ? 'Show a track' : 'Hide a track');
   }
   let renaming = $state<number | null>(null);
   function rename(t: Track, name: string) {
@@ -717,7 +720,7 @@
           class:sel={selection.has(c.id)}
           class:primary={ed.clipId === c.id}
           data-clip={c.id}
-          class:off={t.muted}
+          class:off={t.kind === 'audio' || t.kind === 'music' ? t.muted : t.hidden}
           style:left="{px(c.at_ms - under)}px"
           style:width="{Math.max(6, px(clipLength(c)))}px"
           role="button"
@@ -768,17 +771,12 @@
             <span class="chip" class:main={r.kind !== 'track'}>{r.label}</span>
             {#if r.kind === 'track'}
               {@const t = r.track}
-              <button
-                class="icon"
-                class:off={t.muted}
-                aria-pressed={t.muted}
-                title={t.muted ? 'Turn the track on' : r.group === 'video' ? 'Hide the track' : 'Mute the track'}
-                onclick={() => mute(t)}
-              >
-                {#if r.group === 'video'}
-                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle class="fill" cx="8" cy="8" r="2" />{#if t.muted}<path d="M2.5 13.5l11-11" />{/if}</svg>
-                {:else}M{/if}
-              </button>
+              {#if r.group === 'video'}
+                <button class="icon" class:off={t.hidden} aria-pressed={t.hidden} title={t.hidden ? 'Show the track' : 'Hide the track (its picture)'} onclick={() => hide(t)}>
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle class="fill" cx="8" cy="8" r="2" />{#if t.hidden}<path d="M2.5 13.5l11-11" />{/if}</svg>
+                </button>
+              {/if}
+              <button class="icon" class:off={t.muted} aria-pressed={t.muted} title={t.muted ? 'Unmute the track' : 'Mute the track (its sound)'} onclick={() => mute(t)}>M</button>
               {#if renaming === t.id}
                 <input
                   class="rename"
