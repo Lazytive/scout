@@ -14,7 +14,7 @@ Last updated: 2026-10-10 (M9 done).
 | M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
 | M8 | Editor, Normal mode + export presets | **done on Windows** (ADR 0017 accepted): `klip-edit` model + text, `klip-export` pipeline, engine commands, the Editor workspace, e2e `m8_editor.rs`; Linux not yet run |
 | M9 | Editor, Advanced mode (incl. montage) | **done on Windows** (ADR 0018 accepted): schema v2, the composition renderer (montages, transitions, zoom, stickers, colour, ducking, Custom export; 10-minute montage 10.3x realtime, < 800 MB), `editor.frame`/montage projects, the Advanced workspace with a canvas preview and Web Audio sound (≥ 39.9 dB vs the export), e2e `m9_montage.rs`; human checklist steps 2–10 open; Linux not yet run |
-| M10 | Themes v1 | |
+| M10 | Themes v1 | **done on Windows** (session 16): accent colour, text size, density, reduced motion, custom theme files (colours, corners, font, background picture) with import/export, editor with live preview and a contrast warning; the overlay follows. Human checklist owed |
 | M11 | Sharing | |
 | M12 | Auto-clip via official integrations | |
 | M13 | Release 0.1 | |
@@ -390,7 +390,32 @@ the user's Klip running beside it.
 | The same in the preview | mock canvas mean 66.6 → 33.1 → **0** → 59.5; real app vs `editor.frame` at 640 px: 38.4 dB (plain), 43.5 dB (mid-dip), **identical** at the cut (both black), 41.9 / 40.0 dB after |
 | Browser UI (real app, trusted keys) | Ctrl+P, Ctrl+S, Ctrl+F, F5, Ctrl+Shift+I and a right-click on the page: default cancelled; Ctrl+Z still reaches Klip; a right-click in a text field keeps its menu |
 
+### Themes v1 (M10)
+
+Measured 2026-10-11. Mock = the UI against the mock engine in headless Edge (CDP);
+real app = debug and release builds off-screen, own settings and WebView2 profile, the
+user's Klip running beside them.
+
+| Check | Result |
+|---|---|
+| Import → in use (real app, `theme.import` + `settings.set` over the control channel) | a 1600×900 PNG theme: root `custom:dusk-test`, picture loaded through the asset protocol with the `?v=` cache-buster (1600×900), panels `rgb(28 26 36 / 80%)`, accent `#c2338f` with derived accent text `#d470b1`, radius 10 px, Georgia; contrast check clean |
+| Export (real app) | `theme.export` = the imported file field for field, picture byte-identical |
+| Delete the theme in use (real app) | settings back to `system`, themes folder empty, main window and overlay back to Dark |
+| Overlay (real app) | follows the custom theme: accent, opaque panel, 10 px corners, Georgia; no picture, text scale 1 |
+| Editor (mock) | live preview of a colour, corners 2 px, font; Cancel restores (`--text-muted` #929292, radius 10 px); Save keeps; first-paint cache written |
+| Larger text + Compact / Comfortable, Small + Compact (mock, 1280×800, 12 views: Home, Library, Editor Normal and Advanced, 8 Settings pages) | 1 newly clipped label at Larger (a game name on a library card, already ellipsised); body text 16.9 px, header 34 px, buttons 24 px in Compact |
+| Reduced motion (mock) | button `transition-duration` 0 s (Reduced) vs 0.12 s (Full) |
+| Accent swatches (unit) | all 8 keep AA (text on accent, pressed shade, accent text on panels/viewer/raised) on all 4 built-in themes |
+| Release build (off-screen) | starts, imports and applies a theme with Large + Compact, picture loads |
+
 ## Approximate / not done yet
+
+- **Themes (M10)**: fonts are referenced by name only (not bundled or carried in theme
+  files); the picture-aware contrast check samples the picture at 48×48 and blends one
+  translucent layer (nested translucent surfaces are a bit more opaque than it assumes);
+  the overlay doesn't follow text size or density (the app sizes its window); the theme
+  editor saves a picture as soon as it is picked (with the rest of the draft). Native
+  import/export dialogs were not driven by the agent (the human checklist covers them).
 
 - **The FilmCraft-style Advanced mode (M9.7, M9.8)**: waveforms decode the whole sound
   file in the page (files over 96 MB get none; a long main clip without separate tracks
@@ -823,6 +848,36 @@ Restart Klip with `Start Klip.cmd` first.
    (black and silent when played). Drag another piece before it, trim an end, delete one.
    Play and export: it plays in the new order. **Normal** is greyed out now; the **Main
    clip** tab has **Back to the simple cut** (Ctrl+Z brings the arrangement back).
+
+## Manual checks for the human (M10, themes)
+
+Restart Klip with `Start Klip.cmd` first. Everything below is in **Settings →
+Appearance** (or click the sun at the top right → **Appearance settings…**).
+
+1. **Themes.** Click the **Light** card, then **Graphite**, then **Dark**: the whole app
+   changes at once, the title bar too. The sun menu shows the same list.
+2. **Accent colour.** Click the pink dot: buttons, the selected tab and highlights turn
+   pink. Try the yellow one: text on yellow buttons turns black so it stays readable.
+   Click **Theme's own** to go back.
+3. **Text size.** Pick **Larger**: all text grows. Look at Home, Library and the editor
+   (Normal and Advanced): nothing should be cut off or overlap. Back to **Default**.
+4. **Density.** Pick **Compact**: less space, smaller bars and buttons. Back to
+   **Comfortable**.
+5. **Motion.** Pick **Reduced**: buttons light up without fading, and the "Clip saved"
+   pop-up (Alt+F10 in a game) appears without sliding in. Back to **System**.
+6. **Your own theme.** Click **New theme**: the editor opens on a copy called "My
+   theme". Change **Panels** to a colour you like: the app changes while you pick. Move
+   **Roundness** to 0 (square corners), type a font such as `Georgia`, then **Save**.
+   Click **Edit** again, change something, then **Cancel**: it goes back.
+7. **Background picture.** **Edit** → **Choose a picture…** → pick a wallpaper. It shows
+   behind the panels; move **Dim** and **Panel opacity**. If the **Contrast** row warns,
+   it says which text is hard to read. **Save**.
+8. **Share it.** **Export…** → save it on the Desktop. **Delete** → **Delete**: Klip goes
+   back to Follow system. **Import…** → pick the file: your theme is back, picture
+   included, and in use.
+9. **Restart Klip**: it opens straight in your theme (no flash of the dark theme first).
+10. **Overlay.** With your theme in use, save a clip in a game: the "Clip saved" pop-up
+    uses your theme's colours and corners.
 
 ## Known bugs
 

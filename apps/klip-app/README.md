@@ -19,6 +19,30 @@ the OS, live), **Dark** (FilmCraft greys), **Graphite** (Photocraft greys), **Li
 or Light when the OS is in light mode, before the settings arrive; the overlay uses the
 same tokens.
 
+Themes v1 (M10, ADR 0019, `src/lib/appearance.ts`): **Settings → Appearance**
+(`settings/Appearance.svelte`) has theme cards (built-in and custom, each drawn in its own
+colours), an **accent colour** (Theme's own, 8 swatches or any colour; the pressed shade,
+accent text, text on the accent and focus ring are derived to keep AA where the colour
+allows), **text size** (90/100/115/130 % via `--text-scale`: every `font-size` is a token
+or `calc(… * var(--text-scale))`), **density** (Comfortable = the standard look,
+Compact = `:root[data-density='compact']` with tighter `--space-*`, bars and
+`--control-h`), **motion** (System / Reduced / Full: `data-motion='reduce'` zeroes every
+transition and animation) and a **contrast check** (the `textPairs`/`uiPairs` below WCAG
+AA for the look on screen). **Custom themes** (`theme.*` commands): New theme (a copy of
+the current one, put in use), Import… (`*.klip-theme`; what was repaired is listed),
+Edit, Export…, Delete (asks first; the theme in use falls back to Follow system). The
+editor (`settings/ThemeEditor.svelte`) previews every change on the whole app
+(`app.themePreview`) until Save or Cancel: name, base theme, 21 colours in five groups
+(changed ones bold with ↺), corner roundness 0–16 px, a font by name (suggestions are the
+common fonts found on this PC; "not installed" is detected), a background picture (saved
+at once; dim 0–90 %, panel opacity 60–100 %) and the live contrast check. With a picture
+the window backdrop shows it and the chrome, status bar, panels and viewer turn
+translucent; menus and inputs stay opaque. The header's sun menu lists custom themes and
+opens Appearance. The last look is cached in `localStorage` (`klip.look.v1`) and applied
+in `main.ts` before mounting, so a custom theme doesn't flash Dark. The overlay follows
+colours, accent, corners, font and motion (not text size, density or the picture: the
+app sizes its window).
+
 ## Pieces
 
 - `src-tauri/src/main.rs`: starts the engine (`klip_probe::worker_main()` and
@@ -90,8 +114,9 @@ same tokens.
 - `src/lib/store.svelte.ts`: engine status (on every event and every 2 s while
   visible), storage status, activity log. `src/lib/format.ts`: display helpers.
 - `src/Settings.svelte`: the Settings workspace (categories left, the page right, like
-  Photoshop's preferences): General (start with Windows, tray, theme, local control,
-  run setup again), Recording (buffer with the RAM estimate, preset or custom numbers,
+  Photoshop's preferences): General (start with Windows, tray, local control,
+  run setup again), Appearance (M10, see Look), Recording (buffer with the RAM
+  estimate, preset or custom numbers,
   encoder from `encoders.list`, cursor), Audio (game sound, voice apps, microphone with
   device list and a live test meter, music excludes, tracks, bitrate), Hotkeys (rows of
   action / clip length / keys; key capture pauses the engine's hotkeys; the engine's
@@ -219,6 +244,12 @@ and take their hotkeys.
 ## Tests
 
 - vitest: `src/lib/format.test.ts` (display helpers, which events show in Activity);
+  `src/lib/appearance.test.ts` (M10): settings → look (custom theme over its base,
+  missing theme → System, the editor's draft, text size / density / motion), every accent
+  swatch keeps AA on all four themes, a custom theme's accent shades follow its accent,
+  the contrast warning (built-ins clean, named pairs, translucent surfaces over a
+  picture's darkest/lightest pixels), the CSS it writes (translucent surfaces only, URL
+  and font escaping), `DEFAULT_FONT` = `app.css`, token names = the engine's.
   `src/lib/themes.test.ts`: every text/background pair the UI uses reads at WCAG AA
   (4.5:1) and every outline/focus/state colour stands out at 3:1, in all four themes
   (88 checks; it caught Light's warning orange on the status bar at 4.3:1); `app.css`

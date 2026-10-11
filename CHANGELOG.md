@@ -5,6 +5,43 @@ reason)`.
 
 ## Unreleased
 
+- M10.4–M10.5 — Settings → Appearance (`settings/Appearance.svelte`): theme cards drawn in
+  each theme's colours (built-in and custom), accent colour (Theme's own, 8 swatches that
+  keep AA on every built-in theme, any colour), text size, density, motion and a live
+  contrast check; custom themes: New theme (a copy, put in use), Import… (repairs listed),
+  Edit, Export…, Delete (asks; the theme in use falls back to Follow system). Theme editor
+  (`settings/ThemeEditor.svelte`): live preview of every change until Save/Cancel, name,
+  base, 21 colours in groups with reset, corners, font (installed fonts suggested,
+  missing ones flagged), background picture (saved at once) with dim and panel opacity,
+  contrast check. The header's sun menu lists custom themes and opens Appearance; the
+  theme row left General. Mock: `theme.*` in `src/lib/mock-themes.ts` with a demo
+  picture. Capability `dialog:allow-save` for the export dialog. Checked in the mock
+  (headless Edge) and the real app (off-screen); docs, ROADMAP checklist. (Claude Opus
+  5.5: M10, KLIP_PROMPT §2 Themes v1)
+- M10.3 — Front-end appearance core (`src/lib/appearance.ts`, ADR 0019): settings →
+  look (built-in or custom theme over its base, the settings accent with derived shades,
+  a custom theme's accent shades follow its accent), WCAG contrast problems (picture-aware:
+  translucent surfaces over the picture's darkest/lightest dimmed pixels, sampled once per
+  picture), CSS variables + root attributes (`data-density`, `data-motion`,
+  `data-backdrop`), first-paint cache in `localStorage`. `app.css`: text sizes scale
+  with `--text-scale` (the 17 hard-coded `font-size`s too), compact density block,
+  reduced-motion block, `--control-h` for buttons/inputs/selects, the backdrop on
+  `body`; the Advanced workspace's gutters are transparent so a picture shows through.
+  The overlay follows colours, accent, corners, font and motion. (Claude Opus 5.5: M10)
+- M10.2 — Engine `theme.list|save|delete|import|export` (`engine/themes.rs`): themes
+  in `<settings dir>/themes/` as `<id>.json` + `<id>.<png|jpg|webp>`, sizes checked
+  before reading, atomic writes, ids from names (`neon`, `neon-2`), at most 200 themes,
+  a picture must belong to its theme, deleting the theme in use → Follow system, event
+  `themes_changed`. The app adds the themes folder (not recursively) to the asset scope.
+  Engine tests: import → list → export round trip, editor saves (create, picture swap /
+  keep / remove, strict refusals), deleting the theme in use, hostile files.
+  (Claude Opus 5.5: M10)
+- M10.1 — `klip-settings`: `appearance.custom_theme`, `accent`, `density`, `text_size`,
+  `motion` (+ `theme: custom`), repaired and strictly patched; module `theme_file`
+  (export form with the picture embedded as a data URI, stored form, the editor's form;
+  lenient repair with issues, refusal of non-themes, PNG/JPEG/WebP magic, size caps, safe
+  ids, picture names and font names; property test over 2000 random files). `Issue::new`
+  is public. ADR 0019. (Claude Opus 5.5: M10)
 - M9.8.9 — Unlocked V1 moves like any clip: the first drag (move or trim) or Delete on a
   piece of Main arranges V1: Normal mode's cut becomes clips of a main track
   (`Track.main`, project format; one per project, `Source::Main` only, repaired) that

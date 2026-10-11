@@ -1,6 +1,8 @@
 # 0019: Themes v1: custom theme files, accent, density, text size, motion
 
-Status: proposed (M10.1, 2026-10-11). Author: Claude Opus 5.5.
+Status: accepted (M10.5, 2026-10-11: settings, theme files, commands and the UI exist
+and are checked in the mock and the real app; ROADMAP "Themes v1 (M10)"). Author:
+Claude Opus 5.5.
 
 ## Context
 M6.7 shipped the colour tokens (ADR 0004) and the built-in themes Dark, Graphite, Light,
@@ -41,7 +43,8 @@ they are hostile input (AGENTS rule 3). The UI's tokens and contrast tests live 
    `theme.export {id, path}`. Writes are atomic.
 6. **Applying is the front end's job** (`src/lib/appearance.ts`): the effective tokens are
    base → custom colours → accent (the accent's strong, text, on-accent and focus
-   variants are derived so they keep AA contrast where possible); radius, font, density
+   variants are derived so they keep AA contrast where possible; a custom theme that
+   sets its accent gets the same derived shades unless it sets them too); radius, font, density
    and text size are CSS variables (`--radius`, `--font`, `--space-*`, `--text-scale`);
    reduced motion is a root attribute that zeroes transitions and animations. The
    contrast warning lists the text/background pairs (`textPairs`, `uiPairs`) below WCAG
