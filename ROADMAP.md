@@ -357,7 +357,32 @@ H.264 12 Mbit/s.
 | Zoom, a 2x frame vs the source frame the plan names, doubled about the centre | **43.7 dB** (the unzoomed frame 14.9 dB) |
 | Library | the export listed beside its clips, 8.5 s, H.264, one audio track; the montage follows a rename of its second clip |
 
+### Advanced mode in FilmCraft's layout (M9.7)
+
+Measured 2026-10-11 in the real app (debug build, off-screen, driven over CDP, the
+user's own Klip running beside it; scratch library: two 12 s barcoded test clips with two
+AAC tracks each, a 6 s WAV as music). Project: Clutch as Main, Second on a montage track
+from 12 s crossfading in **from below** over 1 s, a second montage clip at 15 s, music
+at 0 s.
+
+| Check | Result |
+|---|---|
+| Preview canvas vs `editor.frame` (export renderer), 1280x720 | **42.4 dB** at 10.5 s, **41.9 dB** at 11.5 s (mid-fade from below), 42.4 / 42.7 dB at 12.5 / 16 s |
+| Export of a crossfade from below (GPU encoder, `crossfade_from_below_maps_every_frame`) | 241 frames: every plain frame on the plan, **30** blended (500 ms at 60 fps), Main before, the clip from 2 s, Main again at 3.5 s |
+| Timeline | sprite thumbnails on video clips (14 on Main, 9 on the montage), waveforms on Main sound and the music, the from-below block on the montage's first clip |
+| Meters while playing | both sides move (left peaks about −1 dB, right about −5 dB with the left-heavy test music) |
+| Drag a Project card onto the empty track | a new track, the clip at the dropped time (1.784 s, where the pointer was), one undo step |
+| Gestures (mock, headless Edge with trusted input) | a click selects without moving; 2 px does nothing; a move to another track ends cleanly; transition ends follow the pointer |
+
 ## Approximate / not done yet
+
+- **The FilmCraft-style Advanced mode (M9.7)**: waveforms decode the whole sound file
+  in the page (files over 96 MB get none; a long main clip without separate tracks
+  decodes its proxy); thumbnails and waveforms ignore speed ramps inside a clip; in
+  Fit zoom an edit that changes the length rescales the timeline after the drag; a
+  stopwatch turned on with only a key at the start stays on for this session only; a
+  crossfade still pulls the next clip earlier and leaves clips after it where they
+  were (as before M9.7). No tools strip (the user's choice: S splits).
 
 - **The Advanced preview (M9.5)**:
   - Heard by the human 2026-10-10: the preview's sound and Normal mode's Game/Mic
@@ -697,6 +722,41 @@ Use the release app (`target\release\Start Klip.cmd`) and two of your own clips.
     usual video player: the join must blend, the zoom must be there, both clips' sound
     must play, and it must appear in the Library next to your first clip. Tell me how
     long the export took and how long the montage is.
+
+## Manual checks for the human (M9.7, Advanced mode like FilmCraft)
+
+Use the release app (`target\release\Start Klip.cmd`) and a few of your own clips.
+Quit and restart Klip first, so the new version runs.
+
+1. **The layout.** Open a clip, switch to **Advanced**. It should look like FilmCraft's
+   Editing workspace: Effect Controls top-left, the Program preview in the middle,
+   Properties top-right; Project, the Timeline and two level meters along the bottom.
+   Drag the dark gaps between panels to resize them; reopen the editor: the sizes stay.
+2. **Clicks don't move clips.** Add two clips (drag them from **Project** onto the
+   empty track above the video tracks, or tick them and click **Add**). Click a clip
+   several times without moving the mouse: it must not move. Drag it: it moves.
+3. **Rows never hide.** Add music (**+ Music** at the bottom of Project) and make the
+   tracks taller by dragging the bottom edge of a track's name on the left. Scroll the
+   timeline down: the music clip must still show and be clickable.
+4. **Transitions on the timeline.** Hover the join between two touching clips: a blue
+   **+** appears; click it: a striped "Crossfade" block sits on the join. Drag its left
+   edge: it gets longer. Right-click it: switch to **Dip to black**, then **Remove**.
+5. **Crossfade from your clip into the montage.** Click the montage's first clip. In
+   **Properties**, under **From the clip before**, choose **Crossfade** (or click the
+   **+** at the start of that clip). Play across it: your original clip must blend into
+   the montage clip instead of cutting.
+6. **Effect Controls.** Select a montage clip, put the playhead in it. In Effect
+   Controls drag the blue **Zoom** number sideways: the picture zooms. Click the
+   stopwatch next to **Motion** (it turns blue), move the playhead, drag Zoom again:
+   diamonds appear on the right; play: it glides. Click the stopwatch again: the
+   diamonds go and the zoom stays where it was.
+7. **Thumbnails, waveforms, meters.** Clips on video tracks show little pictures;
+   sound and music show a light-blue waveform. Press Play: the two meters on the right
+   of the timeline bounce with the sound.
+8. **Export.** Export the edit with **YouTube** and play it: the from-below crossfade
+   and the zoom must be there, like in the preview.
+
+Tell me what looks or feels wrong, and anything that still doesn't feel like FilmCraft.
 
 ## Known bugs
 

@@ -5,6 +5,33 @@ reason)`.
 
 ## Unreleased
 
+- M9.7.5 — Real-app acceptance of the FilmCraft-style Advanced mode (debug build
+  off-screen over CDP, beside the user's running Klip): preview vs `editor.frame` 41.9–
+  42.7 dB incl. mid-fade from below; thumbnails, waveforms, meters, drag from Project
+  checked. Fixed on the way: the CSP's `connect-src` now allows the asset protocol (the
+  waveform's `fetch` was blocked; same files the media elements already play); a Klip
+  on its own `KLIP_SETTINGS` skips the single-instance hand-over (a test instance used
+  to show the user's window instead of starting). Docs: app README, ROADMAP (numbers,
+  M9.7 checklist), STATUS. (Claude Opus 5.5: M9.7 acceptance)
+- M9.7.4 — A crossfade from below into a track's first clip (`after_clip = FROM_BELOW`,
+  0): compose in Rust and TypeScript, repair (zero clip ids renumbered, dips from below
+  dropped), a compose fixture case, Properties' "From the clip before", the timeline's
+  `+` and block, an export test (30 blended frames, the rest on the plan). (Claude Opus
+  5.5: the user's M9 check: no way to crossfade from the original into the montage)
+- M9.7.3 — FilmCraft's Editing layout for Advanced mode: Effect Controls / Program /
+  Properties on top, Project / Timeline / meters below, four splitters; Project panel
+  with cards and drag onto the timeline; sprite thumbnails and waveforms on timeline
+  clips; L/R meters. (Claude Opus 5.5: the user: "way more like FilmCraft")
+- M9.7.2 — Effect Controls (stopwatch per group, blue drag-to-change values, ◀ ◆ ▶, key
+  lane for the selected clip); the Inspector became Properties. (Claude Opus 5.5: key
+  lanes no longer push the timeline's tracks down; FilmCraft's way)
+- M9.7.1 — The timeline rebuilt in FilmCraft's look: one scroller with sticky headers and
+  ruler (fixes rows below the fold losing their clips), Premiere track headers, a 4 px
+  drag threshold (a click no longer moves a clip), transitions on the join with a `+`,
+  zoom bar, an empty track for new tracks. (Claude Opus 5.5: fixes from the user's M9
+  checks)
+- M9 — The human's M9 checklist, steps 2–10, all passed (2026-10-11). (Claude Opus 5.5:
+  recording the human's checks)
 - M9.6 — M9 wrap-up: e2e `apps/klip-cli/tests/m9_montage.rs` (the daemon records two
   clips of the test game; Normal trim, `editor.montage`, a split with a crossfade and a
   2x zoom; Custom export; every frame checked against `compose_with`: 420/420 plain

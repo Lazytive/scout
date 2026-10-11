@@ -114,23 +114,58 @@ same tokens.
   `src/lib/Panel.svelte` (panel with a tab strip), `src/App.svelte` (header, status bar).
 - Icons: `src-tauri/icons/app-icon.svg` (made for Klip), sizes generated with
   `npx tauri icon src-tauri/icons/app-icon.svg -o src-tauri/icons` (desktop sizes kept).
-- CSP: scripts and styles from the app only, no remote URLs.
+- CSP: scripts and styles from the app only, no remote URLs. `connect-src` allows the
+  asset protocol so the timeline can `fetch` a sound it already plays for its waveform
+  (the asset scope is still the engine-named set from `editor_media`).
 
-## Advanced workspace (M9.5)
+## Advanced workspace (M9.5, FilmCraft layout since M9.7)
 
-`src/editor/advanced/`: `Workspace.svelte` (layout: swap sides, resizable panels and
-timeline kept in `localStorage` `klip.editor.layout`; keys Space, J/K/L, S, Delete, M,
-[ ], arrows, Home/End, Ctrl+Z/Y), `Canvas.svelte` + `player.ts` (the composition from
-`src/lib/compose.ts` drawn with the shared placement math; one muted `<video>` per
-playing layer on a wall-clock master; paused frames by seeking; strip tiles when nothing
-plays), `sound.ts` (`SoundGraph`: Web Audio buses, track weights as
-`mixer::volume_for`, volume keys, music ducking; `FollowSound`: Normal mode's tracks
-following its `<video>`), `Timeline.svelte`, `Inspector.svelte`, `MediaPanel.svelte`,
-`EffectsPanel.svelte`, `HistoryPanel.svelte`; `src/editor/NormalTools.svelte` is shared
-by both modes. Media elements use `crossorigin="anonymous"` (Tauri's asset protocol
-answers with the window's origin), so Web Audio hears them and the canvas stays
-readable. The project's files and every placed clip's media come through
-`editor_media` with `what: proxy | audio | files` (`src/lib/api.ts`).
+Laid out like FilmCraft's (Premiere's) Editing workspace, because the user asked for it
+to be "way more like FilmCraft" (design and comparison: `plan/advanced-redesign.md`):
+top row Effect Controls / Effects / History · Program · Properties / Main clip / Export;
+bottom row Project / Markers · Timeline · L/R meters. Four splitters, kept in
+`localStorage` `klip.editor.layout.v2` (the old timeline height carries over).
+
+`src/editor/advanced/`:
+- `Workspace.svelte`: the layout, the Program monitor (blue timecode, length, icon
+  transport, undo/redo) and the keys (Space, J/K/L, S, Delete: a selected transition or
+  clip, M, [ ], arrows, Home/End, Ctrl+Z/Y).
+- `Timeline.svelte`: ONE scroller with a sticky header column and ruler (rows below the
+  fold keep their clips), Premiere track headers (V2… Advanced video, V1 = Main, A1 =
+  Main sound, A2… sound/music; hide/mute, rename on double-click, height by dragging a
+  header's bottom edge, double-click toggles), an always-empty track above the video and
+  below the sound to drop new tracks into, clip colours sampled from FilmCraft, sprite
+  thumbnails on video clips, waveforms on sound clips (`Waveform.svelte`,
+  `src/lib/peaks.ts`), transitions drawn on the join (hatched; click selects, drag an
+  end for the length, right-click menu, `+` on a touching join or at a track's first
+  clip), a zoom bar with round handles, Ctrl/Alt+wheel zoom. A press only moves or trims
+  after 4 px; drags follow `window` events (a clip moved to another track is a new
+  element) and freeze the zoom (in Fit, the edit's length would rescale it live).
+  Geometry and gesture rules: `src/lib/timeline-view.ts`.
+- `EffectControls.svelte` + `HotValue.svelte`: Motion (zoom and position share keys),
+  Opacity, Volume, Speed with a stopwatch each (on: keys the value at the playhead; off:
+  keeps that value for the whole clip), blue drag-to-change values, ◀ ◆ ▶ and a key lane
+  for the selected clip. Model: `src/lib/effect-controls.ts`.
+- `Properties.svelte`: the clip, "From the clip before" (a crossfade from below into a
+  track's first clip: `Transition { after_clip: FROM_BELOW }`), the transition into the
+  next clip or the selected transition, the track.
+- `ProjectPanel.svelte`: the library's other clips as cards (hover-scrub); drag one onto
+  a video track (pointer events: Tauri's file-drop handling swallows HTML5 drag and drop
+  on Windows; `addToMontageAt` = `editor.montage` + a move, one undo step) or tick and
+  Add; + Sticker / Sound / Music.
+- `Meters.svelte`: the sound graph's output, left and right (`SoundGraph.levels()`).
+- `Canvas.svelte` + `player.ts` (the composition from `src/lib/compose.ts` drawn with
+  the shared placement math; one muted `<video>` per playing layer on a wall-clock
+  master; paused frames by seeking; strip tiles when nothing plays), `sound.ts`
+  (`SoundGraph`: Web Audio buses, track weights as `mixer::volume_for`, volume keys,
+  music ducking; `FollowSound`: Normal mode's tracks following its `<video>`),
+  `EffectsPanel.svelte` (colour and ducking, or the markers), `HistoryPanel.svelte`;
+  `src/editor/NormalTools.svelte` is shared by both modes.
+
+Media elements use `crossorigin="anonymous"` (Tauri's asset protocol answers with the
+window's origin), so Web Audio hears them and the canvas stays readable. The project's
+files and every placed clip's media come through `editor_media` with
+`what: proxy | audio | files` (`src/lib/api.ts`).
 
 Test hook: `window.__klipTest.parity(out_ms, width, images?)` (only while the Advanced
 workspace is open) draws the canvas at the size `editor.frame` returns for the same
@@ -155,7 +190,9 @@ and audits npm licences from `package-lock.json` (shipped packages: permissive o
 
 Development and test overrides (environment): `KLIP_SETTINGS` (settings file),
 `KLIP_DISCOVERY` (control-channel discovery file), `KLIP_START_PAGE=home|library|settings`
-(the page the window opens on), `KLIP_WINDOW_POS=x,y` (create the
+(the page the window opens on; a Klip on its own `KLIP_SETTINGS` skips the
+single-instance hand-over, so it runs beside the user's Klip instead of showing it; give
+it its own `WEBVIEW2_USER_DATA_FOLDER` too), `KLIP_WINDOW_POS=x,y` (create the
 window there, visible and **not activated**: tests put it off-screen, e.g. `12000,200`,
 and capture it with `tools/window-shot.ps1`). Never
 run a dev build with the real settings while someone plays: it would buffer their game

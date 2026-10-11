@@ -150,10 +150,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .ok()
         .and_then(|s| parse_pos(&s));
 
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    // One Klip per user: a second start shows the running one. A Klip on its own
+    // settings file (KLIP_SETTINGS: tests, development) runs beside it instead, so a
+    // test never pops the user's window.
+    let mut builder = tauri::Builder::default();
+    if std::env::var_os("KLIP_SETTINGS").is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
-        }))
+        }));
+    }
+    let app = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
