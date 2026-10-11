@@ -5,6 +5,13 @@ reason)`.
 
 ## Unreleased
 
+- M9.8.6 — Acceptance of M9.8: the mock in headless Edge (zoom kept at 32.69 px/s
+  through edits; selection, marquee, ripple delete, razor, Ctrl+K, rolling a cut), the
+  real app off-screen over CDP (trusted Ctrl+P/S/F, F5, Ctrl+Shift+I and right-clicks
+  cancelled, Ctrl+Z and text-field menus kept; preview vs `editor.frame` through a dip
+  38.4–43.5 dB, identical black at the cut), a release build smoke-tested. Docs: app
+  README, ROADMAP (numbers, approximate list, M9.8 human checklist), STATUS. (Claude
+  Opus 5.5: M9.8 acceptance)
 - M9.8.5 — Dip to black goes through black on every picture track: compose (Rust and
   TypeScript) adds a `LayerKind::Black` layer over the join (0 → 1 at the cut, held
   across a gap, → 0) instead of fading the clips to whatever is below; the export draws

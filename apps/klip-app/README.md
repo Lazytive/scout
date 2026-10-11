@@ -128,8 +128,11 @@ bottom row Project / Markers · Timeline · L/R meters. Four splitters, kept in
 
 `src/editor/advanced/`:
 - `Workspace.svelte`: the layout, the Program monitor (blue timecode, length, icon
-  transport, undo/redo) and the keys (Space, J/K/L, S, Delete: a selected transition or
-  clip, M, [ ], arrows, Home/End, Ctrl+Z/Y).
+  transport, undo/redo) and the keys (Space, J/K/L, S, Ctrl+K split at the playhead
+  (the selection, else every track incl. Main), V / C the Selection / Razor tool, Ctrl+A,
+  Delete: a selected transition or the selected clips (Shift: ripple delete), M, [ ],
+  arrows, Home/End, Ctrl+Z/Y). Selection: `ed.selected` (all) and `ed.clipId` (the one
+  the panels show), `selectedClips()` / `selectClips()` in `src/lib/editor.svelte.ts`.
 - `Timeline.svelte`: ONE scroller with a sticky header column and ruler (rows below the
   fold keep their clips), Premiere track headers (V2… Advanced video, V1 = Main, A1 =
   Main sound, A2… sound/music; hide/mute, rename on double-click, height by dragging a
@@ -137,11 +140,16 @@ bottom row Project / Markers · Timeline · L/R meters. Four splitters, kept in
   below the sound to drop new tracks into, clip colours sampled from FilmCraft, sprite
   thumbnails on video clips, waveforms on sound clips (`Waveform.svelte`,
   `src/lib/peaks.ts`), transitions drawn on the join (hatched; click selects, drag an
-  end for the length, right-click menu, `+` on a touching join or at a track's first
-  clip), a zoom bar with round handles, Ctrl/Alt+wheel zoom. A press only moves or trims
-  after 4 px; drags follow `window` events (a clip moved to another track is a new
-  element) and freeze the zoom (in Fit, the edit's length would rescale it live).
-  Geometry and gesture rules: `src/lib/timeline-view.ts`.
+  end for the length, the middle to roll the cut (`rollCut`), right-click menu, `+` on a
+  touching join or at a track's first clip), a zoom bar with round handles, Ctrl/Alt+
+  wheel zoom. The zoom is absolute px/s (M9.8): Fit on first open and on demand (button,
+  `\`, double-click the bar), never rescaled by an edit; the lanes are at least the view
+  wide. A press only moves or trims after 4 px; drags follow `window` events (a clip
+  moved to another track is a new element). Shift/Ctrl-click and a marquee over empty
+  lane space select (`data-clip` hit test); a selection drags together in time
+  (`moveClips`). The Razor tool (blade cursor, dashed cut line) splits where clicked
+  (`cutsAt` / `splitClipsAt`, Main via `timeline.split`; Shift: every track). Geometry
+  and gesture rules: `src/lib/timeline-view.ts`.
 - `EffectControls.svelte` + `HotValue.svelte`: Motion (zoom and position share keys),
   Opacity, Volume, Speed with a stopwatch each (on: keys the value at the playhead; off:
   keeps that value for the whole clip), blue drag-to-change values, ◀ ◆ ▶ and a key lane
@@ -161,6 +169,10 @@ bottom row Project / Markers · Timeline · L/R meters. Four splitters, kept in
   music ducking; `FollowSound`: Normal mode's tracks following its `<video>`),
   `EffectsPanel.svelte` (colour and ducking, or the markers), `HistoryPanel.svelte`;
   `src/editor/NormalTools.svelte` is shared by both modes.
+
+No browser UI (M9.8.1): `src/lib/browser-ui.ts` cancels the WebView's context menu
+outside text fields and its accelerators (print, save as, find, reload, view source,
+devtools, back/forward) in the app's windows; the browser mock keeps them.
 
 Media elements use `crossorigin="anonymous"` (Tauri's asset protocol answers with the
 window's origin), so Web Audio hears them and the canvas stays readable. The project's

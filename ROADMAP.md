@@ -374,15 +374,34 @@ at 0 s.
 | Drag a Project card onto the empty track | a new track, the clip at the dropped time (1.784 s, where the pointer was), one undo step |
 | Gestures (mock, headless Edge with trusted input) | a click selects without moving; 2 px does nothing; a move to another track ends cleanly; transition ends follow the pointer |
 
+### FilmCraft feel (M9.8)
+
+Measured 2026-10-11. Mock = the UI against the mock engine in headless Edge with trusted
+CDP input; real app = debug build, off-screen, its own settings and WebView2 profile,
+the user's Klip running beside it.
+
+| Check | Result |
+|---|---|
+| Zoom through edits (mock) | 32.69 px/s before and after two edits that took the edit from 30 s to 50 s |
+| Selection (mock) | Shift-click → 2 clips; dragging one moved both by 1989 ms; a plain click on one collapses to it; Ctrl-click twice adds and takes out; a marquee over 3 clips selects them; Shift+Delete removed them and moved the clip after them from 30 s to 16 s (their 14 s); Ctrl+Z restores |
+| Razor and Ctrl+K (mock) | C, click at 40 % of a 5 s clip → cut at 2.0 s into it; Shift-click on Main → Main and the montage clip under it cut at 6 s; Ctrl+K at 16 s with nothing selected → the clip there and Main cut; the dashed cut line on all 3 rows with Shift |
+| Rolling a cut (mock) | a dip's middle dragged 33 px → the cut moved 1010 ms: the first clip 1010 ms longer, the next 1010 ms shorter (source in point +1010 ms) |
+| Dip to black on V2 over Main, export (`dip_on_a_montage_track_goes_through_black`) | 241 frames: 60 in the dip (1 s), every other frame on the plan; mean luma **70.9** before, **35.3** half way, **0.0** at the cut (Main used to show there) |
+| The same in the preview | mock canvas mean 66.6 → 33.1 → **0** → 59.5; real app vs `editor.frame` at 640 px: 38.4 dB (plain), 43.5 dB (mid-dip), **identical** at the cut (both black), 41.9 / 40.0 dB after |
+| Browser UI (real app, trusted keys) | Ctrl+P, Ctrl+S, Ctrl+F, F5, Ctrl+Shift+I and a right-click on the page: default cancelled; Ctrl+Z still reaches Klip; a right-click in a text field keeps its menu |
+
 ## Approximate / not done yet
 
-- **The FilmCraft-style Advanced mode (M9.7)**: waveforms decode the whole sound file
-  in the page (files over 96 MB get none; a long main clip without separate tracks
-  decodes its proxy); thumbnails and waveforms ignore speed ramps inside a clip; in
-  Fit zoom an edit that changes the length rescales the timeline after the drag; a
+- **The FilmCraft-style Advanced mode (M9.7, M9.8)**: waveforms decode the whole sound
+  file in the page (files over 96 MB get none; a long main clip without separate tracks
+  decodes its proxy); thumbnails and waveforms ignore speed ramps inside a clip; a
   stopwatch turned on with only a key at the start stays on for this session only; a
   crossfade still pulls the next clip earlier and leaves clips after it where they
-  were (as before M9.7). No tools strip (the user's choice: S splits).
+  were (as before M9.7). Tools are two toggles in the timeline header, not a strip (the
+  user's choice). Dragging a transition's middle rolls the cut instead of sliding the
+  transition off-centre (Klip has no media past a clip's ends). A selection moves in
+  time only (one clip may still change track). On a hidden video track (the eye) the
+  picture still shows: only its sound goes (as since M9.5; the icon says "hide").
 
 - **The Advanced preview (M9.5)**:
   - Heard by the human 2026-10-10: the preview's sound and Normal mode's Game/Mic
@@ -758,14 +777,37 @@ Quit and restart Klip first, so the new version runs.
 
 Tell me what looks or feels wrong, and anything that still doesn't feel like FilmCraft.
 
-## Known bugs
+## Manual checks for the human (M9.8, FilmCraft feel)
 
-- The WebView's own browser UI leaks into the app: its right-click menu and keys such as
-  Ctrl+P (Print) and Ctrl+S (Save as, saves the page's HTML) work in the real app (found
-  by the user in the M9.7 checks). Harmless, but not Klip. Fix in M9.8: swallow the
-  default context menu (not in text fields) and browser accelerator keys in the page
-  (Tauri 2.12 doesn't expose WebView2's `AreBrowserAcceleratorKeysEnabled` /
-  `AreDefaultContextMenusEnabled`; wry 0.57 has them).
+Use the release app: quit Klip and start it again with `target\release\Start Klip.cmd`,
+so the new version runs. Open a clip, switch to **Advanced**, add two or three clips from
+**Project** so they sit next to each other on a track.
+
+1. **The zoom stays.** Zoom the timeline in (Ctrl+wheel). Move or delete a clip: the
+   zoom must not jump. Press **\\** (or the ↔ button): the whole edit fits again.
+2. **Select several.** Click a clip, then Shift-click another: both get a white outline.
+   Drag one: both move. Click empty space and drag a box over clips: they get selected.
+   Press **Delete**: they go (Ctrl+Z brings them back).
+3. **Ripple delete.** Select a clip in the middle and press **Shift+Delete**: it goes and
+   the clips after it slide left to close the gap.
+4. **Razor.** Press **C** (or the blade button top-left of the timeline): the pointer is a
+   blade and a dashed line shows where it would cut. Click a clip: it is cut there. Hold
+   Shift and click: every track is cut there, your original clip too. Press **V** to get
+   the arrow back.
+5. **Ctrl+K.** Put the playhead inside a clip and press **Ctrl+K**: everything under the
+   playhead is cut (only the selected clips, if you selected some).
+6. **Move a cut under a transition.** Put a **Dip to black** or a crossfade between two
+   touching clips (right-click the striped block). Drag the middle of the striped block
+   sideways: the cut moves with it, one clip gets longer and the other shorter.
+7. **Dip to black is black.** With a Dip to black on a montage track above your clip,
+   play across it: the picture must go fully black in the middle (not show your clip
+   underneath), then come back. Export it: same.
+8. **No browser stuff.** Right-click anywhere outside a text box: no menu. Press Ctrl+P,
+   Ctrl+S, Ctrl+F, F5: nothing happens (no Print, no Save as, no reload).
+9. **Quiet waveforms.** Open your quiet PAYDAY 3 clip (11-39-03) in Advanced mode: its
+   waveform should now be visible.
+
+## Known bugs
 
 - e2e `m3_hdr::sdr_game_on_hdr_desktop_is_unchanged` fails since the evening of
   2026-10-09 with every grey level ~10 % darker (patch 16 → 13, 64 → 59, checker
