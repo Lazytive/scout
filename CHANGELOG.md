@@ -5,6 +5,12 @@ reason)`.
 
 ## Unreleased
 
+- M9.8.8 — V1 (Main) has a lock: locked whenever the editor opens (the razor, Ctrl+K
+  and S leave it alone and say so); unlocked, its pieces select, trim by their ends
+  (`trimPiece`: within the clip and the pieces beside it, at least 100 ms), cut with the
+  razor and delete with Delete (what follows closes up). Checked in the mock. (Claude
+  Opus 5.5: the user: "V1 the main vid should be able to be unlocked but remain locked
+  by default")
 - M9.8.7 — Hide and Mute are separate on video tracks: `Track.hidden` (project format,
   defaults to false for older projects) carried into `Layer.hidden`; `visible_at` /
   `visibleAt` skip hidden layers, their sound still plays unless the track is muted; the

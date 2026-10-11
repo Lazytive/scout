@@ -113,6 +113,10 @@ export const ed = $state({
   selected: [] as number[],
   /** The timeline's tool: Selection (V) or Razor (C). */
   tool: 'select' as 'select' | 'razor',
+  /** Main (V1/A1) can't be edited on the Advanced timeline until unlocked; locked on every open. */
+  mainLocked: true,
+  /** The selected piece of Main on the timeline (an index into its segments), once unlocked. */
+  mainSel: null as number | null,
   /** The selected transition of an Advanced track (the clip it follows). */
   transitionSel: null as { track: number; after: number } | null,
   /** Effect Controls groups whose stopwatch is on this session (`<clip id>:<group>`). */
@@ -189,6 +193,9 @@ export function openEditor(clip: LibClip): void {
     ed.exportResult = null;
   }
   ed.clip = clip;
+  // Main is locked again on every open (the user's choice), even the same clip.
+  ed.mainLocked = true;
+  ed.mainSel = null;
   ed.tiles = lib.listing?.strip.tiles ?? 16;
   ed.error = null;
   ed.playing = false;
@@ -389,6 +396,9 @@ export function redo(steps = 1): void {
   scheduleSave();
 }
 
+/** What a timeline edit of locked Main says. */
+export const MAIN_LOCKED = 'Main is locked: click the lock on V1 to edit it here';
+
 /**
  * The selected Advanced clips: `ed.selected` while it holds the primary `ed.clipId`, else
  * just that one (code that sets `ed.clipId` alone makes a single selection).
@@ -403,6 +413,7 @@ export function selectClips(ids: number[], primary: number | null = ids.at(-1) ?
   const list = ids.filter((id, i) => ids.indexOf(id) === i);
   ed.clipId = primary !== null && list.includes(primary) ? primary : (list.at(-1) ?? null);
   ed.selected = list;
+  ed.mainSel = null;
   ed.textId = null;
   ed.transitionSel = null;
 }

@@ -148,8 +148,11 @@ bottom row Project / Markers · Timeline · L/R meters. Four splitters, kept in
   moved to another track is a new element). Shift/Ctrl-click and a marquee over empty
   lane space select (`data-clip` hit test); a selection drags together in time
   (`moveClips`). The Razor tool (blade cursor, dashed cut line) splits where clicked
-  (`cutsAt` / `splitClipsAt`, Main via `timeline.split`; Shift: every track). Geometry
-  and gesture rules: `src/lib/timeline-view.ts`.
+  (`cutsAt` / `splitClipsAt`, Main via `timeline.split`; Shift: every track). Video
+  track headers have the eye (`hidden`: no picture) and M (`muted`: no sound). V1/A1
+  carry a lock (`ed.mainLocked`, closed on every open, M9.8.8): unlocked, Main's pieces
+  select (`ed.mainSel`), trim by their ends (`timeline.trimPiece`), cut and delete.
+  Geometry and gesture rules: `src/lib/timeline-view.ts`.
 - `EffectControls.svelte` + `HotValue.svelte`: Motion (zoom and position share keys),
   Opacity, Volume, Speed with a stopwatch each (on: keys the value at the playhead; off:
   keeps that value for the whole clip), blue drag-to-change values, ◀ ◆ ▶ and a key lane

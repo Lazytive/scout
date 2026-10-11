@@ -42,10 +42,10 @@
     trimClipStart,
   } from '../../lib/advanced';
   import type { Composition } from '../../lib/compose';
-  import { beginGesture, ed, edit, endGesture, gesture, seek, selectClips, selectedClips } from '../../lib/editor.svelte';
+  import { MAIN_LOCKED, beginGesture, ed, edit, endGesture, gesture, seek, selectClips, selectedClips } from '../../lib/editor.svelte';
   import { formatTimecode } from '../../lib/format';
   import type { Project } from '../../lib/timeline';
-  import { segments, split } from '../../lib/timeline';
+  import { segments, split, trimPiece } from '../../lib/timeline';
   import { stripPosition } from '../../lib/library';
   import Waveform from './Waveform.svelte';
   import type { TimelineRow, TransitionBox } from '../../lib/timeline-view';
@@ -466,15 +466,64 @@
     razorHover = { ms: snap(msAt(e.clientX - lane.left), snapTargets(null), e.altKey), row, all: e.shiftKey };
   }
 
-  /** Cut one clip, Main, or every track (Shift) at `t`; a click that cuts nothing does nothing. */
+  /**
+   * Cut one clip, Main, or every track (Shift) at `t`; a click that cuts nothing does
+   * nothing. Locked Main is left alone.
+   */
   function razor(t: number, what: number | 'main' | 'all') {
     const clips = what === 'main' ? [] : cutsAt(adv, what === 'all' ? null : [what], t);
-    const main = (what === 'main' || what === 'all') && segs.some((s) => t > s.out_start_ms && t < s.out_end_ms);
+    const inMain = (what === 'main' || what === 'all') && segs.some((s) => t > s.out_start_ms && t < s.out_end_ms);
+    const main = inMain && !ed.mainLocked;
+    if (what === 'main' && inMain && ed.mainLocked) ed.error = MAIN_LOCKED;
     if (clips.length === 0 && !main) return;
     edit((p) => {
       splitClipsAt(p, what === 'main' ? [] : what === 'all' ? null : [what], t);
       if (main) split(p, t);
-    }, what === 'all' ? 'Cut every track' : 'Cut a clip');
+    }, what === 'all' ? 'Cut every track' : what === 'main' ? 'Cut Main' : 'Cut a clip');
+  }
+
+  // ---- Main (V1/A1): locked by default; unlocked, its pieces select, trim and delete ----
+  type MPress = { i: number; edge: 'start' | 'end'; x: number; y: number; src: number; speed: number; end: number; targets: number[]; started: boolean };
+  let mpress: MPress | null = null;
+
+  function mainDown(e: PointerEvent, i: number) {
+    // Locked, or the razor: the lane handles the press (marquee, playhead, cut).
+    if (e.button !== 0 || ed.mainLocked || ed.tool === 'razor') return;
+    const s = segs[i];
+    if (!s) return;
+    e.stopPropagation();
+    selectClips([]);
+    ed.mainSel = i;
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const zone = clipZone(e.clientX - r.left, r.width);
+    // Main plays back to back: its pieces trim, they don't move.
+    if (zone === 'move') return;
+    mpress = { i, edge: zone, x: e.clientX, y: e.clientY, src: zone === 'start' ? s.src_start_ms : s.src_end_ms, speed: s.speed, end: s.out_end_ms, targets: snapTargets(null), started: false };
+    follow(mainMove, mainUp);
+  }
+  function mainMove(e: PointerEvent) {
+    const m = mpress;
+    if (!m) return;
+    if (!m.started) {
+      if (!pastThreshold(e.clientX - m.x, e.clientY - m.y)) return;
+      m.started = true;
+      beginGesture();
+    }
+    let dms = ((e.clientX - m.x) / pps) * 1000;
+    // The end follows the pointer (and snaps); a start trims in place and what follows closes up.
+    if (m.edge === 'end') dms = snap(Math.round(m.end + dms), m.targets, e.altKey) - m.end;
+    const src = m.src + dms * m.speed;
+    gesture((p) => trimPiece(p, m.i, m.edge, src));
+  }
+  function mainUp() {
+    const m = mpress;
+    mpress = null;
+    if (m?.started) endGesture('Trim Main');
+  }
+  function toggleLock() {
+    ed.mainLocked = !ed.mainLocked;
+    ed.mainSel = null;
+    if (!ed.mainLocked && ed.error === MAIN_LOCKED) ed.error = null;
   }
 
   // ---- transitions ----
@@ -793,9 +842,15 @@
                 <span class="name" role="presentation" title="{t.name || 'Track'} (double-click to rename)" ondblclick={() => (renaming = t.id)}>{t.name || 'Track'}</span>
               {/if}
             {:else}
-              <span class="icon lock" title="Main: cut it in Normal mode or the Main clip tab">
-                <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></svg>
-              </span>
+              <button
+                class="icon lock"
+                class:open={!ed.mainLocked}
+                aria-pressed={ed.mainLocked}
+                title={ed.mainLocked ? 'Main is locked: click to edit it here (trim, cut and delete its pieces)' : 'Main is unlocked: click to lock it again'}
+                onclick={toggleLock}
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1" />{#if ed.mainLocked}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />{:else}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0" />{/if}</svg>
+              </button>
               <span class="name" title={mainName}>{r.kind === 'main' ? mainName : 'Main sound'}</span>
             {/if}
             <span
@@ -850,6 +905,10 @@
               {#each segs as s, i (i)}
                 <div
                   class="clip main {r.kind === 'main' ? 'video' : 'audio'}"
+                  class:sel={!ed.mainLocked && ed.mainSel === i}
+                  role="presentation"
+                  onpointerdown={(e) => mainDown(e, i)}
+                  onpointermove={(e) => !ed.mainLocked && clipHover(e)}
                   style:left="{px(s.out_start_ms)}px"
                   style:width="{Math.max(4, px(s.out_end_ms - s.out_start_ms))}px"
                   title="{mainName} · {formatTimecode(s.src_start_ms)}–{formatTimecode(s.src_end_ms)}"
@@ -1152,6 +1211,9 @@
   }
   .icon.lock {
     color: var(--text-muted);
+  }
+  .icon.lock.open {
+    color: var(--accent-text);
   }
   .head .name {
     flex: 1;

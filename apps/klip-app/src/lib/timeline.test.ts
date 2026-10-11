@@ -18,6 +18,7 @@ import {
   sourceTime,
   split,
   trim,
+  trimPiece,
 } from './timeline';
 
 interface Fixture {
@@ -146,5 +147,26 @@ describe('edits', () => {
     expect(p.bogus).toEqual({ advanced: true });
     expect(asProject(null).pieces).toEqual([]);
     expect(asProject({ pieces: 'no', text: 3 }).text).toEqual([]);
+  });
+});
+
+describe('trimming a piece of Main (M9.8.8)', () => {
+  it('moves one end within the clip and its neighbours, the output follows', () => {
+    const p = newProject(10_000);
+    split(p, 4000);
+    cut(p, 4000, 6000); // pieces 0–4000 and 6000–10000
+    trimPiece(p, 0, 'end', 5000);
+    expect(p.pieces.map((x) => [x.start_ms, x.end_ms])).toEqual([
+      [0, 5000],
+      [6000, 10_000],
+    ]);
+    // Not over the next piece, nor past the clip, nor shorter than the minimum.
+    trimPiece(p, 0, 'end', 9000);
+    expect(p.pieces[0]!.end_ms).toBe(6000);
+    trimPiece(p, 1, 'end', 20_000);
+    expect(p.pieces[1]!.end_ms).toBe(10_000);
+    trimPiece(p, 1, 'start', 9990);
+    expect(p.pieces[1]!.start_ms).toBe(9900);
+    expect(segments(p).at(-1)!.out_end_ms).toBe(6100);
   });
 });

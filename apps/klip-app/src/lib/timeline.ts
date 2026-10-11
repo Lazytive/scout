@@ -224,6 +224,28 @@ function isolate(p: Project, outStart: number, outEnd: number): [number, number]
   return [first, last];
 }
 
+/** The shortest a piece gets by dragging its ends, source ms. */
+export const MIN_PIECE_MS = 100;
+
+/**
+ * Move piece `i`'s start or end to source time `srcMs` (Main's pieces on the Advanced
+ * timeline once unlocked, M9.8.8): within the clip, not over the pieces beside it, at
+ * least `MIN_PIECE_MS` long. The output after it closes up or opens.
+ */
+export function trimPiece(p: Project, i: number, edge: 'start' | 'end', srcMs: number): void {
+  materialize(p);
+  const piece = p.pieces[i];
+  if (!piece) throw new EditError('bad_range');
+  const t = Math.round(Number.isFinite(srcMs) ? srcMs : edge === 'start' ? piece.start_ms : piece.end_ms);
+  if (edge === 'start') {
+    const lo = i > 0 ? p.pieces[i - 1]!.end_ms : 0;
+    piece.start_ms = Math.max(lo, Math.min(t, piece.end_ms - MIN_PIECE_MS));
+  } else {
+    const hi = i + 1 < p.pieces.length ? p.pieces[i + 1]!.start_ms : p.source_ms;
+    piece.end_ms = Math.min(hi, Math.max(t, piece.start_ms + MIN_PIECE_MS));
+  }
+}
+
 /** Keep only output `outStart..outEnd`. */
 export function trim(p: Project, outStart: number, outEnd: number): void {
   const before = p.pieces.map((x) => ({ ...x }));

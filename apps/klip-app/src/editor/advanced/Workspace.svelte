@@ -35,6 +35,7 @@
     beginGesture,
     closeEditor,
     cutSelection,
+    MAIN_LOCKED,
     ed,
     edit,
     endGesture,
@@ -52,7 +53,7 @@
   import { lib } from '../../lib/library.svelte';
   import Panel from '../../lib/Panel.svelte';
   import type { Project } from '../../lib/timeline';
-  import { segments, split as splitMain } from '../../lib/timeline';
+  import { cut, segments, split as splitMain } from '../../lib/timeline';
   import NormalTools from '../NormalTools.svelte';
   import Canvas from './Canvas.svelte';
   import EffectsPanel from './EffectsPanel.svelte';
@@ -370,6 +371,7 @@
       case 's':
       case 'S':
         if (f && localOf(f) > 0 && localOf(f) < clipLength(f.clip)) edit((p) => void splitClip(p, f.clip.id, f.clip.at_ms + localOf(f)), 'Split clip');
+        else if (ed.mainLocked) ed.error = MAIN_LOCKED;
         else splitAtPlayhead();
         break;
       case 'Delete':
@@ -378,6 +380,11 @@
           const { track, after } = ed.transitionSel;
           edit((p) => setTransitionAt(p, track, after, 'cut', 0), 'Remove a transition');
           ed.transitionSel = null;
+        } else if (ed.mainSel !== null && !ed.mainLocked) {
+          // A piece of unlocked Main: what follows closes up (Main plays back to back).
+          const s = segments(project)[ed.mainSel];
+          if (s) edit((p) => cut(p, s.out_start_ms, s.out_end_ms), 'Remove a piece of Main');
+          ed.mainSel = null;
         } else if (f) {
           // Shift: ripple delete (the later clips of each track close the gap).
           const ids = selectedClips();
@@ -423,7 +430,7 @@
 
   /**
    * Ctrl+K (FilmCraft's Add Edit): cut the selected clips at the playhead, or, when none
-   * of them plays there, every track (Main too) — one undo step.
+   * of them plays there, every track (Main too, when unlocked) — one undo step.
    */
   function splitAtPlayheadAll() {
     const t = ed.playhead;
@@ -434,8 +441,12 @@
       return;
     }
     const clips = cutsAt(adv, null, t).length;
-    const main = segments(project).some((s) => t > s.out_start_ms && t < s.out_end_ms);
-    if (clips === 0 && !main) return;
+    const inMain = segments(project).some((s) => t > s.out_start_ms && t < s.out_end_ms);
+    const main = inMain && !ed.mainLocked;
+    if (clips === 0 && !main) {
+      if (inMain) ed.error = MAIN_LOCKED;
+      return;
+    }
     edit((p) => {
       splitClipsAt(p, null, t);
       if (main) splitMain(p, t);

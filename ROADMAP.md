@@ -400,8 +400,9 @@ the user's Klip running beside it.
   were (as before M9.7). Tools are two toggles in the timeline header, not a strip (the
   user's choice). Dragging a transition's middle rolls the cut instead of sliding the
   transition off-centre (Klip has no media past a clip's ends). A selection moves in
-  time only (one clip may still change track). On a hidden video track (the eye) the
-  picture still shows: only its sound goes (as since M9.5; the icon says "hide").
+  time only (one clip may still change track). Unlocked Main's pieces trim and delete
+  but don't move (Main plays back to back); trimming a piece's start keeps its place and
+  closes up what follows.
 
 - **The Advanced preview (M9.5)**:
   - Heard by the human 2026-10-10: the preview's sound and Normal mode's Game/Mic
@@ -806,6 +807,19 @@ so the new version runs. Open a clip, switch to **Advanced**, add two or three c
    Ctrl+S, Ctrl+F, F5: nothing happens (no Print, no Save as, no reload).
 9. ✅ (2026-10-11) **Quiet waveforms.** Open your quiet PAYDAY 3 clip (11-39-03) in Advanced mode: its
    waveform should now be visible.
+
+## Manual checks for the human (M9.8.7–8, Hide/Mute and the V1 lock)
+
+Restart Klip with `Start Klip.cmd` first.
+
+1. **Hide and Mute.** On a montage (video) track there are now two buttons: the eye and
+   **M**. Click the eye: the track's picture disappears but you still hear it. Click
+   **M**: its sound goes too. Sound and music tracks only have **M**.
+2. **V1 is locked.** Open a clip in Advanced mode: the lock next to V1 is closed and
+   clicking your clip on V1 does nothing (the razor says it is locked). Click the lock: it
+   opens (blue). Now click a piece of your clip on V1, drag its right end to shorten it,
+   cut it with the razor (C), select a piece and press Delete. Close the editor and open
+   it again: V1 is locked again.
 
 ## Known bugs
 
