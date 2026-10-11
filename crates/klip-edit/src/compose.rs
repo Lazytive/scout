@@ -311,8 +311,10 @@ pub fn compose_with(
     let segments = timeline::segments(&p);
     let mut layers: Vec<Layer> = Vec::new();
     let mut next_id: u32 = 1;
+    // V1 arranged on the Advanced timeline replaces Normal mode's cut (M9.8.9).
+    let arranged = p.advanced.tracks.iter().any(|t| t.main);
     // Track 0: the main clip as Normal mode cut it.
-    for seg in &segments {
+    for seg in segments.iter().filter(|_| !arranged) {
         layers.push(Layer {
             id: next_id,
             track: 0,
@@ -335,10 +337,18 @@ pub fn compose_with(
         });
         next_id = next_id.saturating_add(1);
     }
-    let mut duration = segments.last().map_or(0, |s| s.out_end_ms);
-    // Advanced tracks above it, in order.
+    let mut duration = if arranged {
+        0
+    } else {
+        segments.last().map_or(0, |s| s.out_end_ms)
+    };
+    // Advanced tracks above it, in order (an arranged main track at the bottom).
     for (ti, track) in p.advanced.tracks.iter().enumerate() {
-        let z = u32::try_from(ti).unwrap_or(u32::MAX).saturating_add(1);
+        let z = if track.main {
+            0
+        } else {
+            u32::try_from(ti).unwrap_or(u32::MAX).saturating_add(1)
+        };
         // The previous clip of this track: its layer index and its project id.
         let mut previous: Option<(usize, u32)> = None;
         for clip in &track.clips {
@@ -443,8 +453,10 @@ pub fn compose_with(
         }
     }
     let main_chapters = chapters(source);
+    // (Arranged, the main clip's chapters come with its layers below.)
     let mut markers: Vec<Marker> = main_chapters
         .iter()
+        .filter(|_| !arranged)
         .filter_map(|&(src, title)| {
             timeline::output_time_in(&segments, src).map(|at| chapter_marker(at, title))
         })
@@ -1293,6 +1305,7 @@ mod tests {
             name: "Montage".into(),
             muted: false,
             hidden: false,
+            main: false,
             clips: vec![clip(1, 8_000), clip(2, 10_000)],
         }];
         p.advanced.markers = vec![Marker {
@@ -1365,6 +1378,7 @@ mod tests {
             name: "B-roll".into(),
             muted: false,
             hidden: false,
+            main: false,
             clips: vec![
                 PlacedClip {
                     id: 1,
@@ -1431,6 +1445,55 @@ mod tests {
     }
 
     #[test]
+    fn an_arranged_main_track_replaces_the_normal_cut() {
+        // Normal mode cut 0–10 s; V1 arranged: the clip's 6–8 s at 1 s, then its 0–2 s
+        // at 5 s (reordered, with gaps).
+        let mut p = Project::new(10_000);
+        let piece = |id, in_ms, out_ms, at_ms| PlacedClip {
+            id,
+            source: Source::Main,
+            in_ms,
+            out_ms,
+            at_ms,
+            ..PlacedClip::default()
+        };
+        p.advanced.tracks = vec![Track {
+            id: 4,
+            kind: TrackKind::Video,
+            main: true,
+            clips: vec![piece(1, 6_000, 8_000, 1_000), piece(2, 0, 2_000, 5_000)],
+            ..Track::default()
+        }];
+        let c = compose(&p, &source());
+        let spans: Vec<(u64, u64, u64, u32)> = c
+            .layers
+            .iter()
+            .map(|l| (l.src_in_ms, l.at_ms, l.end_ms, l.z))
+            .collect();
+        assert_eq!(spans, vec![(6_000, 1_000, 3_000, 0), (0, 5_000, 7_000, 0)]);
+        assert_eq!(c.duration_ms, 7_000);
+        assert!(c.visible_at(4_000).is_empty(), "a gap: nothing drawn");
+        // The bookmark at source 7 s plays at 2 s, the one at 0.5 s at 5.5 s.
+        let at: Vec<u64> = c.markers.iter().map(|m| m.at_ms).collect();
+        assert_eq!(at, vec![2_000, 5_500]);
+
+        // Repair: one main track, of the main clip only; an empty one still counts.
+        let mut a = p.advanced.clone();
+        a.tracks[0].clips[1].source = Source::Library { key: "x".into() };
+        a.tracks.push(Track {
+            id: 5,
+            kind: TrackKind::Music,
+            main: true,
+            ..Track::default()
+        });
+        a.repair();
+        assert_eq!(a.tracks[0].clips.len(), 1);
+        assert!(!a.tracks[1].main);
+        a.tracks[0].clips.clear();
+        assert!(!a.is_empty());
+    }
+
+    #[test]
     fn a_hidden_track_is_heard_not_seen() {
         let mut p = Project::new(10_000);
         p.advanced.tracks = vec![Track {
@@ -1439,6 +1502,7 @@ mod tests {
             name: String::new(),
             muted: false,
             hidden: true,
+            main: false,
             clips: vec![PlacedClip {
                 id: 1,
                 source: Source::Main,
@@ -1475,6 +1539,7 @@ mod tests {
             name: String::new(),
             muted: false,
             hidden: false,
+            main: false,
             clips: vec![
                 PlacedClip {
                     id: 1,
@@ -1556,6 +1621,7 @@ mod tests {
             name: String::new(),
             muted: false,
             hidden: false,
+            main: false,
             clips: vec![clip(1, 10_000), clip(2, 12_000)],
         }];
         p.advanced.transitions = vec![Transition {
@@ -1588,6 +1654,7 @@ mod tests {
             name: String::new(),
             muted: true,
             hidden: false,
+            main: false,
             clips: vec![PlacedClip {
                 id: 1,
                 source: Source::File {

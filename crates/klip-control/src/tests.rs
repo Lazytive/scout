@@ -147,16 +147,23 @@ fn hostile_discovery_files() {
 
 #[test]
 fn client_reports_not_running() {
-    // Bind and drop a listener to get a port that is very likely closed.
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
-    assert!(matches!(
-        Client::connect_to(port, &"a".repeat(64), Duration::from_millis(500)),
-        Err(ClientError::NotRunning)
-    ));
+    // Bind and drop a listener to get a port that is very likely closed. A server of a
+    // test running in parallel can take a just-freed port at once (seen in `cargo xtask
+    // ci`, session 15), so a few fresh ports are tried: one must report not running.
+    let mut last = String::new();
+    for _ in 0..5 {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        match Client::connect_to(port, &"a".repeat(64), Duration::from_millis(500)) {
+            Err(ClientError::NotRunning) => return,
+            Err(e) => last = format!("{e:?}"),
+            Ok(_) => last = "connected: the port was taken again".into(),
+        }
+    }
+    panic!("never reported not running; last: {last}");
 }
 
 #[test]

@@ -74,6 +74,10 @@ and writing the project file.
   `SourceInfo` by key): a titled chapter (`SourceInfo::events`) is an `Event` marker
   with its title, the others are `Bookmark n` (numbered among bookmarks); then the
   user's markers; sorted, de-duplicated, at most 255.
+  V1 arranged (M9.8.9): a track with `main: true` (one, `Source::Main` clips only)
+  replaces Normal mode's segments as the bottom layers (z 0); the main clip's chapters
+  then come from its layers. `Track.hidden` (M9.8.7) keeps a track's pictures out of
+  `visible_at` (its sound still plays).
   Transitions: a crossfade pulls the next clip under the one before (opacity ramp); a
   dip on a picture track adds a `LayerKind::Black` layer over the join (0 → 1 at the
   cut, held across a gap, → 0; M9.8.5), on a sound track it fades both clips.

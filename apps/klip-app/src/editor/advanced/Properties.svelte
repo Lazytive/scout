@@ -144,12 +144,20 @@
       <button class:on={t.muted} aria-pressed={t.muted} onclick={() => edit((p) => setTrack(p, t.id, { muted: !t.muted }), t.muted ? 'Unmute a track' : 'Mute a track')}>
         {t.muted ? 'Unmute' : 'Mute'}
       </button>
-      <button title="Draw this track above the next one" onclick={() => edit((p) => moveTrack(p, t.id, 1), 'Move track')}>Up</button>
-      <button title="Draw this track below" onclick={() => edit((p) => moveTrack(p, t.id, -1), 'Move track')}>Down</button>
-      <button class="danger" onclick={() => {
-        edit((p) => removeTrack(p, t.id), 'Remove track');
-        ed.clipId = null;
-      }}>Remove track</button>
+      {#if t.main}
+        <!-- V1 arranged: always at the bottom; "removing" it goes back to the simple cut. -->
+        <button title="V1 plays Normal mode's cut again; the moves on V1 go (Ctrl+Z brings them back)" onclick={() => {
+          edit((p) => removeTrack(p, t.id), 'Back to the simple cut');
+          ed.clipId = null;
+        }}>Back to the simple cut</button>
+      {:else}
+        <button title="Draw this track above the next one" onclick={() => edit((p) => moveTrack(p, t.id, 1), 'Move track')}>Up</button>
+        <button title="Draw this track below" onclick={() => edit((p) => moveTrack(p, t.id, -1), 'Move track')}>Down</button>
+        <button class="danger" onclick={() => {
+          edit((p) => removeTrack(p, t.id), 'Remove track');
+          ed.clipId = null;
+        }}>Remove track</button>
+      {/if}
     </div>
   </section>
 {:else if selTrans}

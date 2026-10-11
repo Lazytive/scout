@@ -13,12 +13,15 @@
   import type { Source } from '../../lib/advanced';
   import {
     addMarker,
+    arrangeMain,
     clipLength,
     cutsAt,
     findClip,
     laneValue,
+    mainTrackOf,
     overlapOf,
     readAdvanced,
+    removeClip,
     removeClips,
     rippleDelete,
     setLane,
@@ -338,7 +341,7 @@
     }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a') {
       e.preventDefault();
-      selectClips(readAdvanced(project).tracks.flatMap((t) => t.clips.map((c) => c.id)), ed.clipId);
+      selectClips(readAdvanced(project).tracks.flatMap((t) => (t.main && ed.mainLocked ? [] : t.clips.map((c) => c.id))), ed.clipId);
       return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -372,7 +375,10 @@
       case 'S':
         if (f && localOf(f) > 0 && localOf(f) < clipLength(f.clip)) edit((p) => void splitClip(p, f.clip.id, f.clip.at_ms + localOf(f)), 'Split clip');
         else if (ed.mainLocked) ed.error = MAIN_LOCKED;
-        else splitAtPlayhead();
+        else if (mainTrackOf(readAdvanced(project))) {
+          const ids = mainTrackOf(readAdvanced(project))?.clips.map((c) => c.id) ?? [];
+          if (cutsAt(readAdvanced(project), ids, ed.playhead).length) edit((p) => void splitClipsAt(p, ids, ed.playhead), 'Split Main');
+        } else splitAtPlayhead();
         break;
       case 'Delete':
       case 'Backspace':
@@ -381,9 +387,16 @@
           edit((p) => setTransitionAt(p, track, after, 'cut', 0), 'Remove a transition');
           ed.transitionSel = null;
         } else if (ed.mainSel !== null && !ed.mainLocked) {
-          // A piece of unlocked Main: what follows closes up (Main plays back to back).
-          const s = segments(project)[ed.mainSel];
-          if (s) edit((p) => cut(p, s.out_start_ms, s.out_end_ms), 'Remove a piece of Main');
+          // A piece of unlocked Main. Shift: out of the simple cut, what follows closes up;
+          // else V1 is arranged and the piece leaves a gap, like any clip.
+          const i = ed.mainSel;
+          const s = segments(project)[i];
+          if (s && e.shiftKey) edit((p) => cut(p, s.out_start_ms, s.out_end_ms), 'Ripple delete a piece of Main');
+          else if (s)
+            edit((p) => {
+              const id = arrangeMain(p)[i];
+              if (id !== undefined) removeClip(p, id);
+            }, 'Remove a piece of Main');
           ed.mainSel = null;
         } else if (f) {
           // Shift: ripple delete (the later clips of each track close the gap).
@@ -440,15 +453,18 @@
       edit((p) => void splitClipsAt(p, ids, t), 'Split at the playhead');
       return;
     }
-    const clips = cutsAt(adv, null, t).length;
-    const inMain = segments(project).some((s) => t > s.out_start_ms && t < s.out_end_ms);
-    const main = inMain && !ed.mainLocked;
+    // Every track, but not V1 while it is locked.
+    const mt = mainTrackOf(adv);
+    const all = adv.tracks.flatMap((x) => (x.main && ed.mainLocked ? [] : x.clips.map((c) => c.id)));
+    const clips = cutsAt(adv, all, t).length;
+    const inMain = mt ? cutsAt(adv, mt.clips.map((c) => c.id), t).length > 0 : segments(project).some((s) => t > s.out_start_ms && t < s.out_end_ms);
+    const main = !mt && inMain && !ed.mainLocked;
     if (clips === 0 && !main) {
-      if (inMain) ed.error = MAIN_LOCKED;
+      if (inMain && ed.mainLocked) ed.error = MAIN_LOCKED;
       return;
     }
     edit((p) => {
-      splitClipsAt(p, null, t);
+      splitClipsAt(p, all, t);
       if (main) splitMain(p, t);
     }, 'Split at the playhead');
   }
@@ -489,7 +505,12 @@
         {#snippet actions()}
           <span class="clipname" title={clip.name}>{clip.name}</span>
           <div class="mode" role="group" aria-label="Mode">
-            <button class="flat" onclick={() => onmode('normal')}>Normal</button>
+            <button
+              class="flat"
+              disabled={!!mainTrackOf(readAdvanced(project))}
+              title={mainTrackOf(readAdvanced(project)) ? 'Your clip is arranged on V1: Normal mode can\'t show that (Main clip tab → Back to the simple cut)' : 'Normal mode'}
+              onclick={() => onmode('normal')}>Normal</button
+            >
             <button class="flat on" aria-pressed="true">Advanced</button>
           </div>
           <button class="flat" onclick={closeEditor}>← Library</button>

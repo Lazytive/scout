@@ -25,7 +25,10 @@
     clipLength,
     cutsAt,
     findClip,
+    arrangeMain,
+    fitsOn,
     fitsTrack,
+    mainTrackOf,
     moveClip,
     moveClips,
     overlapOf,
@@ -45,7 +48,7 @@
   import { MAIN_LOCKED, beginGesture, ed, edit, endGesture, gesture, seek, selectClips, selectedClips } from '../../lib/editor.svelte';
   import { formatTimecode } from '../../lib/format';
   import type { Project } from '../../lib/timeline';
-  import { segments, split, trimPiece } from '../../lib/timeline';
+  import { segments, split } from '../../lib/timeline';
   import { stripPosition } from '../../lib/library';
   import Waveform from './Waveform.svelte';
   import type { TimelineRow, TransitionBox } from '../../lib/timeline-view';
@@ -127,12 +130,15 @@
     ...joins(adv, Math.max(1, (2 / pps) * 1000)),
     // A video track's first clip can crossfade in from whatever is below it.
     ...adv.tracks
-      .filter((t) => (t.kind === 'video' || t.kind === 'text') && t.clips[0] && t.clips[0].at_ms > 0 && !fromBelow(adv, t.id))
+      .filter((t) => (t.kind === 'video' || t.kind === 'text') && !t.main && t.clips[0] && t.clips[0].at_ms > 0 && !fromBelow(adv, t.id))
       .map((t) => ({ track: t.id, after: FROM_BELOW, next: t.clips[0]!.id, at: t.clips[0]!.at_ms })),
   ]);
-  const lastVideo = $derived(rows.findIndex((r) => r.kind === 'main'));
-  const videoCount = $derived(adv.tracks.filter((t) => t.kind === 'video' || t.kind === 'text').length);
-  const soundCount = $derived(adv.tracks.length - videoCount);
+  const lastVideo = $derived(rows.findIndex((r) => r.kind === 'main' || (r.kind === 'track' && r.track.main)));
+  const videoCount = $derived(adv.tracks.filter((t) => (t.kind === 'video' || t.kind === 'text') && !t.main).length);
+  const soundCount = $derived(adv.tracks.filter((t) => t.kind === 'audio' || t.kind === 'music').length);
+  /** V1 arranged (M9.8.9), and whether a track is V1 while locked (it acts as empty space). */
+  const mt = $derived(mainTrackOf(adv));
+  const lockedMain = (t: Track) => t.main && ed.mainLocked;
   const bar01 = $derived(thumb(scrollX, viewW, contentW));
 
   function loadHeights(): { video: number; sound: number } {
@@ -307,7 +313,8 @@
   }
 
   function clipDown(e: PointerEvent, track: Track, clip: PlacedClip) {
-    if (e.button !== 0) return;
+    // Locked V1: the lane takes the press (marquee, playhead, the razor's message).
+    if (e.button !== 0 || lockedMain(track)) return;
     e.stopPropagation();
     const el = e.currentTarget as HTMLElement;
     if (ed.tool === 'razor') {
@@ -366,7 +373,7 @@
     }
     const id = Number(raw);
     const t = adv.tracks.find((x) => x.id === id);
-    return t && fitsTrack(clip.source, t.kind) ? id : null;
+    return t && fitsOn(clip.source, t) && !lockedMain(t) ? id : null;
   }
 
   function clipMove(e: PointerEvent) {
@@ -438,6 +445,7 @@
     const [t, b] = [Math.min(m.y, m.y1), Math.max(m.y, m.y1)];
     const hits: number[] = [];
     for (const el of scroller?.querySelectorAll<HTMLElement>('[data-clip]') ?? []) {
+      if (el.dataset.locked) continue;
       const c = el.getBoundingClientRect();
       if (c.right > l && c.left < r && c.bottom > t && c.top < b) hits.push(Number(el.dataset.clip));
     }
@@ -471,20 +479,29 @@
    * nothing. Locked Main is left alone.
    */
   function razor(t: number, what: number | 'main' | 'all') {
-    const clips = what === 'main' ? [] : cutsAt(adv, what === 'all' ? null : [what], t);
-    const inMain = (what === 'main' || what === 'all') && segs.some((s) => t > s.out_start_ms && t < s.out_end_ms);
-    const main = inMain && !ed.mainLocked;
-    if (what === 'main' && inMain && ed.mainLocked) ed.error = MAIN_LOCKED;
+    if (what === 'main' && ed.mainLocked) {
+      ed.error = MAIN_LOCKED;
+      return;
+    }
+    const mainIds = mt?.clips.map((c) => c.id) ?? [];
+    const free = (ids: number[]) => (ed.mainLocked ? ids.filter((id) => !mainIds.includes(id)) : ids);
+    const ids = what === 'all' ? free(adv.tracks.flatMap((x) => x.clips.map((c) => c.id))) : what === 'main' ? mainIds : [what];
+    const clips = cutsAt(adv, ids, t);
+    // Normal mode's cut, while V1 isn't arranged.
+    const main = !mt && !ed.mainLocked && (what === 'main' || what === 'all') && segs.some((s) => t > s.out_start_ms && t < s.out_end_ms);
     if (clips.length === 0 && !main) return;
     edit((p) => {
-      splitClipsAt(p, what === 'main' ? [] : what === 'all' ? null : [what], t);
+      splitClipsAt(p, ids, t);
       if (main) split(p, t);
     }, what === 'all' ? 'Cut every track' : what === 'main' ? 'Cut Main' : 'Cut a clip');
   }
 
-  // ---- Main (V1/A1): locked by default; unlocked, its pieces select, trim and delete ----
-  type MPress = { i: number; edge: 'start' | 'end'; x: number; y: number; src: number; speed: number; end: number; targets: number[]; started: boolean };
+  // ---- Main (V1/A1): locked by default. Unlocked, a piece of the simple cut selects;
+  // the first drag (move or trim) arranges V1 (M9.8.9): the cut's pieces become clips of
+  // a main track that move like any clip. ----
+  type MPress = { i: number; zone: 'move' | 'start' | 'end'; x: number; y: number; at: number; end: number; targets: number[]; started: boolean; id: number | null };
   let mpress: MPress | null = null;
+  const MAIN_SOURCE = { source: { kind: 'main' }, out_ms: 0 } as PlacedClip;
 
   function mainDown(e: PointerEvent, i: number) {
     // Locked, or the razor: the lane handles the press (marquee, playhead, cut).
@@ -496,9 +513,7 @@
     ed.mainSel = i;
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const zone = clipZone(e.clientX - r.left, r.width);
-    // Main plays back to back: its pieces trim, they don't move.
-    if (zone === 'move') return;
-    mpress = { i, edge: zone, x: e.clientX, y: e.clientY, src: zone === 'start' ? s.src_start_ms : s.src_end_ms, speed: s.speed, end: s.out_end_ms, targets: snapTargets(null), started: false };
+    mpress = { i, zone, x: e.clientX, y: e.clientY, at: s.out_start_ms, end: s.out_end_ms, targets: snapTargets(null), started: false, id: null };
     follow(mainMove, mainUp);
   }
   function mainMove(e: PointerEvent) {
@@ -509,21 +524,33 @@
       m.started = true;
       beginGesture();
     }
-    let dms = ((e.clientX - m.x) / pps) * 1000;
-    // The end follows the pointer (and snaps); a start trims in place and what follows closes up.
-    if (m.edge === 'end') dms = snap(Math.round(m.end + dms), m.targets, e.altKey) - m.end;
-    const src = m.src + dms * m.speed;
-    gesture((p) => trimPiece(p, m.i, m.edge, src));
+    const dms = ((e.clientX - m.x) / pps) * 1000;
+    const target = m.zone === 'move' && Math.abs(e.clientY - m.y) > rowH({ kind: 'main', label: '', group: 'video' }) / 2 ? trackUnder(e, MAIN_SOURCE) : null;
+    dropTrack = target;
+    gesture((p) => {
+      const id = arrangeMain(p)[m.i];
+      if (id === undefined) return;
+      m.id = id;
+      if (m.zone === 'move') moveClip(p, id, Math.max(0, snapMove(Math.round(m.at + dms), m.end - m.at, m.targets, e.altKey)), target ?? undefined);
+      else if (m.zone === 'start') trimClipStart(p, id, snap(Math.round(m.at + dms), m.targets, e.altKey));
+      else trimClipEnd(p, id, snap(Math.round(m.end + dms), m.targets, e.altKey), sourceMs(MAIN_SOURCE));
+    });
   }
   function mainUp() {
     const m = mpress;
     mpress = null;
-    if (m?.started) endGesture('Trim Main');
+    dropTrack = null;
+    if (!m?.started) return;
+    endGesture(m.zone === 'move' ? 'Move a piece of Main' : 'Trim a piece of Main');
+    if (m.id !== null) select(m.id);
   }
   function toggleLock() {
     ed.mainLocked = !ed.mainLocked;
     ed.mainSel = null;
     if (!ed.mainLocked && ed.error === MAIN_LOCKED) ed.error = null;
+    // Locking lets go of V1's clips.
+    const mainIds = mt?.clips.map((c) => c.id) ?? [];
+    if (ed.mainLocked && mainIds.length) selectClips(selectedClips().filter((id) => !mainIds.includes(id)));
   }
 
   // ---- transitions ----
@@ -769,6 +796,7 @@
           class:sel={selection.has(c.id)}
           class:primary={ed.clipId === c.id}
           data-clip={c.id}
+          data-locked={lockedMain(t) || undefined}
           class:off={t.kind === 'audio' || t.kind === 'music' ? t.muted : t.hidden}
           style:left="{px(c.at_ms - under)}px"
           style:width="{Math.max(6, px(clipLength(c)))}px"
@@ -776,7 +804,7 @@
           tabindex="0"
           aria-label={sourceLabel(c.source, mainName, names)}
           onpointerdown={(e) => clipDown(e, t, c)}
-          onpointermove={clipHover}
+          onpointermove={(e) => !lockedMain(t) && clipHover(e)}
           onclick={(e) => e.stopPropagation()}
           onkeydown={(e) => {
             if (e.key === 'Enter') select(c.id);
@@ -817,8 +845,8 @@
               toggleHeight(r.group);
             }}
           >
-            <span class="chip" class:main={r.kind !== 'track'}>{r.label}</span>
-            {#if r.kind === 'track'}
+            <span class="chip" class:main={r.kind !== 'track' || r.track.main}>{r.label}</span>
+            {#if r.kind === 'track' && !r.track.main}
               {@const t = r.track}
               {#if r.group === 'video'}
                 <button class="icon" class:off={t.hidden} aria-pressed={t.hidden} title={t.hidden ? 'Show the track' : 'Hide the track (its picture)'} onclick={() => hide(t)}>
@@ -851,7 +879,7 @@
               >
                 <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1" />{#if ed.mainLocked}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />{:else}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0" />{/if}</svg>
               </button>
-              <span class="name" title={mainName}>{r.kind === 'main' ? mainName : 'Main sound'}</span>
+              <span class="name" title={mainName}>{r.kind === 'main-sound' ? 'Main sound' : mainName}</span>
             {/if}
             <span
               class="resize"
@@ -866,7 +894,7 @@
           </div>
           {#if r.kind === 'track'}
             {@const t = r.track}
-            <div class="lane" class:drop={dropTrack === t.id} data-track={t.id} data-kind={r.group} data-pps={pps} style:width="{contentW}px" role="presentation" onpointerdown={(e) => laneDown(e, false)} onpointermove={(e) => razorMove(e, rowKey(r))} onpointerleave={() => (razorHover = null)}>
+            <div class="lane" class:drop={dropTrack === t.id} data-track={t.id} data-kind={r.group} data-pps={pps} style:width="{contentW}px" role="presentation" onpointerdown={(e) => laneDown(e, t.main)} onpointermove={(e) => razorMove(e, rowKey(r))} onpointerleave={() => (razorHover = null)}>
               {@render razorLine(rowKey(r))}
               {#each t.clips as c (c.id)}
                 {@render clipBlock(t, c)}
@@ -897,6 +925,31 @@
                   e.stopPropagation();
                   addCrossfade(j);
                 }}>+</button>
+              {/each}
+            </div>
+          {:else if r.kind === 'main-sound' && r.track}
+            <!-- A1 of an arranged V1: its clips' sound (same clips, same handling). -->
+            {@const t = r.track}
+            <div class="lane" style:width="{contentW}px" role="presentation" onpointerdown={(e) => laneDown(e, true)} onpointermove={(e) => razorMove(e, rowKey(r))} onpointerleave={() => (razorHover = null)}>
+              {@render razorLine(rowKey(r))}
+              {#each t.clips as c (c.id)}
+                {@const left = px(c.at_ms - overlapOf(adv, t, c))}
+                {@const w = Math.max(6, px(clipLength(c)))}
+                <div
+                  class="clip main audio"
+                  class:sel={selection.has(c.id)}
+                  class:off={t.muted}
+                  data-clip={c.id}
+                  data-locked={lockedMain(t) || undefined}
+                  role="presentation"
+                  style:left="{left}px"
+                  style:width="{w}px"
+                  onpointerdown={(e) => clipDown(e, t, c)}
+                  onpointermove={(e) => !lockedMain(t) && clipHover(e)}
+                >
+                  {@render body('sound', c.source, left, w, h, c.in_ms, c.out_ms)}
+                  <span class="name">{mainName}</span>
+                </div>
               {/each}
             </div>
           {:else}

@@ -400,9 +400,9 @@ the user's Klip running beside it.
   were (as before M9.7). Tools are two toggles in the timeline header, not a strip (the
   user's choice). Dragging a transition's middle rolls the cut instead of sliding the
   transition off-centre (Klip has no media past a clip's ends). A selection moves in
-  time only (one clip may still change track). Unlocked Main's pieces trim and delete
-  but don't move (Main plays back to back); trimming a piece's start keeps its place and
-  closes up what follows.
+  time only (one clip may still change track). Arranged V1 (M9.8.9): Normal mode is off
+  until "Back to the simple cut"; the Library's edited length still counts Normal mode's
+  cut; no crossfade "from below" on V1 (nothing is below it).
 
 - **The Advanced preview (M9.5)**:
   - Heard by the human 2026-10-10: the preview's sound and Normal mode's Game/Mic
@@ -816,10 +816,13 @@ Restart Klip with `Start Klip.cmd` first.
    **M**. Click the eye: the track's picture disappears but you still hear it. Click
    **M**: its sound goes too. Sound and music tracks only have **M**.
 2. **V1 is locked.** Open a clip in Advanced mode: the lock next to V1 is closed and
-   clicking your clip on V1 does nothing (the razor says it is locked). Click the lock: it
-   opens (blue). Now click a piece of your clip on V1, drag its right end to shorten it,
-   cut it with the razor (C), select a piece and press Delete. Close the editor and open
-   it again: V1 is locked again.
+   dragging or clicking your clip on V1 does nothing (the razor says it is locked). Close
+   the editor and open it again later: V1 is locked again.
+3. **Unlocked V1 moves like any clip.** Click the lock (it opens, blue). Cut your clip
+   with the razor (C), press V, then drag a piece sideways: it moves and leaves a gap
+   (black and silent when played). Drag another piece before it, trim an end, delete one.
+   Play and export: it plays in the new order. **Normal** is greyed out now; the **Main
+   clip** tab has **Back to the simple cut** (Ctrl+Z brings the arrangement back).
 
 ## Known bugs
 

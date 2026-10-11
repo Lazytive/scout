@@ -150,8 +150,11 @@ bottom row Project / Markers · Timeline · L/R meters. Four splitters, kept in
   (`moveClips`). The Razor tool (blade cursor, dashed cut line) splits where clicked
   (`cutsAt` / `splitClipsAt`, Main via `timeline.split`; Shift: every track). Video
   track headers have the eye (`hidden`: no picture) and M (`muted`: no sound). V1/A1
-  carry a lock (`ed.mainLocked`, closed on every open, M9.8.8): unlocked, Main's pieces
-  select (`ed.mainSel`), trim by their ends (`timeline.trimPiece`), cut and delete.
+  carry a lock (`ed.mainLocked`, closed on every open, M9.8.8). Unlocked, a piece of
+  the simple cut selects (`ed.mainSel`); the first drag or Delete arranges V1
+  (`arrangeMain`, M9.8.9): the cut becomes clips of the main track (`Track.main`), a
+  normal track row from then on (A1 mirrors it); `useSimpleCut` goes back. Locked V1
+  clips carry `data-locked` and act as empty space.
   Geometry and gesture rules: `src/lib/timeline-view.ts`.
 - `EffectControls.svelte` + `HotValue.svelte`: Motion (zoom and position share keys),
   Opacity, Volume, Speed with a stopwatch each (on: keys the value at the playhead; off:

@@ -1138,6 +1138,7 @@ fn track(id: u32, kind: TrackKind, clips: Vec<PlacedClip>) -> Track {
         name: format!("track {id}"),
         muted: false,
         hidden: false,
+        main: false,
         clips,
     }
 }

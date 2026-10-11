@@ -8,6 +8,7 @@
   import {
     addText,
     applyTemplate,
+    edit,
     cutSelection,
     ed,
     removeText,
@@ -23,6 +24,7 @@
   import Slider from '../lib/forms/Slider.svelte';
   import { formatTimecode } from '../lib/format';
   import type { Project, Speed } from '../lib/timeline';
+  import { mainArranged, useSimpleCut } from '../lib/advanced';
 
   let { project, advanced = false }: { project: Project; advanced?: boolean } = $props();
 
@@ -64,10 +66,17 @@
 {:else}
   <section>
     <h3>Cut</h3>
-    <div class="row">
-      <button onclick={splitAtPlayhead} title="Split the main clip at the playhead">Split main</button>
-    </div>
-    <p class="hint muted">The Main track is this cut. Trim and cut it in Normal mode; its pieces keep their place here.</p>
+    {#if mainArranged(project)}
+      <p class="hint muted">Your clip is arranged on V1: its pieces move like any clip there. Normal mode's simple cut is set aside (and Normal mode with it).</p>
+      <div class="row">
+        <button onclick={() => edit((p) => useSimpleCut(p), 'Back to the simple cut')} title="V1 plays Normal mode's cut again; the moves on V1 go (Ctrl+Z brings them back)">Back to the simple cut</button>
+      </div>
+    {:else}
+      <div class="row">
+        <button onclick={splitAtPlayhead} title="Split the main clip at the playhead">Split main</button>
+      </div>
+      <p class="hint muted">V1 is this cut. Trim and cut it in Normal mode, or unlock V1 on the timeline to move its pieces like any clip.</p>
+    {/if}
   </section>
 {/if}
 <section>

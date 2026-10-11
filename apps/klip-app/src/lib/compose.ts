@@ -210,7 +210,9 @@ export function compose(project: Project, source: SourceInfo, clips: [string, So
   const segs = segments(p);
   const layers: Layer[] = [];
   let nextId = 1;
-  for (const seg of segs) {
+  // V1 arranged on the Advanced timeline replaces Normal mode's cut (M9.8.9).
+  const arranged = adv.tracks.some((t) => t.main);
+  for (const seg of arranged ? [] : segs) {
     layers.push({
       id: nextId++,
       track: 0,
@@ -229,9 +231,9 @@ export function compose(project: Project, source: SourceInfo, clips: [string, So
       speed: [{ at_ms: 0, rate_pct: rateOf(seg.speed) }],
     });
   }
-  let duration = segs.length ? segs[segs.length - 1]!.out_end_ms : 0;
+  let duration = !arranged && segs.length ? segs[segs.length - 1]!.out_end_ms : 0;
   adv.tracks.forEach((track, ti) => {
-    const z = ti + 1;
+    const z = track.main ? 0 : ti + 1;
     let previous: [number, number] | null = null;
     for (const clip of track.clips) {
       if (layers.length >= MAX_LAYERS) break;
@@ -294,7 +296,8 @@ export function compose(project: Project, source: SourceInfo, clips: [string, So
   });
   const mainChapters = chapters(source);
   const markers: Marker[] = [];
-  for (const [src, title] of mainChapters) {
+  // (Arranged, the main clip's chapters come with its layers below.)
+  for (const [src, title] of arranged ? [] : mainChapters) {
     const at = outputTimeIn(segs, src);
     if (at !== null) markers.push(chapterMarker(at, title));
   }

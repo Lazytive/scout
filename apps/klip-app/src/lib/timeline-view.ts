@@ -28,22 +28,25 @@ export function clipZone(x: number, width: number): 'start' | 'move' | 'end' {
 export type TimelineRow =
   | { kind: 'track'; track: Track; label: string; group: 'video' | 'sound' }
   | { kind: 'main'; label: string; group: 'video' }
-  | { kind: 'main-sound'; label: string; group: 'sound' };
+  /** A1: Main's sound (`track`: V1 arranged, its clips). */
+  | { kind: 'main-sound'; label: string; group: 'sound'; track?: Track };
 
 /**
  * Rows top to bottom, Premiere-style: the video tracks from the top of the picture down
- * (V2… in draw order), Main as V1, Main's sound as A1, then the sound tracks (A2…).
+ * (V2… in draw order), Main as V1, Main's sound as A1, then the sound tracks (A2…). V1
+ * arranged (a main track) is a track row of its own.
  */
 export function rowsOf(a: Advanced): TimelineRow[] {
-  const video = a.tracks.filter((t) => t.kind === 'video' || t.kind === 'text');
+  const video = a.tracks.filter((t) => (t.kind === 'video' || t.kind === 'text') && !t.main);
+  const main = a.tracks.find((t) => t.main);
   const sound = a.tracks.filter((t) => t.kind === 'audio' || t.kind === 'music');
   const out: TimelineRow[] = [];
   for (let i = video.length - 1; i >= 0; i--) {
     const track = video[i];
     if (track) out.push({ kind: 'track', track, label: `V${i + 2}`, group: 'video' });
   }
-  out.push({ kind: 'main', label: 'V1', group: 'video' });
-  out.push({ kind: 'main-sound', label: 'A1', group: 'sound' });
+  out.push(main ? { kind: 'track', track: main, label: 'V1', group: 'video' } : { kind: 'main', label: 'V1', group: 'video' });
+  out.push(main ? { kind: 'main-sound', label: 'A1', group: 'sound', track: main } : { kind: 'main-sound', label: 'A1', group: 'sound' });
   sound.forEach((track, i) => out.push({ kind: 'track', track, label: `A${i + 2}`, group: 'sound' }));
   return out;
 }

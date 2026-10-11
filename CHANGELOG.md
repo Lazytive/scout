@@ -5,6 +5,19 @@ reason)`.
 
 ## Unreleased
 
+- M9.8.9 — Unlocked V1 moves like any clip: the first drag (move or trim) or Delete on a
+  piece of Main arranges V1: Normal mode's cut becomes clips of a main track
+  (`Track.main`, project format; one per project, `Source::Main` only, repaired) that
+  move anywhere in time (gaps, another order, onto another video track), trim, cut and
+  delete like any clip; compose draws that track as V1 (z 0) instead of the cut, gaps
+  are black and silent, the main clip's chapters follow its pieces. Normal mode is off
+  while V1 is arranged; "Back to the simple cut" (Main clip tab, Properties) undoes it.
+  Locked V1 (the default) still blocks everything, also Ctrl+K, Ctrl+A, the marquee and
+  Shift-razor. Replaces M9.8.8's in-place piece trimming (`trimPiece` removed). Compose
+  test, fixture case (pieces reordered with gaps, one at 2x) re-blessed; checked in the
+  mock. Also: `klip-control`'s `client_reports_not_running` tries a few ports (a
+  parallel test's server can take the freed port; it failed `cargo xtask ci` twice).
+  (Claude Opus 5.5: the user: unlocked V1 "i cant drag it"; chose "move like any clip")
 - M9.8.8 — V1 (Main) has a lock: locked whenever the editor opens (the razor, Ctrl+K
   and S leave it alone and say so); unlocked, its pieces select, trim by their ends
   (`trimPiece`: within the clip and the pieces beside it, at least 100 ms), cut with the

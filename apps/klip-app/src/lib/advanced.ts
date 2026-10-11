@@ -10,7 +10,7 @@
 import type { Colour, Ease, Keyframe, SpeedPoint, Transform, TransformKey } from './keyframes';
 import { IDENTITY_COLOUR, outputLength, sourceOffset, transformAt, valueAt } from './keyframes';
 import type { Project } from './timeline';
-import { EditError, MAX_VOLUME } from './timeline';
+import { EditError, MAX_VOLUME, segments } from './timeline';
 
 export const MAX_TRACKS = 16;
 export const MAX_CLIPS = 256;
@@ -61,6 +61,8 @@ export interface Track {
   muted: boolean;
   /** No picture from its clips (the eye on a video track). */
   hidden: boolean;
+  /** V1 arranged on the Advanced timeline: the main clip's pieces, replacing Normal mode's cut. */
+  main: boolean;
   clips: PlacedClip[];
 }
 
@@ -114,6 +116,7 @@ export function readAdvanced(p: Project): Advanced {
   if (Array.isArray(raw.tracks)) a.tracks = raw.tracks.filter(isObj) as unknown as Track[];
   for (const t of a.tracks) if (!Array.isArray(t.clips)) t.clips = [];
   for (const t of a.tracks) if (typeof t.hidden !== 'boolean') t.hidden = false;
+  for (const t of a.tracks) if (typeof t.main !== 'boolean') t.main = false;
   for (const t of a.tracks)
     for (const c of t.clips) {
       for (const k of ['transform', 'opacity', 'volume', 'speed'] as const) if (!Array.isArray(c[k])) c[k] = [];
@@ -137,7 +140,7 @@ export function advancedOf(p: Project): Advanced {
 export function isAdvancedEmpty(a: Advanced): boolean {
   const c = a.colour;
   return (
-    a.tracks.every((t) => t.clips.length === 0) &&
+    a.tracks.every((t) => t.clips.length === 0 && !t.main) &&
     a.transitions.length === 0 &&
     c.brightness === 0 &&
     c.contrast === 1 &&
@@ -226,6 +229,11 @@ export function overlapOf(a: Advanced, track: Track, clip: PlacedClip): number {
   return Math.min(tr.ms, Math.max(0, clip.out_ms - clip.in_ms), clip.at_ms);
 }
 
+/** Whether a source may sit on `track` (V1 arranged holds the main clip only). */
+export function fitsOn(source: Source, track: Track): boolean {
+  return track.main ? source.kind === 'main' : fitsTrack(source, track.kind);
+}
+
 /** Which track kinds a source may sit on. */
 export function fitsTrack(source: Source, kind: TrackKind): boolean {
   if (source.kind === 'image') return kind === 'video';
@@ -246,14 +254,14 @@ const TRACK_NAMES: Record<TrackKind, string> = { video: 'Video', text: 'Text', a
 function newTrack(a: Advanced, kind: TrackKind, base = TRACK_NAMES[kind]): Track {
   if (a.tracks.length >= MAX_TRACKS) throw new EditError('too_many_pieces', `A project has at most ${MAX_TRACKS} tracks`);
   const n = a.tracks.filter((t) => t.name.startsWith(base)).length + 1;
-  const track: Track = { id: nextTrackId(a), kind, name: n === 1 ? base : `${base} ${n}`, muted: false, hidden: false, clips: [] };
+  const track: Track = { id: nextTrackId(a), kind, name: n === 1 ? base : `${base} ${n}`, muted: false, hidden: false, main: false, clips: [] };
   a.tracks.push(track);
   return track;
 }
 
-/** Drop tracks left without clips (an empty track isn't saved anyway). */
+/** Drop tracks left without clips (an empty track isn't saved anyway); V1 arranged stays. */
 function dropEmptyTracks(a: Advanced): void {
-  const gone = new Set(a.tracks.filter((t) => t.clips.length === 0).map((t) => t.id));
+  const gone = new Set(a.tracks.filter((t) => t.clips.length === 0 && !t.main).map((t) => t.id));
   if (gone.size === 0) return;
   a.tracks = a.tracks.filter((t) => !gone.has(t.id));
   a.transitions = a.transitions.filter((t) => !gone.has(t.track));
@@ -272,11 +280,11 @@ export function addClip(p: Project, kind: TrackKind, source: Source, inMs: numbe
   const at = ms(atMs);
   const len = end - start;
   let track = trackId === undefined ? undefined : a.tracks.find((t) => t.id === trackId);
-  if (track && (track.kind !== kind || overlaps(track, at, at + len, null))) track = undefined;
+  if (track && (track.kind !== kind || !fitsOn(source, track) || overlaps(track, at, at + len, null))) track = undefined;
   // Pictures go on picture tracks (over the video), videos on video tracks.
   const picture = source.kind === 'image';
   const sameSort = (t: Track) => t.clips.length > 0 && t.clips.every((c) => (c.source.kind === 'image') === picture);
-  track ??= a.tracks.find((t) => t.kind === kind && sameSort(t) && !overlaps(t, at, at + len, null)) ?? newTrack(a, kind, picture ? 'Stickers' : undefined);
+  track ??= a.tracks.find((t) => t.kind === kind && !t.main && sameSort(t) && !overlaps(t, at, at + len, null)) ?? newTrack(a, kind, picture ? 'Stickers' : undefined);
   if (track.clips.length >= MAX_CLIPS) throw new EditError('too_many_pieces', `A track holds at most ${MAX_CLIPS} clips`);
   const id = nextClipId(a);
   track.clips.push({ id, source, in_ms: start, out_ms: end, at_ms: at, transform: [], opacity: [], volume: [], speed: [] });
@@ -299,7 +307,7 @@ export function moveClip(p: Project, clipId: number, atMs: number, trackId?: num
   if (trackId === 'new') target = newTrack(a, track.kind);
   else if (trackId !== undefined && trackId !== track.id) {
     const t = a.tracks.find((x) => x.id === trackId);
-    if (!t || !fitsTrack(clip.source, t.kind)) throw new EditError('bad_range', 'That clip doesn’t go on that track');
+    if (!t || !fitsOn(clip.source, t)) throw new EditError('bad_range', 'That clip doesn’t go on that track');
     target = t;
   }
   if (overlaps(target, at, at + len, clip.id)) throw new EditError('bad_range', 'Clips can’t overlap on one track');
@@ -831,6 +839,8 @@ export function setTrack(p: Project, trackId: number, patch: Partial<Pick<Track,
 export function moveTrack(p: Project, trackId: number, by: -1 | 1): void {
   const a = advancedOf(p);
   const i = a.tracks.findIndex((t) => t.id === trackId);
+  // V1 stays at the bottom.
+  if (a.tracks[i]?.main || a.tracks[i + by]?.main) return;
   const j = i + by;
   if (i < 0 || j < 0 || j >= a.tracks.length) return;
   const [t] = a.tracks.splice(i, 1);
@@ -839,6 +849,7 @@ export function moveTrack(p: Project, trackId: number, by: -1 | 1): void {
 
 export function removeTrack(p: Project, trackId: number): void {
   const a = advancedOf(p);
+  if (a.tracks.find((t) => t.id === trackId)?.main) return useSimpleCut(p);
   a.tracks = a.tracks.filter((t) => t.id !== trackId);
   a.transitions = a.transitions.filter((t) => t.track !== trackId);
 }
@@ -849,4 +860,51 @@ export function sourceLabel(s: Source, mainName: string, names: Map<string, stri
   if (s.kind === 'library') return names.get(s.key) ?? 'Missing clip';
   const parts = s.path.split(/[\\/]/);
   return parts[parts.length - 1] || s.path;
+}
+
+// ---- V1 arranged (M9.8.9) ----
+
+/** The main track (V1 arranged), if the project has one. */
+export function mainTrackOf(a: Advanced): Track | undefined {
+  return a.tracks.find((t) => t.main);
+}
+
+/**
+ * Arrange V1: Normal mode's cut becomes clips of the main clip on a main track, where
+ * they move like any clip (gaps, another order). Returns the clip ids in the cut's order
+ * (the existing ones when it is already arranged).
+ */
+export function arrangeMain(p: Project): number[] {
+  const a = advancedOf(p);
+  const have = mainTrackOf(a);
+  if (have) return have.clips.map((c) => c.id);
+  if (a.tracks.length >= MAX_TRACKS) throw new EditError('too_many_pieces', `A project has at most ${MAX_TRACKS} tracks`);
+  const first = nextClipId(a);
+  const clips: PlacedClip[] = segments(p).map((s, i) => ({
+    id: first + i,
+    source: { kind: 'main' },
+    in_ms: s.src_start_ms,
+    out_ms: s.src_end_ms,
+    at_ms: s.out_start_ms,
+    transform: [],
+    opacity: [],
+    volume: [],
+    speed: s.speed === 1 ? [] : [{ at_ms: 0, rate_pct: s.speed === 0.5 ? 50 : 200 }],
+  }));
+  a.tracks.unshift({ id: nextTrackId(a), kind: 'video', name: 'Main', muted: false, hidden: false, main: true, clips });
+  return clips.map((c) => c.id);
+}
+
+/** Back to Normal mode's cut: the main track goes (its pieces' moves with it). */
+export function useSimpleCut(p: Project): void {
+  const a = advancedOf(p);
+  const mt = mainTrackOf(a);
+  if (!mt) return;
+  a.tracks = a.tracks.filter((t) => !t.main);
+  a.transitions = a.transitions.filter((t) => t.track !== mt.id);
+}
+
+/** Whether V1 is arranged (Normal mode's cut no longer plays). */
+export function mainArranged(p: Project): boolean {
+  return !!mainTrackOf(readAdvanced(p));
 }

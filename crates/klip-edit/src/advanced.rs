@@ -143,6 +143,10 @@ pub struct Track {
     pub muted: bool,
     /// No picture from the track's clips (the eye on a video track; M9.8.7).
     pub hidden: bool,
+    /// V1: the main clip arranged freely on the Advanced timeline (M9.8.9). While a
+    /// project has one, it replaces Normal mode's cut (`pieces`) as track 0: its clips
+    /// are the main clip's (`Source::Main`), drawn under every other track.
+    pub main: bool,
     pub clips: Vec<PlacedClip>,
 }
 
@@ -316,7 +320,7 @@ fn tidy_keys<T: Copy>(keys: &mut Vec<T>, at: impl Fn(&T) -> u64, cap: usize) -> 
 impl Advanced {
     /// Nothing an Advanced-mode user did.
     pub fn is_empty(&self) -> bool {
-        self.tracks.iter().all(|t| t.clips.is_empty())
+        self.tracks.iter().all(|t| t.clips.is_empty() && !t.main)
             && self.transitions.is_empty()
             && self.colour == Colour::default()
             && self.markers.iter().all(|m| m.kind != MarkerKind::User)
@@ -356,8 +360,33 @@ impl Advanced {
         let mut note = |path: String, what: &str| issues.push(Issue::new(path, what));
         self.tracks.truncate(MAX_TRACKS);
         let mut seen_tracks = std::collections::HashSet::new();
+        let mut seen_main = false;
         for (ti, track) in self.tracks.iter_mut().enumerate() {
             let tp = format!("advanced.tracks[{ti}]");
+            // One main track, a video track of the main clip only.
+            if track.main {
+                if seen_main {
+                    track.main = false;
+                    note(
+                        format!("{tp}.main"),
+                        "a second main track; made a normal one",
+                    );
+                } else {
+                    seen_main = true;
+                    if track.kind != TrackKind::Video {
+                        track.kind = TrackKind::Video;
+                        note(format!("{tp}.kind"), "the main track is a video track");
+                    }
+                    let n = track.clips.len();
+                    track.clips.retain(|c| c.source == Source::Main);
+                    if track.clips.len() != n {
+                        note(
+                            format!("{tp}.clips"),
+                            "only the main clip goes on the main track; others dropped",
+                        );
+                    }
+                }
+            }
             if !seen_tracks.insert(track.id) {
                 track.id = (ti as u32).saturating_add(1_000);
                 note(format!("{tp}.id"), "duplicate id; renumbered");
@@ -546,6 +575,7 @@ impl Advanced {
                     name: MONTAGE_TRACK.into(),
                     muted: false,
                     hidden: false,
+                    main: false,
                     clips: Vec::new(),
                 });
                 self.tracks.len().saturating_sub(1)
@@ -606,6 +636,9 @@ fn track_from_value(v: Value, i: usize, issues: &mut Vec<Issue>) -> Track {
     }
     if let Some(v) = map.remove("hidden") {
         t.hidden = field(v, &format!("{path}.hidden"), issues);
+    }
+    if let Some(v) = map.remove("main") {
+        t.main = field(v, &format!("{path}.main"), issues);
     }
     if let Some(v) = map.remove("clips") {
         t.clips = list(v, &format!("{path}.clips"), MAX_CLIPS, issues);
