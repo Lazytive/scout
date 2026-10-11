@@ -808,7 +808,7 @@ so the new version runs. Open a clip, switch to **Advanced**, add two or three c
 9. ✅ (2026-10-11) **Quiet waveforms.** Open your quiet PAYDAY 3 clip (11-39-03) in Advanced mode: its
    waveform should now be visible.
 
-## Manual checks for the human (M9.8.7–8, Hide/Mute and the V1 lock)
+## Manual checks for the human (M9.8.7–9, Hide/Mute and V1)
 
 Restart Klip with `Start Klip.cmd` first.
 

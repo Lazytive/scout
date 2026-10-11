@@ -874,7 +874,7 @@
                 class="icon lock"
                 class:open={!ed.mainLocked}
                 aria-pressed={ed.mainLocked}
-                title={ed.mainLocked ? 'Main is locked: click to edit it here (trim, cut and delete its pieces)' : 'Main is unlocked: click to lock it again'}
+                title={ed.mainLocked ? 'Main is locked: click to unlock it and move, trim, cut or delete its pieces like any clip' : 'Main is unlocked: click to lock it again'}
                 onclick={toggleLock}
               >
                 <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1" />{#if ed.mainLocked}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />{:else}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0" />{/if}</svg>
