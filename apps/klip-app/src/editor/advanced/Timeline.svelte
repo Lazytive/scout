@@ -1,27 +1,31 @@
 <!--
-  Advanced mode's timeline: a ruler with the markers, the Normal-mode cut of the main
-  clip as track "Main", the Advanced tracks (video on top in draw order, sound below),
-  and under the selected clip its key lanes (transform, opacity, volume) and speed
-  points. Clips drag along and across tracks of their kind and trim at their edges;
-  everything snaps to the playhead, clip edges and markers (hold Alt to not snap).
-  Click a lane to add a key there; drag a key to move it; double-click it to remove it.
+  Advanced mode's timeline in FilmCraft's (Premiere's) look: a big blue timecode and the
+  toggles top-left, the ruler with marker flags and the playhead handle, track headers
+  (V2… the Advanced video tracks, V1 = Main, the Normal-mode cut; A1 = Main's sound, A2…
+  sound and music), video above a divider and sound below, all in ONE scroller with a
+  sticky header column and ruler, and a zoom bar at the bottom (drag the bar to scroll,
+  its round ends to zoom; Ctrl/Alt+wheel zooms at the pointer).
+
+  Clips drag along and across tracks of their kind and trim at their edges, but only
+  once the pointer moved a few px (a click just selects). Everything snaps to the
+  playhead, clip edges and markers (hold Alt to not snap). Transitions sit on the join
+  as hatched blocks: click selects, drag an end to change the length, right-click for
+  the menu; a + on a join without one adds a crossfade. Keyframes live in Effect
+  Controls, not here.
 -->
 <script lang="ts">
-  import type { PlacedClip, Track } from '../../lib/advanced';
+  import { tick } from 'svelte';
+  import type { PlacedClip, Track, TransitionKind } from '../../lib/advanced';
   import {
-    addKey,
     addMarker,
     clipEnd,
     clipLength,
     fitsTrack,
     moveClip,
-    moveKey,
     overlapOf,
     readAdvanced,
-    removeKey,
-    removeSpeedPoint,
-    setSpeedPoint,
-    rateAt,
+    setTrack,
+    setTransition,
     sourceLabel,
     trimClipEnd,
     trimClipStart,
@@ -31,6 +35,21 @@
   import { formatTimecode } from '../../lib/format';
   import type { Project } from '../../lib/timeline';
   import { segments } from '../../lib/timeline';
+  import type { TimelineRow, TransitionBox } from '../../lib/timeline-view';
+  import {
+    DEFAULT_TRANSITION_MS,
+    clipZone,
+    fitPps,
+    fromHandles,
+    joins,
+    pastThreshold,
+    rowsOf,
+    spanMs,
+    thumb,
+    transitionBoxes,
+    transitionLength,
+    zoomAt,
+  } from '../../lib/timeline-view';
 
   let {
     comp,
@@ -48,50 +67,105 @@
     sourceMs: (c: PlacedClip) => number;
   } = $props();
 
-  const HEADER_W = 132;
-  const ROW_H = 40;
-  const LANE_H = 22;
-  const SNAP_PX = 8;
+  const HEADER_W = 168;
+  const TOP_H = 52;
+  const DIVIDER_H = 5;
+  const SNAP_PX = 9;
+  const MAX_PPS = 600;
+  const ROW_MIN = 24;
+  const ROW_MAX = 160;
+  const HEIGHTS_KEY = 'klip.timeline.rows';
 
   let scroller = $state<HTMLDivElement | null>(null);
+  let bar = $state<HTMLDivElement | null>(null);
+  /** The visible width of the lanes (without the header column), px. */
   let viewW = $state(800);
+  let scrollX = $state(0);
   /** Pixels per second; 0 = fit the whole edit. */
   let zoom = $state(0);
   let snapping = $state(true);
+  /** The zoom held while a drag runs (in Fit the edit's length would rescale it live). */
+  let frozen = $state<number | null>(null);
+  let heights = $state(loadHeights());
 
   const adv = $derived(readAdvanced(project));
   const duration = $derived(Math.max(comp.duration_ms, 1000));
-  const fitPps = $derived(Math.max(4, (viewW - 24) / (duration / 1000)));
-  const pps = $derived(zoom > 0 ? zoom : fitPps);
-  const width = $derived(Math.ceil((duration / 1000) * pps) + 80);
+  const span = $derived(spanMs(duration));
+  const fit = $derived(fitPps(span, viewW));
+  const pps = $derived(frozen ?? (zoom > 0 ? Math.min(MAX_PPS, Math.max(fit, zoom)) : fit));
+  const contentW = $derived(Math.ceil((span / 1000) * pps));
   const px = (ms: number) => (ms / 1000) * pps;
   const msAt = (x: number) => Math.max(0, Math.round((x / pps) * 1000));
 
   const segs = $derived(segments(project));
-  /** Rows top to bottom: video tracks from the top of the picture down, Main, then sound. */
-  const videoTracks = $derived([...adv.tracks].filter((t) => t.kind === 'video' || t.kind === 'text').reverse());
-  const soundTracks = $derived(adv.tracks.filter((t) => t.kind === 'audio' || t.kind === 'music'));
-  const selected = $derived.by(() => {
-    for (const t of adv.tracks) {
-      const c = t.clips.find((x) => x.id === ed.clipId);
-      if (c) return { track: t, clip: c };
+  const rows = $derived(rowsOf(adv));
+  const boxes = $derived(transitionBoxes(adv));
+  const touching = $derived(joins(adv, Math.max(1, (2 / pps) * 1000)));
+  const lastVideo = $derived(rows.findIndex((r) => r.kind === 'main'));
+  const videoCount = $derived(adv.tracks.filter((t) => t.kind === 'video' || t.kind === 'text').length);
+  const soundCount = $derived(adv.tracks.length - videoCount);
+  const bar01 = $derived(thumb(scrollX, viewW, contentW));
+
+  function loadHeights(): { video: number; sound: number } {
+    const d = { video: 44, sound: 40 };
+    try {
+      const raw = JSON.parse(localStorage.getItem(HEIGHTS_KEY) ?? 'null') as Partial<typeof d> | null;
+      if (!raw || typeof raw !== 'object') return d;
+      const ok = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? clampH(v) : fallback);
+      return { video: ok(raw.video, d.video), sound: ok(raw.sound, d.sound) };
+    } catch {
+      return d;
     }
-    return null;
+  }
+  $effect(() => {
+    const snapshot = JSON.stringify(heights);
+    try {
+      localStorage.setItem(HEIGHTS_KEY, snapshot);
+    } catch {
+      // Storage off (private window): the heights just aren't kept.
+    }
   });
+  function clampH(h: number): number {
+    return Math.round(Math.min(ROW_MAX, Math.max(ROW_MIN, h)));
+  }
+  const rowH = (r: TimelineRow) => (r.group === 'video' ? heights.video : heights.sound);
 
   function observe(el: HTMLDivElement) {
-    const ro = new ResizeObserver(() => (viewW = el.clientWidth));
+    const ro = new ResizeObserver(() => (viewW = Math.max(100, el.clientWidth - HEADER_W)));
     ro.observe(el);
-    viewW = el.clientWidth;
+    viewW = Math.max(100, el.clientWidth - HEADER_W);
     return { destroy: () => ro.disconnect() };
   }
 
-  // Ruler ticks: a step that keeps labels ~90 px apart.
+  /** Ctrl/Alt + wheel zooms around the pointer (the plain wheel scrolls). */
+  function wheelZoom(el: HTMLDivElement) {
+    const on = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.altKey) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      void zoomTo(pps * (e.deltaY < 0 ? 1.25 : 0.8), e.clientX - r.left - HEADER_W);
+    };
+    el.addEventListener('wheel', on, { passive: false });
+    return { destroy: () => el.removeEventListener('wheel', on) };
+  }
+
+  async function zoomTo(want: number, anchorX: number) {
+    const el = scroller;
+    const next = Math.min(MAX_PPS, Math.max(fit, want));
+    const left = el ? zoomAt(pps, next, Math.max(0, anchorX), el.scrollLeft) : 0;
+    zoom = next <= fit * 1.0001 ? 0 : next;
+    await tick();
+    if (el) el.scrollLeft = left;
+  }
+
+  // Ruler ticks: a step that keeps labels ~90 px apart; only the visible ones.
   const ticks = $derived.by(() => {
     const steps = [100, 250, 500, 1000, 2000, 5000, 10_000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000];
     const step = steps.find((s) => px(s) >= 90) ?? 600_000;
+    const from = Math.max(0, Math.floor(msAt(scrollX - 100) / step) * step);
+    const to = Math.min(span, msAt(scrollX + viewW + 100));
     const out: number[] = [];
-    for (let t = 0; t <= duration; t += step) out.push(t);
+    for (let t = from; t <= to && out.length < 400; t += step) out.push(t);
     return { step, list: out };
   });
 
@@ -134,6 +208,7 @@
   // ---- ruler: scrub ----
   let scrubbing = false;
   function rulerDown(e: PointerEvent) {
+    if (e.button !== 0) return;
     scrubbing = true;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     rulerMove(e);
@@ -142,24 +217,65 @@
     if (!scrubbing) return;
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     ed.playing = false;
-    seek(snap(msAt(e.clientX - r.left), snapTargets(null), e.altKey));
+    seek(Math.min(duration, snap(msAt(e.clientX - r.left), snapTargets(null), e.altKey)));
   }
   function rulerUp() {
     scrubbing = false;
   }
 
-  // ---- clips: move and trim ----
-  type Drag = { kind: 'move' | 'start' | 'end'; clip: PlacedClip; track: Track; x: number; y: number; at: number; end: number; targets: number[] };
-  let drag = $state<Drag | null>(null);
+  // ---- clips: select, then move or trim past the threshold ----
+  type Press = {
+    zone: 'move' | 'start' | 'end';
+    clip: PlacedClip;
+    track: Track;
+    x: number;
+    y: number;
+    at: number;
+    end: number;
+    targets: number[];
+    started: boolean;
+  };
+  let press = $state<Press | null>(null);
   let dropTrack = $state<number | 'new' | null>(null);
 
-  function clipDown(e: PointerEvent, track: Track, clip: PlacedClip, kind: Drag['kind']) {
-    e.stopPropagation();
-    ed.clipId = clip.id;
+  /**
+   * Follow a drag on the window: a clip that moves to another track is drawn by a new
+   * element, which loses the pointer capture (and with it the release).
+   */
+  function follow(move: (e: PointerEvent) => void, up: () => void) {
+    const onUp = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      up();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
+
+  function select(clipId: number | null) {
+    ed.clipId = clipId;
     ed.textId = null;
-    drag = { kind, clip, track, x: e.clientX, y: e.clientY, at: clip.at_ms, end: clipEnd(clip), targets: snapTargets(clip.id) };
-    beginGesture();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    ed.transitionSel = null;
+  }
+
+  function clipDown(e: PointerEvent, track: Track, clip: PlacedClip) {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    select(clip.id);
+    const el = e.currentTarget as HTMLElement;
+    const r = el.getBoundingClientRect();
+    const zone = clipZone(e.clientX - r.left, r.width);
+    press = { zone, clip, track, x: e.clientX, y: e.clientY, at: clip.at_ms, end: clipEnd(clip), targets: snapTargets(clip.id), started: false };
+    follow(clipMove, clipUp);
+  }
+
+  function clipHover(e: PointerEvent) {
+    if (press) return;
+    const el = e.currentTarget as HTMLElement;
+    const r = el.getBoundingClientRect();
+    el.style.cursor = clipZone(e.clientX - r.left, r.width) === 'move' ? '' : 'ew-resize';
   }
 
   function trackUnder(e: PointerEvent, clip: PlacedClip): number | 'new' | null {
@@ -176,16 +292,22 @@
   }
 
   function clipMove(e: PointerEvent) {
-    const d = drag;
+    const d = press;
     if (!d) return;
+    if (!d.started) {
+      if (!pastThreshold(e.clientX - d.x, e.clientY - d.y)) return;
+      d.started = true;
+      frozen = pps;
+      beginGesture();
+    }
     const dms = ((e.clientX - d.x) / pps) * 1000;
-    if (d.kind === 'move') {
+    if (d.zone === 'move') {
       const len = d.end - d.at;
       const at = Math.max(0, snapMove(Math.round(d.at + dms), len, d.targets, e.altKey));
-      const target = Math.abs(e.clientY - d.y) > ROW_H / 2 ? trackUnder(e, d.clip) : null;
+      const target = Math.abs(e.clientY - d.y) > rowH({ kind: 'main', label: '', group: 'video' }) / 2 ? trackUnder(e, d.clip) : null;
       dropTrack = target;
       gesture((p) => moveClip(p, d.clip.id, at, target === null ? undefined : target));
-    } else if (d.kind === 'start') {
+    } else if (d.zone === 'start') {
       const at = snap(Math.round(d.at + dms), d.targets, e.altKey);
       gesture((p) => trimClipStart(p, d.clip.id, at));
     } else {
@@ -195,164 +317,186 @@
   }
 
   function clipUp() {
-    const d = drag;
-    drag = null;
+    const d = press;
+    press = null;
     dropTrack = null;
-    if (!d) return;
-    endGesture(d.kind === 'move' ? 'Move clip' : 'Trim clip');
+    frozen = null;
+    if (!d || !d.started) return;
+    endGesture(d.zone === 'move' ? 'Move clip' : 'Trim clip');
   }
 
-  // ---- lanes ----
-  type LaneId = 'transform' | 'opacity' | 'volume' | 'speed';
-  const LANES: { id: LaneId; label: string }[] = [
-    { id: 'transform', label: 'Zoom / position' },
-    { id: 'opacity', label: 'Opacity' },
-    { id: 'volume', label: 'Volume' },
-    { id: 'speed', label: 'Speed' },
-  ];
+  // ---- transitions ----
+  const KIND_LABEL: Record<TransitionKind, string> = { cut: 'Cut', crossfade: 'Crossfade', dip: 'Dip to black' };
+  type TPress = { box: TransitionBox; edge: 'start' | 'end'; x: number; y: number; started: boolean };
+  let tpress: TPress | null = null;
 
-  function laneTimes(c: PlacedClip, lane: LaneId): number[] {
-    if (lane === 'transform') return c.transform.map((k) => k.at_ms);
-    if (lane === 'speed') return c.speed.map((s) => s.at_ms);
-    return c[lane].map((k) => k.at_ms);
+  function selectTransition(b: TransitionBox) {
+    ed.clipId = null;
+    ed.textId = null;
+    ed.transitionSel = { track: b.track, after: b.after };
   }
+  const isSel = (b: TransitionBox) => ed.transitionSel?.track === b.track && ed.transitionSel.after === b.after;
 
-  const laneFor = (lane: LaneId) => (lane === 'transform' ? 'zoom' : lane === 'speed' ? null : lane);
-
-  function laneClick(e: MouseEvent, c: PlacedClip, lane: LaneId, shift: number) {
-    // The lane box starts where the clip plays: x inside it is clip time.
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const local = Math.min(clipLength(c), Math.max(0, msAt(e.clientX - r.left)));
-    seek(c.at_ms - shift + local);
-    if (lane === 'speed') edit((p) => setSpeedPoint(p, c.id, local, rateAt(c, local)), 'Add a speed point');
-    else edit((p) => addKey(p, c.id, laneFor(lane)!, local), 'Add a key');
-  }
-
-  let keyDrag: { clip: PlacedClip; lane: LaneId; from: number; x: number; moved: boolean } | null = null;
-  function keyDown(e: PointerEvent, c: PlacedClip, lane: LaneId, at: number) {
+  function transDown(e: PointerEvent, b: TransitionBox, edge: 'start' | 'end' | null) {
+    if (e.button !== 0) return;
     e.stopPropagation();
-    keyDrag = { clip: c, lane, from: at, x: e.clientX, moved: false };
-    beginGesture();
+    selectTransition(b);
+    if (!edge) return;
+    tpress = { box: b, edge, x: e.clientX, y: e.clientY, started: false };
+    follow(transMove, transUp);
+  }
+  function transMove(e: PointerEvent) {
+    const t = tpress;
+    if (!t) return;
+    if (!t.started) {
+      if (!pastThreshold(e.clientX - t.x, e.clientY - t.y)) return;
+      t.started = true;
+      frozen = pps;
+      beginGesture();
+    }
+    // The dragged end follows the pointer (a dip grows on both sides of the cut).
+    const dms = ((e.clientX - t.x) / pps) * 1000;
+    const ms = transitionLength(t.box.ms, t.edge, dms, t.box.max);
+    gesture((p) => setTransition(p, t.box.after, t.box.kind, ms));
+  }
+  function transUp() {
+    const t = tpress;
+    tpress = null;
+    frozen = null;
+    if (t?.started) endGesture('Transition length');
+  }
+
+  let menu = $state<{ x: number; y: number; box: TransitionBox } | null>(null);
+  function transMenu(e: MouseEvent, b: TransitionBox) {
+    e.preventDefault();
+    e.stopPropagation();
+    selectTransition(b);
+    menu = { x: e.clientX, y: e.clientY, box: b };
+  }
+  function setKind(b: TransitionBox, kind: TransitionKind) {
+    menu = null;
+    edit((p) => setTransition(p, b.after, kind, b.ms), kind === 'cut' ? 'Remove a transition' : KIND_LABEL[kind]);
+    if (kind === 'cut') ed.transitionSel = null;
+  }
+  function addCrossfade(j: { track: number; after: number }) {
+    if (edit((p) => setTransition(p, j.after, 'crossfade', DEFAULT_TRANSITION_MS), 'Add a crossfade')) {
+      ed.clipId = null;
+      ed.transitionSel = { track: j.track, after: j.after };
+    }
+  }
+
+  // ---- empty space: deselect and put the playhead there ----
+  function laneClick(e: MouseEvent) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    select(null);
+    ed.playing = false;
+    seek(Math.min(duration, snap(msAt(e.clientX - r.left), snapTargets(null), e.altKey)));
+  }
+
+  // ---- track headers: mute, rename, height ----
+  function mute(t: Track) {
+    edit((p) => setTrack(p, t.id, { muted: !t.muted }), t.muted ? 'Unmute a track' : 'Mute a track');
+  }
+  let renaming = $state<number | null>(null);
+  function rename(t: Track, name: string) {
+    renaming = null;
+    const clean = name.trim().slice(0, 60);
+    if (clean !== t.name) edit((p) => setTrack(p, t.id, { name: clean }), 'Rename a track');
+  }
+  function focusSelect(el: HTMLInputElement) {
+    el.focus();
+    el.select();
+  }
+
+  let resize: { group: 'video' | 'sound'; y: number; h: number } | null = null;
+  function resizeDown(e: PointerEvent, group: 'video' | 'sound') {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    resize = { group, y: e.clientY, h: heights[group] };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
-  function keyMove(e: PointerEvent) {
-    const k = keyDrag;
-    if (!k) return;
-    const dms = Math.round(((e.clientX - k.x) / pps) * 1000);
-    if (Math.abs(e.clientX - k.x) > 2) k.moved = true;
-    const to = Math.min(clipLength(k.clip), Math.max(0, k.from + dms));
-    if (k.lane === 'speed') {
-      if (k.from === 0) return;
-      const rate = rateAt(k.clip, k.from);
-      gesture((p) => {
-        removeSpeedPoint(p, k.clip.id, k.from);
-        setSpeedPoint(p, k.clip.id, to, rate);
-      });
-    } else gesture((p) => moveKey(p, k.clip.id, laneFor(k.lane)!, k.from, to));
+  function resizeMove(e: PointerEvent) {
+    const r = resize;
+    if (r) heights[r.group] = clampH(r.h + e.clientY - r.y);
   }
-  function keyUp(e: PointerEvent) {
-    const k = keyDrag;
-    keyDrag = null;
-    if (!k) return;
-    if (!k.moved) {
-      endGesture('Move a key');
-      seek(k.clip.at_ms - overlapOf(adv, selected?.track ?? adv.tracks[0]!, k.clip) + k.from);
-      ed.playing = false;
+  function resizeUp() {
+    resize = null;
+  }
+  function toggleHeight(group: 'video' | 'sound') {
+    heights[group] = heights[group] < 50 ? 64 : 30;
+  }
+
+  // ---- zoom bar ----
+  let barDrag: { part: 'move' | 'l' | 'r'; x: number; start: number; end: number } | null = null;
+  function barDown(e: PointerEvent, part: 'move' | 'l' | 'r') {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    barDrag = { part, x: e.clientX, start: bar01.start, end: bar01.end };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+  async function barMove(e: PointerEvent) {
+    const d = barDrag;
+    const el = scroller;
+    if (!d || !bar || !el) return;
+    const df = (e.clientX - d.x) / Math.max(1, bar.clientWidth);
+    if (d.part === 'move') {
+      el.scrollLeft = Math.max(0, (d.start + df) * contentW);
       return;
     }
-    void e;
-    endGesture(k.lane === 'speed' ? 'Move a speed point' : 'Move a key');
+    const f0 = d.part === 'l' ? Math.min(d.start + df, d.end - 0.002) : d.start;
+    const f1 = d.part === 'r' ? Math.max(d.end + df, d.start + 0.002) : d.end;
+    const v = fromHandles(f0, f1, span, viewW, MAX_PPS);
+    zoom = v.pps <= fit * 1.0001 ? 0 : v.pps;
+    await tick();
+    el.scrollLeft = v.scrollLeft;
   }
-  function keyRemove(c: PlacedClip, lane: LaneId, at: number) {
-    if (lane === 'speed') edit((p) => removeSpeedPoint(p, c.id, at), 'Remove a speed point');
-    else edit((p) => removeKey(p, c.id, laneFor(lane)!, at), 'Remove a key');
+  function barUp() {
+    barDrag = null;
   }
-
-  function rowClick(e: MouseEvent) {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    ed.clipId = null;
-    ed.playing = false;
-    seek(snap(msAt(e.clientX - r.left), snapTargets(null), e.altKey));
+  /** A click on the bar's empty track pages to there. */
+  function barTrackDown(e: PointerEvent) {
+    const el = scroller;
+    if (!bar || !el || e.button !== 0) return;
+    const r = bar.getBoundingClientRect();
+    const f = (e.clientX - r.left) / Math.max(1, r.width);
+    el.scrollLeft = Math.max(0, f * contentW - viewW / 2);
   }
-
-  const kindLabel: Record<string, string> = { video: 'V', text: 'T', audio: 'S', music: 'M' };
 
   // Keep the playhead in view while playing.
   $effect(() => {
     const el = scroller;
     const x = px(ed.playhead);
     if (!el || !ed.playing) return;
-    if (x < el.scrollLeft || x > el.scrollLeft + el.clientWidth - 40) el.scrollLeft = Math.max(0, x - 80);
+    if (x < el.scrollLeft || x > el.scrollLeft + viewW - 40) el.scrollLeft = Math.max(0, x - 80);
   });
 
-  function setTrack(t: Track, patch: Partial<Pick<Track, 'muted'>>) {
-    edit((p) => {
-      const a = readAdvanced(p);
-      const x = a.tracks.find((y) => y.id === t.id);
-      if (x && patch.muted !== undefined) x.muted = patch.muted;
-      p.advanced = a;
-    }, patch.muted ? 'Mute a track' : 'Unmute a track');
-  }
+  const rowKey = (r: TimelineRow) => (r.kind === 'track' ? `t${r.track.id}` : r.kind);
+  const pressGroup = $derived(press?.started && press.zone === 'move' ? (press.track.kind === 'audio' || press.track.kind === 'music' ? 'sound' : 'video') : null);
 </script>
 
+<svelte:window onclick={() => (menu = null)} />
+
 <div class="timeline">
-  <div class="toolbar">
-    <button class="flat" title="Fit the whole edit" onclick={() => (zoom = 0)}>Fit</button>
-    <label class="zoom">
-      <span class="muted">Zoom</span>
-      <input
-        type="range"
-        min="4"
-        max="400"
-        step="1"
-        value={Math.round(pps)}
-        aria-label="Timeline zoom"
-        oninput={(e) => (zoom = Number((e.currentTarget as HTMLInputElement).value))}
-      />
-    </label>
-    <button class="flat" class:on={snapping} aria-pressed={snapping} title="Snap to the playhead, clip edges and markers (hold Alt to not snap)" onclick={() => (snapping = !snapping)}>
-      Snap
-    </button>
-    <button class="flat" title="Add a marker at the playhead (M)" onclick={() => edit((p) => addMarker(p, ed.playhead, ''), 'Add a marker')}>+ Marker</button>
-    <span class="grow"></span>
-    <span class="muted mono">{formatTimecode(ed.playhead)} / {formatTimecode(comp.duration_ms)}</span>
-  </div>
-  <div class="body">
-    <div class="heads" style:width="{HEADER_W}px">
-      <div class="ruler-head"></div>
-      {#each videoTracks as t (t.id)}
-        <div class="head" style:height="{ROW_H}px">
-          <span class="kind">{kindLabel[t.kind]}</span>
-          <span class="name" title={t.name}>{t.name || 'Track'}</span>
-          <button class="flat tiny" class:on={t.muted} aria-pressed={t.muted} title="Mute" onclick={() => setTrack(t, { muted: !t.muted })}>M</button>
+  <div class="scroll" id="timeline-scroll" bind:this={scroller} use:observe use:wheelZoom onscroll={(e) => (scrollX = (e.currentTarget as HTMLElement).scrollLeft)}>
+    <div class="grid" style:width="{HEADER_W + contentW}px">
+      <div class="top" style:height="{TOP_H}px">
+        <div class="corner" style:width="{HEADER_W}px">
+          <span class="tc mono" title="Playhead">{formatTimecode(ed.playhead)}</span>
+          <div class="tools">
+            <button class="tool" class:on={snapping} aria-pressed={snapping} title="Snap to the playhead, clip edges and markers (hold Alt to not snap)" onclick={() => (snapping = !snapping)}>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v5.5a4.5 4.5 0 0 0 9 0V2.5h-3v5.5a1.5 1.5 0 0 1-3 0V2.5z" /></svg>
+            </button>
+            <button class="tool" title="Add a marker at the playhead (M)" onclick={() => edit((p) => addMarker(p, ed.playhead, ''), 'Add a marker')}>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M4 2.5h8v8.5l-4 3-4-3z" /></svg>
+            </button>
+            <button class="tool" title="Fit the whole edit (double-click the zoom bar)" onclick={() => (zoom = 0)}>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h13M1.5 8l3-3M1.5 8l3 3M14.5 8l-3-3M14.5 8l-3 3" /></svg>
+            </button>
+          </div>
         </div>
-        {#if selected && selected.track.id === t.id}
-          {#each LANES.filter((l) => l.id !== 'volume' || selected.clip.source.kind !== 'image').filter((l) => l.id !== 'speed' || selected.clip.source.kind !== 'image') as l (l.id)}
-            <div class="lane-head" style:height="{LANE_H}px">{l.label}</div>
-          {/each}
-        {/if}
-      {/each}
-      <div class="head main" style:height="{ROW_H}px"><span class="kind">V</span><span class="name">Main</span></div>
-      {#each soundTracks as t (t.id)}
-        <div class="head" style:height="{ROW_H}px">
-          <span class="kind">{kindLabel[t.kind]}</span>
-          <span class="name" title={t.name}>{t.name || 'Track'}</span>
-          <button class="flat tiny" class:on={t.muted} aria-pressed={t.muted} title="Mute" onclick={() => setTrack(t, { muted: !t.muted })}>M</button>
-        </div>
-        {#if selected && selected.track.id === t.id}
-          {#each LANES.filter((l) => l.id === 'volume' || l.id === 'speed') as l (l.id)}
-            <div class="lane-head" style:height="{LANE_H}px">{l.label}</div>
-          {/each}
-        {/if}
-      {/each}
-      {#if drag?.kind === 'move'}
-        <div class="head new" style:height="{ROW_H}px">New track</div>
-      {/if}
-    </div>
-    <div class="scroll" bind:this={scroller} use:observe>
-      <div class="content" style:width="{width}px">
         <div
           class="ruler"
+          style:width="{contentW}px"
           role="slider"
           tabindex="-1"
           aria-label="Playhead"
@@ -362,134 +506,224 @@
           onpointerup={rulerUp}
           onpointercancel={rulerUp}
         >
+          {#each comp.markers as m, i (i)}
+            <span class="flag {m.kind}" style:left="{px(m.at_ms)}px" title="{m.title || 'Marker'} · {formatTimecode(m.at_ms)}"></span>
+          {/each}
           {#each ticks.list as t (t)}
             <span class="tick" style:left="{px(t)}px">{tickLabel(t)}</span>
           {/each}
-          {#each comp.markers as m, i (i)}
-            <span class="marker {m.kind}" style:left="{px(m.at_ms)}px" title="{m.title} · {formatTimecode(m.at_ms)}"></span>
-          {/each}
+          <span class="handle" style:left="{px(ed.playhead)}px"></span>
         </div>
-        {#snippet clipRow(t: Track)}
-          <div
-            class="row"
-            class:drop={dropTrack === t.id}
-            data-track={t.id}
-            style:height="{ROW_H}px"
-            role="presentation"
-            onclick={rowClick}
-          >
-            {#each t.clips as c (c.id)}
-              {@const len = clipLength(c)}
-              {@const under = overlapOf(adv, t, c)}
-              <div
-                class="clip {t.kind}"
-                class:sel={ed.clipId === c.id}
-                class:muted-track={t.muted}
-                class:faded={under > 0}
-                title={under > 0 ? `Crossfades in over ${under} ms` : undefined}
-                style:left="{px(c.at_ms - under)}px"
-                style:width="{Math.max(6, px(len))}px"
-                role="button"
-                tabindex="0"
-                aria-label={sourceLabel(c.source, mainName, names)}
-                onpointerdown={(e) => clipDown(e, t, c, 'move')}
-                onpointermove={clipMove}
-                onpointerup={clipUp}
-                onpointercancel={clipUp}
-                onclick={(e) => e.stopPropagation()}
-                onkeydown={(e) => {
-                  if (e.key === 'Enter') ed.clipId = c.id;
-                }}
-              >
-                <span class="label">{sourceLabel(c.source, mainName, names)}</span>
-                {#if c.speed.length}<span class="badge">ramp</span>{/if}
-                {#if adv.transitions.some((x) => x.track === t.id && x.after_clip === c.id)}
-                  <span class="badge tr" title="Transition into the next clip">⇢</span>
-                {/if}
-                <span
-                  class="edge start"
-                  role="presentation"
-                  onpointerdown={(e) => clipDown(e, t, c, 'start')}
-                  onpointermove={clipMove}
-                  onpointerup={clipUp}
-                  onpointercancel={clipUp}
-                ></span>
-                <span
-                  class="edge end"
-                  role="presentation"
-                  onpointerdown={(e) => clipDown(e, t, c, 'end')}
-                  onpointermove={clipMove}
-                  onpointerup={clipUp}
-                  onpointercancel={clipUp}
-                ></span>
-              </div>
-            {/each}
+      </div>
+
+      {#snippet newRow(group: 'video' | 'sound')}
+        <div class="row empty" style:height="{group === 'video' ? heights.video : heights.sound}px">
+          <div class="head" style:width="{HEADER_W}px">
+            <span class="chip main">{group === 'video' ? `V${videoCount + 2}` : `A${soundCount + 2}`}</span>
+            <span class="name muted">{pressGroup === group ? 'Drop for a new track' : ''}</span>
           </div>
-          {#if selected && selected.track.id === t.id}
-            {@const c = selected.clip}
-            {@const shift = overlapOf(adv, t, c)}
-            {#each LANES.filter((l) => (t.kind === 'video' ? (c.source.kind === 'image' ? l.id === 'transform' || l.id === 'opacity' : true) : l.id === 'volume' || l.id === 'speed')) as l (l.id)}
-              <div class="lane" style:height="{LANE_H}px">
+          <div
+            class="lane new"
+            class:drop={dropTrack === 'new' && pressGroup === group}
+            data-track={group === 'video' ? 'new-video' : 'new-sound'}
+            style:width="{contentW}px"
+            role="presentation"
+            onclick={laneClick}
+          ></div>
+        </div>
+      {/snippet}
+
+      {#snippet clipBlock(t: Track, c: PlacedClip)}
+        {@const under = overlapOf(adv, t, c)}
+        <div
+          class="clip {c.source.kind === 'image' ? 'image' : t.kind}"
+          class:sel={ed.clipId === c.id}
+          class:off={t.muted}
+          style:left="{px(c.at_ms - under)}px"
+          style:width="{Math.max(6, px(clipLength(c)))}px"
+          role="button"
+          tabindex="0"
+          aria-label={sourceLabel(c.source, mainName, names)}
+          onpointerdown={(e) => clipDown(e, t, c)}
+          onpointermove={clipHover}
+          onclick={(e) => e.stopPropagation()}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') select(c.id);
+          }}
+        >
+          <span class="name">{sourceLabel(c.source, mainName, names)}</span>
+          {#if c.speed.length > 1}<span class="badge">ramp</span>{/if}
+        </div>
+      {/snippet}
+
+      {@render newRow('video')}
+      {#each rows as r, ri (rowKey(r))}
+        {@const h = rowH(r)}
+        <div class="row" class:sound={r.group === 'sound'} style:height="{h}px">
+          <div
+            class="head"
+            style:width="{HEADER_W}px"
+            role="presentation"
+            ondblclick={(e) => {
+              if ((e.target as HTMLElement).closest('button, input, .name')) return;
+              toggleHeight(r.group);
+            }}
+          >
+            <span class="chip" class:main={r.kind !== 'track'}>{r.label}</span>
+            {#if r.kind === 'track'}
+              {@const t = r.track}
+              <button
+                class="icon"
+                class:off={t.muted}
+                aria-pressed={t.muted}
+                title={t.muted ? 'Turn the track on' : r.group === 'video' ? 'Hide the track' : 'Mute the track'}
+                onclick={() => mute(t)}
+              >
+                {#if r.group === 'video'}
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle class="fill" cx="8" cy="8" r="2" />{#if t.muted}<path d="M2.5 13.5l11-11" />{/if}</svg>
+                {:else}M{/if}
+              </button>
+              {#if renaming === t.id}
+                <input
+                  class="rename"
+                  value={t.name}
+                  aria-label="Track name"
+                  use:focusSelect
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter') rename(t, (e.currentTarget as HTMLInputElement).value);
+                    else if (e.key === 'Escape') renaming = null;
+                  }}
+                  onblur={(e) => rename(t, (e.currentTarget as HTMLInputElement).value)}
+                />
+              {:else}
+                <span class="name" role="presentation" title="{t.name || 'Track'} (double-click to rename)" ondblclick={() => (renaming = t.id)}>{t.name || 'Track'}</span>
+              {/if}
+            {:else}
+              <span class="icon lock" title="Main: cut it in Normal mode or the Main clip tab">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></svg>
+              </span>
+              <span class="name" title={mainName}>{r.kind === 'main' ? mainName : 'Main sound'}</span>
+            {/if}
+            <span
+              class="resize"
+              role="separator"
+              aria-orientation="horizontal"
+              title="Drag to change the height of the {r.group === 'video' ? 'video' : 'sound'} tracks"
+              onpointerdown={(e) => resizeDown(e, r.group)}
+              onpointermove={resizeMove}
+              onpointerup={resizeUp}
+              onpointercancel={resizeUp}
+            ></span>
+          </div>
+          {#if r.kind === 'track'}
+            {@const t = r.track}
+            <div class="lane" class:drop={dropTrack === t.id} data-track={t.id} style:width="{contentW}px" role="presentation" onclick={laneClick}>
+              {#each t.clips as c (c.id)}
+                {@render clipBlock(t, c)}
+              {/each}
+              {#each boxes.filter((b) => b.track === t.id) as b (b.after)}
                 <div
-                  class="lane-span"
+                  class="trans"
+                  class:sel={isSel(b)}
+                  style:left="{px(b.start)}px"
+                  style:width="{Math.max(8, px(b.end - b.start))}px"
                   role="button"
                   tabindex="-1"
-                  title="Click to add a key"
-                  style:left="{px(c.at_ms - shift)}px"
-                  style:width="{px(clipLength(c))}px"
-                  onclick={(e) => laneClick(e, c, l.id, shift)}
+                  title="{KIND_LABEL[b.kind]} · {(b.ms / 1000).toFixed(2)} s (drag an end to change; right-click for more)"
+                  onpointerdown={(e) => transDown(e, b, null)}
+                  onclick={(e) => e.stopPropagation()}
+                  oncontextmenu={(e) => transMenu(e, b)}
                   onkeydown={() => {}}
                 >
-                  {#each laneTimes(c, l.id) as at (at)}
-                    <span
-                      class="key"
-                      class:speed={l.id === 'speed'}
-                      style:left="{px(at)}px"
-                      role="button"
-                      tabindex="-1"
-                      title={l.id === 'speed' ? `${rateAt(c, at)} % from ${formatTimecode(at)}` : formatTimecode(at)}
-                      onpointerdown={(e) => keyDown(e, c, l.id, at)}
-                      onpointermove={keyMove}
-                      onpointerup={keyUp}
-                      onpointercancel={keyUp}
-                      onclick={(e) => e.stopPropagation()}
-                      ondblclick={(e) => {
-                        e.stopPropagation();
-                        keyRemove(c, l.id, at);
-                      }}
-                      onkeydown={() => {}}
-                    >{l.id === 'speed' ? `${rateAt(c, at)}%` : ''}</span>
-                  {/each}
+                  {#if px(b.end - b.start) > 40}<span class="tname">{KIND_LABEL[b.kind]}</span>{/if}
+                  <span class="tedge start" role="presentation" onpointerdown={(e) => transDown(e, b, 'start')}></span>
+                  {#if b.kind === 'dip'}
+                    <span class="tedge end" role="presentation" onpointerdown={(e) => transDown(e, b, 'end')}></span>
+                  {/if}
                 </div>
-              </div>
-            {/each}
-          {/if}
-        {/snippet}
-        {#each videoTracks as t (t.id)}
-          {@render clipRow(t)}
-        {/each}
-        <div class="row main" style:height="{ROW_H}px" role="presentation" onclick={rowClick}>
-          {#each segs as s, i (i)}
-            <div class="clip video main-seg" style:left="{px(s.out_start_ms)}px" style:width="{Math.max(4, px(s.out_end_ms - s.out_start_ms))}px" title="{mainName} · {formatTimecode(s.src_start_ms)}–{formatTimecode(s.src_end_ms)}">
-              <span class="label">{mainName}</span>
-              {#if s.speed !== 1}<span class="badge">{s.speed}x</span>{/if}
+              {/each}
+              {#each touching.filter((j) => j.track === t.id) as j (j.after)}
+                <button class="join" style:left="{px(j.at)}px" title="Add a crossfade here" onclick={(e) => {
+                  e.stopPropagation();
+                  addCrossfade(j);
+                }}>+</button>
+              {/each}
             </div>
-          {/each}
+          {:else}
+            <div class="lane" style:width="{contentW}px" role="presentation" onclick={laneClick}>
+              {#each segs as s, i (i)}
+                <div
+                  class="clip main {r.kind === 'main' ? 'video' : 'audio'}"
+                  style:left="{px(s.out_start_ms)}px"
+                  style:width="{Math.max(4, px(s.out_end_ms - s.out_start_ms))}px"
+                  title="{mainName} · {formatTimecode(s.src_start_ms)}–{formatTimecode(s.src_end_ms)}"
+                >
+                  <span class="name">{mainName}</span>
+                  {#if s.speed !== 1}<span class="badge">{s.speed}x</span>{/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
-        {#each soundTracks as t (t.id)}
-          {@render clipRow(t)}
-        {/each}
-        {#if drag?.kind === 'move'}
-          <div class="row new" class:drop={dropTrack === 'new'} data-track={selected && (selected.track.kind === 'audio' || selected.track.kind === 'music') ? 'new-sound' : 'new-video'} style:height="{ROW_H}px"></div>
+        {#if ri === lastVideo}
+          <div class="divider" style:height="{DIVIDER_H}px" style:width="{HEADER_W + contentW}px"></div>
         {/if}
-        <div class="playhead" style:left="{px(ed.playhead)}px"></div>
+      {/each}
+      {@render newRow('sound')}
+      <div class="playhead" style:left="{HEADER_W + px(ed.playhead)}px"></div>
+    </div>
+  </div>
+
+  <div class="zoombar">
+    <span class="zb-label muted mono" style:width="{HEADER_W}px">{formatTimecode(comp.duration_ms)}</span>
+    <div class="zb-track" bind:this={bar} role="presentation" onpointerdown={barTrackDown} ondblclick={() => (zoom = 0)}>
+      <div
+        class="zb-thumb"
+        style:left="{bar01.start * 100}%"
+        style:width="{Math.max(0, bar01.end - bar01.start) * 100}%"
+        role="scrollbar"
+        tabindex="-1"
+        aria-controls="timeline-scroll"
+        aria-valuenow={Math.round(bar01.start * 100)}
+        onpointerdown={(e) => barDown(e, 'move')}
+        onpointermove={barMove}
+        onpointerup={barUp}
+        onpointercancel={barUp}
+      >
+        <span class="zb-end l" role="presentation" onpointerdown={(e) => barDown(e, 'l')} onpointermove={barMove} onpointerup={barUp} onpointercancel={barUp}></span>
+        <span class="zb-end r" role="presentation" onpointerdown={(e) => barDown(e, 'r')} onpointermove={barMove} onpointerup={barUp} onpointercancel={barUp}></span>
       </div>
     </div>
   </div>
 </div>
 
+{#if menu}
+  {@const b = menu.box}
+  <div
+    class="menu"
+    role="menu"
+    tabindex="-1"
+    style:left="{Math.min(menu.x, window.innerWidth - 200)}px"
+    style:top="{Math.min(menu.y, window.innerHeight - 140)}px"
+    onclick={(e) => e.stopPropagation()}
+    onkeydown={(e) => e.key === 'Escape' && (menu = null)}
+  >
+    <button class="flat item" class:on={b.kind === 'crossfade'} role="menuitemradio" aria-checked={b.kind === 'crossfade'} onclick={() => setKind(b, 'crossfade')}>Crossfade</button>
+    <button class="flat item" class:on={b.kind === 'dip'} role="menuitemradio" aria-checked={b.kind === 'dip'} onclick={() => setKind(b, 'dip')}>Dip to black</button>
+    <hr />
+    <button class="flat item bad" role="menuitem" onclick={() => setKind(b, 'cut')}>Remove transition<kbd>Del</kbd></button>
+  </div>
+{/if}
+
 <style>
   .timeline {
+    /* FilmCraft's clip colours (sampled from its screenshots). */
+    --tl-video: #1d4a64;
+    --tl-music: #355418;
+    --tl-image: #801836;
+    --tl-text: #5b4a86;
+    --tl-chip: #265bc1;
+    --tl-clip-text: #e8eef2;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -499,241 +733,435 @@
     background: var(--panel);
     font-size: var(--text-sm);
   }
-  .toolbar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: 4px var(--space-2);
-    border-bottom: 1px solid var(--border);
-  }
-  .toolbar .on,
-  .tiny.on {
-    color: var(--accent-text);
-  }
-  .zoom {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .zoom input {
-    width: 120px;
-  }
-  .grow {
-    flex: 1;
-  }
-  .body {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    min-width: 0;
-    overflow-y: auto;
-  }
-  .heads {
-    flex: none;
-    border-right: 1px solid var(--border);
-    background: var(--chrome);
-  }
-  .ruler-head {
-    height: 24px;
-    border-bottom: 1px solid var(--border);
-  }
-  .head,
-  .lane-head {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 6px;
-    border-bottom: 1px solid var(--border);
-    overflow: hidden;
-  }
-  .lane-head {
-    color: var(--text-muted);
-    font-size: var(--text-xs);
-    padding-left: 22px;
-  }
-  .head.new {
-    color: var(--text-muted);
-    font-style: italic;
-  }
-  .kind {
-    font-family: var(--font-mono);
-    color: var(--text-muted);
-    width: 12px;
-  }
-  .name {
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .tiny {
-    padding: 0 4px;
-    min-width: 0;
-    height: 20px;
-    font-size: var(--text-xs);
-  }
   .scroll {
     flex: 1;
-    overflow-x: auto;
-    overflow-y: hidden;
-    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
   }
-  .content {
+  /* The zoom bar scrolls sideways; the vertical bar stays. */
+  .scroll::-webkit-scrollbar {
+    height: 0;
+    width: 10px;
+  }
+  .scroll::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 5px;
+    border: 2px solid var(--panel);
+  }
+  .scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .grid {
     position: relative;
+    min-height: 100%;
+  }
+  .top {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    display: flex;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .corner {
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 8px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+  }
+  .tc {
+    color: var(--accent-text);
+    font-size: 17px;
+    line-height: 1;
+  }
+  .tools {
+    display: flex;
+    gap: 4px;
+  }
+  .tool {
+    width: 26px;
+    height: 22px;
+    min-width: 0;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .tool.on {
+    background: var(--border-strong);
+    color: var(--text-strong);
+  }
+  svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  svg .fill {
+    fill: currentColor;
+    stroke: none;
   }
   .ruler {
     position: relative;
-    height: 24px;
-    border-bottom: 1px solid var(--border);
+    flex: none;
     cursor: text;
-    background: var(--chrome);
+    touch-action: none;
   }
   .tick {
     position: absolute;
-    top: 0;
     bottom: 0;
-    padding-left: 3px;
+    height: 30px;
+    padding-left: 4px;
     border-left: 1px solid var(--border-strong);
     font-family: var(--font-mono);
     font-size: 10px;
     color: var(--text-muted);
-    line-height: 22px;
+    line-height: 14px;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .flag {
+    position: absolute;
+    top: 3px;
+    width: 9px;
+    height: 12px;
+    margin-left: -4.5px;
+    background: var(--warn);
+    clip-path: polygon(0 0, 100% 0, 100% 70%, 50% 100%, 0 70%);
     pointer-events: none;
   }
-  .marker {
-    position: absolute;
-    top: 2px;
-    width: 8px;
-    height: 8px;
-    margin-left: -4px;
-    transform: rotate(45deg);
-    background: var(--warn);
-  }
-  .marker.bookmark {
+  .flag.bookmark {
     background: var(--accent-text);
   }
-  .marker.event {
+  .flag.event {
     background: var(--good);
   }
+  .handle {
+    position: absolute;
+    bottom: 0;
+    width: 13px;
+    height: 18px;
+    margin-left: -6.5px;
+    background: var(--accent-text);
+    clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%);
+    border-radius: 2px 2px 0 0;
+    pointer-events: none;
+  }
   .row {
+    display: flex;
+  }
+  .head {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    user-select: none;
+  }
+  .chip {
+    flex: none;
+    min-width: 26px;
+    height: 20px;
+    padding: 0 4px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    background: var(--tl-chip);
+    color: #fff;
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+  .chip.main {
+    background: var(--panel-raised);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+  }
+  .icon {
+    flex: none;
+    width: 22px;
+    height: 20px;
+    min-width: 0;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+  .icon.off {
+    color: var(--warn);
+  }
+  .icon.lock {
+    color: var(--text-muted);
+  }
+  .head .name {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+  }
+  .rename {
+    flex: 1;
+    min-width: 0;
+    height: 20px;
+    font-size: var(--text-xs);
+  }
+  .resize {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -2px;
+    height: 5px;
+    cursor: ns-resize;
+    touch-action: none;
+  }
+  .lane {
     position: relative;
+    flex: none;
     border-bottom: 1px solid var(--border);
   }
-  .row.drop {
+  .lane.drop {
     background: var(--hover);
   }
-  .row.new {
-    border-bottom-style: dashed;
+  .row.empty .lane {
+    background: rgb(0 0 0 / 12%);
+  }
+  .row.empty .lane.drop {
+    background: var(--hover);
+    outline: 1px dashed var(--border-strong);
+    outline-offset: -2px;
+  }
+  .divider {
+    background: var(--gutter);
   }
   .clip {
     position: absolute;
-    top: 3px;
-    bottom: 3px;
-    border-radius: var(--radius-sm);
-    background: #2b4f7e;
-    border: 1px solid #3d6aa6;
-    color: var(--text-strong);
+    top: 1px;
+    bottom: 1px;
+    background: var(--tl-video);
+    border: 1px solid rgb(0 0 0 / 40%);
+    color: var(--tl-clip-text);
     overflow: hidden;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 4px;
-    padding: 0 6px;
+    padding: 1px 5px;
     cursor: grab;
     touch-action: none;
     user-select: none;
   }
-  .clip.audio {
-    background: #2d5b3f;
-    border-color: #3e7d56;
-  }
   .clip.music {
-    background: #5b3f6e;
-    border-color: #7a5592;
+    background: var(--tl-music);
   }
-  .clip.main-seg {
-    background: #3a3a3a;
-    border-color: #555;
+  .clip.image {
+    background: var(--tl-image);
+  }
+  .clip.text {
+    background: var(--tl-text);
+  }
+  .clip.main {
     cursor: default;
   }
   .clip.sel {
-    outline: 2px solid var(--accent-text);
-    outline-offset: -1px;
+    outline: 2px solid #fff;
+    outline-offset: -2px;
+    z-index: 1;
   }
-  .clip.muted-track {
-    opacity: 0.55;
+  .clip.off {
+    opacity: 0.45;
   }
-  .clip.faded {
-    background-image: linear-gradient(90deg, rgb(255 255 255 / 18%), transparent 40px);
-  }
-  .label {
+  .clip .name {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     font-size: var(--text-xs);
+    line-height: 15px;
   }
   .badge {
+    flex: none;
     font-size: 10px;
+    line-height: 14px;
     padding: 0 3px;
     border-radius: 3px;
-    background: rgb(0 0 0 / 35%);
+    background: rgb(0 0 0 / 40%);
   }
-  .edge {
+  .trans {
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    z-index: 2;
+    background:
+      repeating-linear-gradient(135deg, rgb(217 217 217 / 45%) 0 1px, transparent 1px 4px),
+      rgb(0 0 0 / 35%);
+    border: 1px solid #ebebeb;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .trans.sel {
+    border: 2px solid var(--accent-text);
+  }
+  .tname {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    max-width: calc(100% - 4px);
+    padding: 0 3px;
+    background: rgb(0 0 0 / 67%);
+    color: #d9d9d9;
+    font-size: 10px;
+    line-height: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .tedge {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 7px;
+    width: 6px;
     cursor: ew-resize;
   }
-  .edge.start {
-    left: 0;
+  .tedge.start {
+    left: -2px;
   }
-  .edge.end {
-    right: 0;
+  .tedge.end {
+    right: -2px;
   }
-  .lane {
-    position: relative;
-    border-bottom: 1px solid var(--border);
-    background: rgb(0 0 0 / 15%);
-  }
-  .lane-span {
-    position: absolute;
-    top: 2px;
-    bottom: 2px;
-    background: var(--hover);
-    border-radius: 3px;
-    cursor: copy;
-  }
-  .key {
+  .join {
     position: absolute;
     top: 50%;
-    width: 9px;
-    height: 9px;
-    margin: -5px 0 0 -5px;
-    transform: rotate(45deg);
-    background: var(--accent-text);
-    border: 1px solid var(--text-strong);
-    cursor: ew-resize;
-    touch-action: none;
+    z-index: 2;
+    width: 18px;
+    height: 18px;
+    min-width: 0;
+    margin: -9px 0 0 -9px;
+    padding: 0;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--accent);
+    color: var(--on-accent);
+    border: 1px solid #fff;
+    font-size: 13px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity var(--motion);
   }
-  .key.speed {
-    transform: none;
-    width: auto;
-    height: auto;
-    margin: -8px 0 0 -2px;
-    padding: 0 3px;
-    font-size: 10px;
-    border-radius: 3px;
-    background: var(--warn);
-    color: #000;
-    border: none;
+  .lane:hover .join,
+  .join:focus-visible {
+    opacity: 1;
   }
   .playhead {
     position: absolute;
     top: 0;
     bottom: 0;
+    z-index: 2;
     width: 1px;
-    background: var(--rec);
+    background: var(--accent-text);
     pointer-events: none;
+  }
+  .zoombar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    height: 18px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .zb-label {
+    flex: none;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+  .zb-track {
+    position: relative;
+    flex: 1;
+    height: 10px;
+    margin: 0 12px;
+  }
+  .zb-thumb {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 20px;
+    border-radius: 5px;
+    background: #4b4b4b;
+    cursor: grab;
+    touch-action: none;
+  }
+  .zb-end {
+    position: absolute;
+    top: -2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid #d9d9d9;
+    background: var(--panel);
+    cursor: ew-resize;
+  }
+  .zb-end.l {
+    left: -7px;
+  }
+  .zb-end.r {
+    right: -7px;
+  }
+  .menu {
+    position: fixed;
+    z-index: 20;
+    min-width: 190px;
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+    display: flex;
+    flex-direction: column;
+  }
+  .item {
+    justify-content: space-between;
+    color: var(--text-strong);
+  }
+  .item.on::after {
+    content: '✓';
+  }
+  .item.bad {
+    color: var(--bad);
+  }
+  .menu hr {
+    width: 100%;
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 4px 0;
+  }
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
   }
   .mono {
     font-family: var(--font-mono);

@@ -43,6 +43,7 @@
   let { project, mainName, names }: { project: Project; mainName: string; names: Map<string, string> } = $props();
 
   const adv = $derived(readAdvanced(project));
+  const selTrans = $derived(ed.transitionSel ? (adv.transitions.find((x) => x.track === ed.transitionSel?.track && x.after_clip === ed.transitionSel.after && x.kind !== 'cut') ?? null) : null);
   const found = $derived.by(() => {
     for (const t of adv.tracks) {
       const c = t.clips.find((x) => x.id === ed.clipId);
@@ -211,8 +212,30 @@
       }}>Remove track</button>
     </div>
   </section>
+{:else if selTrans}
+  {@const st = selTrans}
+  <section>
+    <h3>Transition</h3>
+    <Segmented
+      label="Transition"
+      value={st.kind}
+      options={TRANSITIONS.filter((x) => x.value !== 'cut')}
+      onchange={(k) => edit((p) => setTransition(p, st.after_clip, k, st.ms), 'Set transition')}
+    />
+    <div class="lane">
+      <span class="name">Length</span>
+      <NumberField label="Transition length" value={st.ms} min={1} max={MAX_TRANSITION_MS} step={50} unit="ms" onchange={(v) => edit((p) => setTransition(p, st.after_clip, st.kind, v), 'Set transition')} />
+    </div>
+    <p class="hint muted">Drag its ends on the timeline to change the length.</p>
+    <div class="row">
+      <button class="danger" title="Remove (Delete)" onclick={() => {
+        edit((p) => setTransition(p, st.after_clip, 'cut', 0), 'Remove a transition');
+        ed.transitionSel = null;
+      }}>Remove</button>
+    </div>
+  </section>
 {:else}
-  <p class="muted hint">Select a clip on the timeline to change it here. Drag it to move it, drag its ends to trim, click a lane under it to add a key.</p>
+  <p class="muted hint">Select a clip or a transition on the timeline to change it here. A click selects; drag a clip to move it, drag its ends to trim; the + between two touching clips adds a crossfade.</p>
 {/if}
 
 

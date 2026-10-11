@@ -108,6 +108,8 @@ export const ed = $state({
   mediaVersion: 0,
   /** The selected clip of an Advanced track. */
   clipId: null as number | null,
+  /** The selected transition of an Advanced track (the clip it follows). */
+  transitionSel: null as { track: number; after: number } | null,
   /** The text cues as the engine draws them (both modes' previews). */
   cues: [] as Cue[],
 });
@@ -165,6 +167,7 @@ export function openEditor(clip: LibClip): void {
     ed.selection = null;
     ed.textId = null;
     ed.clipId = null;
+    ed.transitionSel = null;
     ed.undo = [];
     ed.redo = [];
     ed.undoLabels = [];
