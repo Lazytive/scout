@@ -107,7 +107,8 @@ export interface Placement {
   height: number;
 }
 
-export type PictureKind = 'video' | 'image' | 'audio' | 'music';
+/** `LayerKind`: 'black' is a dip's black over the whole frame (no file). */
+export type PictureKind = 'video' | 'image' | 'audio' | 'music' | 'black';
 
 const U32_MAX = 0xffff_ffff;
 const I32_MIN = -0x8000_0000;

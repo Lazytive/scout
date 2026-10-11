@@ -475,11 +475,14 @@ fn output_for(
     }
 }
 
-/// How many layers play at once, at most (muted sound layers never play).
+/// How many layers play at once, at most (muted sound layers never play; a dip's
+/// black reads no file).
 fn most_running(comp: &Composition) -> usize {
     let mut events: Vec<(u64, i32)> = Vec::new();
     for l in comp.layers.iter().filter(|l| {
-        !(l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music)) && l.end_ms > l.at_ms
+        !(l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music))
+            && l.kind != LayerKind::Black
+            && l.end_ms > l.at_ms
     }) {
         events.push((l.at_ms, 1));
         events.push((l.end_ms, -1));
@@ -581,7 +584,9 @@ fn media_files(
         facts: Some(main.clone()),
     }];
     for l in &comp.layers {
-        if l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music) {
+        if l.kind == LayerKind::Black
+            || (l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music))
+        {
             continue;
         }
         if files.iter().any(|m| m.source == l.source) {

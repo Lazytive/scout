@@ -221,6 +221,9 @@ pub(crate) fn source_config(
             out_height: 0,
             want_video: true,
         },
+        LayerKind::Black => {
+            return Err(ExportError::Plan("a dip's black has no file".into()));
+        }
         LayerKind::Audio | LayerKind::Music => SourceConfig {
             src_width: 0,
             src_height: 0,
@@ -251,6 +254,8 @@ pub(crate) struct Drawer<'c> {
     canvas: Canvas,
     grade: Option<[[f32; 4]; 3]>,
     cues: Vec<Cue>,
+    /// What a dip's black layer draws (stretched over the canvas).
+    black: Frame,
 }
 
 impl<'c> Drawer<'c> {
@@ -270,6 +275,7 @@ impl<'c> Drawer<'c> {
             canvas: Canvas::new(out.width, out.height)?,
             grade: (!comp.colour.is_identity()).then(|| comp.colour.matrix()),
             cues,
+            black: crate::canvas::black_frame()?,
         })
     }
 
@@ -282,8 +288,18 @@ impl<'c> Drawer<'c> {
         frame_of: impl Fn(&Layer) -> Option<(&'f Frame, (u32, u32))>,
     ) -> Result<gst::Buffer, ExportError> {
         let (width, height) = (self.out.width, self.out.height);
-        let mut items: Vec<Item<'f>> = Vec::with_capacity(visible.len());
+        let mut items: Vec<Item<'_>> = Vec::with_capacity(visible.len());
         for l in visible {
+            if l.kind == LayerKind::Black {
+                // A dip's black: the whole canvas, at the layer's opacity.
+                items.push(Item {
+                    frame: &self.black,
+                    placement: place(l.transform_at(t), width, height, width, height),
+                    opacity: l.opacity_at(t),
+                    opaque: true,
+                });
+                continue;
+            }
             let Some((frame, native)) = frame_of(l) else {
                 continue;
             };
@@ -563,8 +579,11 @@ pub(crate) fn run_pass(
     let mut runs: Vec<Run> = Vec::new();
     let mut run_of: HashMap<u32, usize> = HashMap::new();
     for (li, l) in comp.layers.iter().enumerate() {
-        // Muted sound never plays (its file isn't even among `media`).
-        if l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music) {
+        // Muted sound never plays (its file isn't even among `media`); a dip's black
+        // reads no file.
+        if l.kind == LayerKind::Black
+            || (l.muted && matches!(l.kind, LayerKind::Audio | LayerKind::Music))
+        {
             continue;
         }
         let mi = media
@@ -575,7 +594,7 @@ pub(crate) fn run_pass(
         let cfg = source_config(l, facts, comp.crop, canvas_size)?;
         let (pieces, audio) = match l.kind {
             LayerKind::Video => (l.pieces(PIECE_MAX_MS), !l.muted),
-            LayerKind::Image => (Vec::new(), false),
+            LayerKind::Image | LayerKind::Black => (Vec::new(), false),
             LayerKind::Audio | LayerKind::Music => (l.pieces(PIECE_MAX_MS), true),
         };
         run_of.entry(l.id).or_insert(runs.len());

@@ -91,6 +91,10 @@ pub fn frame(req: &FrameRequest<'_>) -> Result<FrameImage, ExportError> {
     let visible = comp.visible_at(t);
     let mut frames: Vec<(u32, Frame, (u32, u32))> = Vec::with_capacity(visible.len());
     for l in &visible {
+        // A dip's black needs no file (the drawer makes it).
+        if l.kind == LayerKind::Black {
+            continue;
+        }
         let m = media
             .iter()
             .find(|m| m.source == l.source)
@@ -101,7 +105,7 @@ pub fn frame(req: &FrameRequest<'_>) -> Result<FrameImage, ExportError> {
             LayerKind::Image => Source::open(&m.path, cfg)
                 .map_err(|e| ExportError::Source(format!("a picture could not be read: {e}")))?
                 .next_frame()?,
-            LayerKind::Audio | LayerKind::Music => None,
+            LayerKind::Audio | LayerKind::Music | LayerKind::Black => None,
         };
         if let Some(f) = picked {
             let native = native_size(l, m.facts.as_ref(), &f);

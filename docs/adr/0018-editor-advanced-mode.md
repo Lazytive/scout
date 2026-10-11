@@ -103,6 +103,12 @@ in text yet (M8.2), the in-memory muxing cap (IMPROVEMENTS G1).
   only a bounded set of files the engine named (`editor_media` with `what`). Measured
   in the app: canvas vs `editor.frame` 39.9–66.8 dB at 1280x720 (bar: 35 dB). A dip on
   an upper track fades to what is below it (black only on the lowest track).
+  **Amended (M9.8.5, 2026-10-11):** a dip on a picture track goes through black, as in
+  FilmCraft/Premiere: compose adds a `LayerKind::Black` layer (the whole frame, no file;
+  the track's z, a later id, so over both clips and under higher tracks) whose opacity
+  goes 0 → 1 at the cut (held across a gap) → 0, and leaves the clips' opacity alone;
+  both renderers draw it (the export as a stretched opaque black frame). Sound tracks
+  keep the old fades. Export test: mean luma 70.9 before, 35.3 half way, 0.0 at the cut.
 - **Accepted at the M9 wrap-up (M9.6, 2026-10-10)** on the e2e `m9_montage.rs`: two
   clips the daemon recorded of the test game, a montage through the engine's commands
   (Normal trim, `editor.montage`, a split with a 500 ms crossfade, a 2x zoom), a Custom

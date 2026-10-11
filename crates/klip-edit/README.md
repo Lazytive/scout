@@ -74,6 +74,9 @@ and writing the project file.
   `SourceInfo` by key): a titled chapter (`SourceInfo::events`) is an `Event` marker
   with its title, the others are `Bookmark n` (numbered among bookmarks); then the
   user's markers; sorted, de-duplicated, at most 255.
+  Transitions: a crossfade pulls the next clip under the one before (opacity ramp); a
+  dip on a picture track adds a `LayerKind::Black` layer over the join (0 → 1 at the
+  cut, held across a gap, → 0; M9.8.5), on a sound track it fades both clips.
 - `plan` (M8.3): `Render::new(&Project, &SourceInfo)` = what `klip-export` renders:
   the crop (`format::crop_rect` on the probed size), the output segments
   (`timeline::segments` after clamping the project to the clip's length), the text

@@ -265,7 +265,7 @@ export class Player {
   /** Where layer `l` lands on the canvas at the current time (canvas pixels), if known. */
   placementOf(l: Layer): Placement | null {
     const comp = this.comp;
-    if (!comp) return null;
+    if (!comp || l.kind === 'black') return null;
     const m = this.resolve(l.source);
     if (!m) return null;
     let native: [number, number] = [m.width, m.height];
@@ -312,7 +312,8 @@ export class Player {
       s.lastUsed = performance.now();
       return s;
     }
-    if (l.kind === 'image') return null;
+    // Pictures and a dip's black have no media element.
+    if (l.kind === 'image' || l.kind === 'black') return null;
     const m = this.resolve(l.source);
     if (!m) return null;
     s = { key, layer: l, video: null, sounds: [], pending: new Map(), lastUsed: performance.now() };
@@ -387,7 +388,7 @@ export class Player {
     if (!comp) return;
     const t = this.t;
     for (const l of comp.layers) {
-      if (!layerActive(l, t) || l.kind === 'image') continue;
+      if (!layerActive(l, t) || l.kind === 'image' || l.kind === 'black') continue;
       const s = this.ensure(l);
       if (!s) continue;
       const want = this.target(l, t);
@@ -434,7 +435,7 @@ export class Player {
     this.t = t;
     const used = new Set<string>();
     for (const l of comp.layers) {
-      if (l.kind === 'image') continue;
+      if (l.kind === 'image' || l.kind === 'black') continue;
       const active = layerActive(l, t);
       const soon = !active && l.at_ms > t && l.at_ms - t <= PREROLL_MS;
       if (!active && !soon) continue;
@@ -508,6 +509,15 @@ export class Player {
     const t = this.t;
     const crop = comp.crop;
     for (const l of visibleAt(comp, t)) {
+      if (l.kind === 'black') {
+        // A dip's black: the whole frame at its opacity (the export does the same).
+        ctx.globalAlpha = layerOpacityAt(l, t);
+        if (ctx.globalAlpha > 0) {
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, W, H);
+        }
+        continue;
+      }
       const m = this.resolve(l.source);
       if (!m) continue;
       const main = l.source.kind === 'main';

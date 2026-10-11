@@ -372,18 +372,7 @@
             "id": 4,
             "kind": "video",
             "muted": false,
-            "opacity": [
-              {
-                "at_ms": 0,
-                "ease": "linear",
-                "value": 0.0
-              },
-              {
-                "at_ms": 500,
-                "ease": "linear",
-                "value": 1.0
-              }
-            ],
+            "opacity": [],
             "source": {
               "kind": "main"
             },
@@ -402,9 +391,48 @@
             "z": 1
           },
           {
+            "at_ms": 21000,
+            "end_ms": 26500,
+            "id": 5,
+            "kind": "black",
+            "muted": false,
+            "opacity": [
+              {
+                "at_ms": 0,
+                "ease": "linear",
+                "value": 0.0
+              },
+              {
+                "at_ms": 500,
+                "ease": "linear",
+                "value": 1.0
+              },
+              {
+                "at_ms": 5000,
+                "ease": "linear",
+                "value": 1.0
+              },
+              {
+                "at_ms": 5500,
+                "ease": "linear",
+                "value": 0.0
+              }
+            ],
+            "source": {
+              "kind": "main"
+            },
+            "speed": [],
+            "src_in_ms": 0,
+            "src_out_ms": 0,
+            "track": 3,
+            "transform": [],
+            "volume": [],
+            "z": 1
+          },
+          {
             "at_ms": 1000,
             "end_ms": 4000,
-            "id": 5,
+            "id": 6,
             "kind": "image",
             "muted": false,
             "opacity": [
@@ -448,7 +476,7 @@
           {
             "at_ms": 2500,
             "end_ms": 4000,
-            "id": 6,
+            "id": 7,
             "kind": "audio",
             "muted": true,
             "opacity": [],
@@ -467,7 +495,7 @@
           {
             "at_ms": 0,
             "end_ms": 60000,
-            "id": 7,
+            "id": 8,
             "kind": "music",
             "muted": false,
             "opacity": [],

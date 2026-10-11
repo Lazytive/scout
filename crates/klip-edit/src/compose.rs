@@ -28,6 +28,9 @@ pub enum LayerKind {
     Image,
     Audio,
     Music,
+    /// The whole frame black, at the layer's opacity: a dip to black on a picture track
+    /// (no file; `source` and the source range mean nothing).
+    Black,
 }
 
 /// One placed clip on the output timeline, `at_ms..end_ms`.
@@ -145,7 +148,12 @@ impl Composition {
         let mut v: Vec<&Layer> = self
             .layers
             .iter()
-            .filter(|l| matches!(l.kind, LayerKind::Video | LayerKind::Image) && l.active(out_ms))
+            .filter(|l| {
+                matches!(
+                    l.kind,
+                    LayerKind::Video | LayerKind::Image | LayerKind::Black
+                ) && l.active(out_ms)
+            })
             .collect();
         v.sort_by_key(|l| (l.z, l.id));
         v
@@ -201,6 +209,43 @@ fn fade(from_ms: u64, to_ms: u64, from: f32, to: f32) -> Vec<Keyframe> {
             ease: Ease::Linear,
         },
     ]
+}
+
+/// A dip's black over `from..until`: it fades in up to `black_at` (where the clip before
+/// ends), stays black to `back_at` (where the next one starts) and fades out by `until`.
+fn black_layer(
+    id: u32,
+    track: u32,
+    z: u32,
+    muted: bool,
+    (from, black_at, back_at, until): (u64, u64, u64, u64),
+) -> Layer {
+    let key = |t: u64, value: f32| Keyframe {
+        at_ms: t.saturating_sub(from),
+        value,
+        ease: Ease::Linear,
+    };
+    let mut opacity = vec![key(from, 0.0), key(black_at, 1.0)];
+    if back_at > black_at {
+        opacity.push(key(back_at, 1.0));
+    }
+    opacity.push(key(until, 0.0));
+    Layer {
+        id,
+        track,
+        kind: LayerKind::Black,
+        source: Source::Main,
+        src_in_ms: 0,
+        src_out_ms: 0,
+        at_ms: from,
+        end_ms: until,
+        z,
+        muted,
+        transform: Vec::new(),
+        opacity,
+        volume: Vec::new(),
+        speed: Vec::new(),
+    }
 }
 
 /// A clip's chapters: source ms and, for an event, its title.
@@ -296,9 +341,12 @@ pub fn compose_with(
             let src_len = clip.out_ms.saturating_sub(clip.in_ms);
             let mut at = clip.at_ms.min(MAX_SOURCE_MS);
             let mut opacity = clip.opacity.clone();
+            // A dip on a picture track: where the black starts, where the clip before
+            // ends, and the dip's length.
+            let mut dip: Option<(u64, u64, u64)> = None;
             // A transition after the previous clip of this track: overlap by its
-            // length (crossfade) or fade both at the join (dip). The first clip may
-            // crossfade in from whatever is below it (`FROM_BELOW`).
+            // length (crossfade) or dip at the join. The first clip may crossfade in
+            // from whatever is below it (`FROM_BELOW`).
             let after = previous.map_or(FROM_BELOW, |(_, prev_id)| prev_id);
             let transition = p
                 .advanced
@@ -317,14 +365,29 @@ pub fn compose_with(
                     }
                     TransitionKind::Dip => {
                         if let Some((prev_i, _)) = previous {
-                            if let Some(prev) = layers.get_mut(prev_i)
-                                && prev.opacity.is_empty()
-                            {
-                                let len = prev.end_ms.saturating_sub(prev.at_ms);
-                                prev.opacity = fade(len.saturating_sub(ms), len, 1.0, 0.0);
-                            }
-                            if opacity.is_empty() {
-                                opacity = fade(0, ms, 0.0, 1.0);
+                            if matches!(track.kind, TrackKind::Video | TrackKind::Text) {
+                                // Through black whatever is below (FilmCraft's dip): a
+                                // black layer over the join, the clips left as they are.
+                                if let Some(prev) = layers.get(prev_i)
+                                    && ms > 0
+                                {
+                                    let len = prev.end_ms.saturating_sub(prev.at_ms);
+                                    dip = Some((
+                                        prev.end_ms.saturating_sub(ms.min(len)),
+                                        prev.end_ms,
+                                        ms,
+                                    ));
+                                }
+                            } else {
+                                if let Some(prev) = layers.get_mut(prev_i)
+                                    && prev.opacity.is_empty()
+                                {
+                                    let len = prev.end_ms.saturating_sub(prev.at_ms);
+                                    prev.opacity = fade(len.saturating_sub(ms), len, 1.0, 0.0);
+                                }
+                                if opacity.is_empty() {
+                                    opacity = fade(0, ms, 0.0, 1.0);
+                                }
                             }
                         }
                     }
@@ -356,6 +419,19 @@ pub fn compose_with(
             previous = Some((layers.len().saturating_sub(1), clip.id));
             next_id = next_id.saturating_add(1);
             duration = duration.max(end);
+            if let Some((from, black_at, ms)) = dip
+                && layers.len() < MAX_LAYERS
+            {
+                // Same z, a later id: over both clips, under the tracks above.
+                layers.push(black_layer(
+                    next_id,
+                    track.id.max(1),
+                    z,
+                    track.muted,
+                    (from, black_at, at, at.saturating_add(ms.min(out_len))),
+                ));
+                next_id = next_id.saturating_add(1);
+            }
         }
     }
     let main_chapters = chapters(source);
@@ -366,7 +442,10 @@ pub fn compose_with(
         })
         .collect();
     // Chapters of the clips placed on Advanced tracks, where they play.
-    for l in layers.iter().filter(|l| l.track != 0) {
+    for l in layers
+        .iter()
+        .filter(|l| l.track != 0 && l.kind != LayerKind::Black)
+    {
         let info = match &l.source {
             Source::Main => source,
             Source::Library { key } => match clips.iter().find(|(k, _)| k == key) {
@@ -1340,7 +1419,7 @@ mod tests {
     }
 
     #[test]
-    fn dip_fades_both_sides() {
+    fn dip_goes_through_black() {
         let mut p = Project::new(10_000);
         p.advanced.tracks = vec![Track {
             id: 1,
@@ -1373,12 +1452,41 @@ mod tests {
             ms: 400,
         }];
         let c = compose(&p, &source());
-        let (a, b) = (&c.layers[1], &c.layers[2]);
+        assert_eq!(c.layers.len(), 4);
+        let (a, b, black) = (&c.layers[1], &c.layers[2], &c.layers[3]);
         assert_eq!((b.at_ms, b.end_ms), (2_000, 4_000), "no overlap for a dip");
-        assert_eq!(a.opacity_at(1_600), 1.0);
-        assert_eq!(a.opacity_at(1_800), 0.5);
-        assert_eq!(b.opacity_at(2_000), 0.0);
-        assert_eq!(b.opacity_at(2_400), 1.0);
+        // The clips stay opaque: the black over them goes 0 → 1 at the cut → 0, so
+        // Main below never shows through.
+        assert_eq!((a.opacity_at(1_800), b.opacity_at(2_000)), (1.0, 1.0));
+        assert_eq!(black.kind, LayerKind::Black);
+        assert_eq!((black.at_ms, black.end_ms, black.z), (1_600, 2_400, 1));
+        let ramp: Vec<f32> = [1_600, 1_800, 2_000, 2_200, 2_399]
+            .iter()
+            .map(|&t| black.opacity_at(t))
+            .collect();
+        assert_eq!(&ramp[..4], &[0.0, 0.5, 1.0, 0.5]);
+        assert!(ramp[4] < 0.01);
+        let order: Vec<u32> = c.visible_at(2_000).iter().map(|l| l.id).collect();
+        assert_eq!(order, vec![1, 3, 4], "over the clip, Main below");
+
+        // A gap between the clips stays black; the next clip comes back from black.
+        p.advanced.tracks[0].clips[1].at_ms = 3_000;
+        let black = compose(&p, &source()).layers[3].clone();
+        assert_eq!((black.at_ms, black.end_ms), (1_600, 3_400));
+        assert_eq!(black.opacity_at(2_500), 1.0);
+
+        // On a sound track a dip still fades the clips (it has no picture).
+        p.advanced.tracks[0].kind = TrackKind::Audio;
+        for c in &mut p.advanced.tracks[0].clips {
+            c.source = Source::File {
+                path: "s.wav".into(),
+            };
+        }
+        p.advanced.tracks[0].clips[1].at_ms = 2_000;
+        let c = compose(&p, &source());
+        assert_eq!(c.layers.len(), 3);
+        assert_eq!(c.layers[1].opacity_at(1_800), 0.5);
+        assert_eq!(c.layers[2].opacity_at(2_000), 0.0);
     }
 
     #[test]

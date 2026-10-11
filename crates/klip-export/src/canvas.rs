@@ -68,6 +68,18 @@ fn bgra(width: u32, height: u32) -> Result<gst_video::VideoInfo, ExportError> {
         .map_err(|_| ExportError::Plan(format!("bad picture size {width}x{height}")))
 }
 
+/// An opaque black picture for a dip's black layer, stretched over the canvas.
+pub(crate) fn black_frame() -> Result<Frame, ExportError> {
+    const SIDE: u32 = 16;
+    let info = bgra(SIDE, SIDE)?;
+    let data: Vec<u8> = [0u8, 0, 0, 255].repeat((SIDE * SIDE) as usize);
+    Ok(Frame {
+        pts_ms: 0,
+        buffer: gst::Buffer::from_mut_slice(data),
+        info,
+    })
+}
+
 fn to_i32(v: u32) -> i32 {
     i32::try_from(v).unwrap_or(i32::MAX)
 }

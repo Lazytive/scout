@@ -1087,7 +1087,7 @@ fn compose_spike(
 use klip_edit::advanced::{
     Ease, PlacedClip, Source as Media, Track, TrackKind, TransformKey, Transition, TransitionKind,
 };
-use klip_edit::compose::Layer;
+use klip_edit::compose::{Layer, LayerKind};
 
 /// Counters of the second clip start here, so a frame says which clip it came from.
 const B_BASE: u32 = 10_000;
@@ -1108,7 +1108,8 @@ fn composed_counter(c: &Composition, i: u64, fps: u32, frames: u32) -> Option<u3
     let t = c.frame_out_ms(i, fps)?;
     let visible = c.visible_at(t);
     let top: &Layer = visible.last()?;
-    if top.opacity_at(t) < 1.0 {
+    // Blending, or a dip's black (no counter to read).
+    if top.opacity_at(t) < 1.0 || top.kind == LayerKind::Black {
         return None;
     }
     let base = if top.source == Media::Main { 0 } else { B_BASE };
@@ -1357,6 +1358,81 @@ fn crossfade_from_below_maps_every_frame() {
         "b from 2 s, full at 2.5 s"
     );
     assert_eq!(counters[210], Some(210), "Main again at 3.5 s");
+}
+
+#[test]
+#[ignore = "hardware: a GPU encoder and ffmpeg"]
+fn dip_on_a_montage_track_goes_through_black() {
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.mp4");
+    let b = dir.path().join("b.mp4");
+    make_clip(&enc, &a, &ClipSpec::hd(4, 8_000));
+    make_clip(
+        &enc,
+        &b,
+        &ClipSpec {
+            counter_base: B_BASE,
+            ..ClipSpec::hd(4, 8_000)
+        },
+    );
+    // Main 0–4 s; above it b's 0–1.5 s at 1 s, then b's 2–3.5 s at 2.5 s with a 500 ms
+    // dip between: black over 2–3 s, all black at 2.5 s, where Main used to show.
+    let mut p = Project::new(4_000);
+    p.advanced.tracks = vec![track(
+        1,
+        TrackKind::Video,
+        vec![
+            placed(1, library("b.mp4"), 0, 1_500, 1_000),
+            placed(2, library("b.mp4"), 2_000, 3_500, 2_500),
+        ],
+    )];
+    p.advanced.transitions = vec![Transition {
+        track: 1,
+        after_clip: 1,
+        kind: TransitionKind::Dip,
+        ms: 500,
+    }];
+    let comp = compose(&p, &source_info(&a));
+    let media = vec![(library("b.mp4"), b.clone())];
+    let out = dir.path().join("dip.mp4");
+    let encoders = encoders(&enc);
+    run(&montage_request(
+        Preset::Original,
+        &a,
+        &comp,
+        &media,
+        &out,
+        &encoders,
+    ));
+    let counters = oracle::decode_counters(&out, 640, 360).unwrap();
+    assert_eq!(counters.len() as u64, comp.frame_count(FPS));
+    let (mut dipped, mut bad) = (0, Vec::new());
+    for (i, got) in counters.iter().enumerate() {
+        match composed_counter(&comp, i as u64, FPS, 4 * FPS) {
+            Some(want) if *got != Some(want) => bad.push((i, *got, want)),
+            Some(_) => {}
+            None => dipped += 1,
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "frames off the plan: {:?}",
+        &bad[..bad.len().min(10)]
+    );
+    // The plan around it holds (checked above): b up to 2 s, b again from 3 s.
+    assert_eq!(dipped, 60, "1 s of dip at 60 fps");
+    let mean = |s: f64| {
+        let px = oracle::decode_gray_frame(&out, s, 160, 90).unwrap();
+        px.iter().map(|&v| f64::from(v)).sum::<f64>() / px.len() as f64
+    };
+    let (before, half, cut) = (mean(1.9), mean(2.25), mean(2.5));
+    println!("dip: mean luma {before:.1} before, {half:.1} half way, {cut:.1} at the cut");
+    assert!(cut < 24.0, "black at the cut, not Main: {cut:.1}");
+    assert!(
+        half > cut + 8.0 && half < before * 0.8,
+        "half way between: {half:.1} (before {before:.1})"
+    );
 }
 
 #[test]

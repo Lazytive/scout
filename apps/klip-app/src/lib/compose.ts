@@ -101,7 +101,7 @@ export function layerRateAt(l: Layer, outMs: number): number {
 /** Picture layers at `outMs`, bottom first. */
 export function visibleAt(c: Composition, outMs: number): Layer[] {
   return c.layers
-    .filter((l) => (l.kind === 'video' || l.kind === 'image') && layerActive(l, outMs))
+    .filter((l) => (l.kind === 'video' || l.kind === 'image' || l.kind === 'black') && layerActive(l, outMs))
     .sort((a, b) => a.z - b.z || a.id - b.id);
 }
 
@@ -130,6 +130,33 @@ function fade(fromMs: number, toMs: number, from: number, to: number): Keyframe[
     { at_ms: fromMs, value: from, ease: 'linear' },
     { at_ms: toMs, value: to, ease: 'linear' },
   ];
+}
+
+/**
+ * A dip's black over `from..until`: it fades in up to `blackAt` (where the clip before
+ * ends), stays black to `backAt` (where the next one starts) and fades out by `until`.
+ */
+function blackLayer(id: number, track: number, z: number, muted: boolean, from: number, blackAt: number, backAt: number, until: number): Layer {
+  const key = (t: number, value: number): Keyframe => ({ at_ms: Math.max(0, t - from), value, ease: 'linear' });
+  const opacity = [key(from, 0), key(blackAt, 1)];
+  if (backAt > blackAt) opacity.push(key(backAt, 1));
+  opacity.push(key(until, 0));
+  return {
+    id,
+    track,
+    kind: 'black',
+    source: { kind: 'main' },
+    src_in_ms: 0,
+    src_out_ms: 0,
+    at_ms: from,
+    end_ms: until,
+    z,
+    muted,
+    transform: [],
+    opacity,
+    volume: [],
+    speed: [],
+  };
 }
 
 function chapters(info: SourceInfo): [number, string | null][] {
@@ -206,6 +233,8 @@ export function compose(project: Project, source: SourceInfo, clips: [string, So
       const srcLen = Math.max(0, clip.out_ms - clip.in_ms);
       let at = Math.min(clip.at_ms, MAX_SOURCE_MS);
       let opacity = clip.opacity.map((k) => ({ ...k }));
+      // A dip on a picture track: where the black starts, where the clip before ends, its length.
+      let dip: [number, number, number] | null = null;
       // The first clip may crossfade in from whatever is below it (`FROM_BELOW`).
       const after: number = previous ? previous[1] : FROM_BELOW;
       const transition = adv.transitions.find((t) => t.track === track.id && t.after_clip === after);
@@ -216,11 +245,16 @@ export function compose(project: Project, source: SourceInfo, clips: [string, So
           if (opacity.length === 0) opacity = fade(0, len, 0, 1);
         } else if (transition.kind === 'dip' && previous) {
           const prev = layers[previous[0]];
-          if (prev && prev.opacity.length === 0) {
-            const plen = prev.end_ms - prev.at_ms;
-            prev.opacity = fade(Math.max(0, plen - len), plen, 1, 0);
+          if (track.kind === 'video' || track.kind === 'text') {
+            // Through black whatever is below: a black layer over the join, the clips as they are.
+            if (prev && len > 0) dip = [prev.end_ms - Math.min(len, prev.end_ms - prev.at_ms), prev.end_ms, len];
+          } else {
+            if (prev && prev.opacity.length === 0) {
+              const plen = prev.end_ms - prev.at_ms;
+              prev.opacity = fade(Math.max(0, plen - len), plen, 1, 0);
+            }
+            if (opacity.length === 0) opacity = fade(0, len, 0, 1);
           }
-          if (opacity.length === 0) opacity = fade(0, len, 0, 1);
         }
       }
       const outLen = outputLength(clip.speed, srcLen);
@@ -245,6 +279,11 @@ export function compose(project: Project, source: SourceInfo, clips: [string, So
       previous = [layers.length - 1, clip.id];
       nextId++;
       duration = Math.max(duration, end);
+      if (dip && layers.length < MAX_LAYERS) {
+        // Same z, a later id: over both clips, under the tracks above.
+        layers.push(blackLayer(nextId, Math.max(1, track.id), z, track.muted, dip[0], dip[1], at, at + Math.min(dip[2], outLen)));
+        nextId++;
+      }
     }
   });
   const mainChapters = chapters(source);
@@ -254,7 +293,7 @@ export function compose(project: Project, source: SourceInfo, clips: [string, So
     if (at !== null) markers.push(chapterMarker(at, title));
   }
   for (const l of layers) {
-    if (l.track === 0) continue;
+    if (l.track === 0 || l.kind === 'black') continue;
     let list: [number, string | null][];
     if (l.source.kind === 'main') list = mainChapters;
     else if (l.source.kind === 'library') {

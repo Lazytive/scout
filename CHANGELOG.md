@@ -5,6 +5,14 @@ reason)`.
 
 ## Unreleased
 
+- M9.8.5 — Dip to black goes through black on every picture track: compose (Rust and
+  TypeScript) adds a `LayerKind::Black` layer over the join (0 → 1 at the cut, held
+  across a gap, → 0) instead of fading the clips to whatever is below; the export draws
+  it as a stretched opaque black frame, the preview as a filled rectangle; sound tracks
+  keep their fades. Fixture re-blessed; export test `dip_on_a_montage_track_goes_through_
+  black` (mean luma 70.9 → 35.3 → 0.0 at the cut; every other frame on the plan); the
+  mock's preview 66.6 → 33.1 → 0. ADR 0018 amended. (Claude Opus 5.5: M9.7 check step
+  4 — a dip on V2 dipped through Main and didn't read as a dip)
 - M9.8.2–4 — FilmCraft feel on the Advanced timeline: the zoom stays put through edits
   (Fit on first open, the Fit button, `\`, a double-click on the zoom bar); Shift/Ctrl-
   click and marquee selection, a selection drags together, Delete removes it and
