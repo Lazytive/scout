@@ -802,7 +802,7 @@ so the new version runs. Open a clip, switch to **Advanced**, add two or three c
 7. **Dip to black is black.** With a Dip to black on a montage track above your clip,
    play across it: the picture must go fully black in the middle (not show your clip
    underneath), then come back. Export it: same.
-8. **No browser stuff.** Right-click anywhere outside a text box: no menu. Press Ctrl+P,
+8. ✅ (2026-10-11; Klip's own menus on Library cards and transitions checked still open) **No browser stuff.** Right-click anywhere outside a text box: no menu. Press Ctrl+P,
    Ctrl+S, Ctrl+F, F5: nothing happens (no Print, no Save as, no reload).
 9. **Quiet waveforms.** Open your quiet PAYDAY 3 clip (11-39-03) in Advanced mode: its
    waveform should now be visible.
