@@ -5,18 +5,24 @@ import {
   addKey,
   addMarker,
   clipEnd,
+  cutsAt,
   findClip,
   hasAdvancedEdits,
   laneValue,
   moveClip,
+  moveClips,
   overlapOf,
   readAdvanced,
   removeClip,
+  removeClips,
+  rippleDelete,
+  rollCut,
   setColour,
   setLane,
   setSpeedPoint,
   setTransition,
   splitClip,
+  splitClipsAt,
   trimClipEnd,
   trimClipStart,
 } from './advanced';
@@ -165,5 +171,82 @@ describe('keys, speed, transitions', () => {
     const r = project();
     addMarker(r, 1234, '  Drop\u0007 ');
     expect(readAdvanced(r).markers).toEqual([{ at_ms: 1234, title: 'Drop', kind: 'user' }]);
+  });
+});
+
+describe('selections, razor and rolling (M9.8)', () => {
+  const at = (p: Project, id: number) => findClip(readAdvanced(p), id)!.clip;
+
+  it('moves a selection together, in time, and refuses landing on a clip that stays', () => {
+    const p = project();
+    const a = addClip(p, 'video', lib('a'), 0, 2000, 1000);
+    const b = addClip(p, 'video', lib('b'), 0, 2000, 3000);
+    const c = addClip(p, 'video', lib('c'), 0, 2000, 8000);
+    const s = addClip(p, 'audio', { kind: 'file', path: 's.wav' }, 0, 1000, 1000);
+    moveClips(p, [a, b, s], 2000);
+    expect([at(p, a).at_ms, at(p, b).at_ms, at(p, s).at_ms, at(p, c).at_ms]).toEqual([3000, 5000, 3000, 8000]);
+    // b would land on c.
+    expect(() => moveClips(p, [a, b], 2000)).toThrow(EditError);
+    // Nothing goes before 0: the move stops where the first clip reaches it.
+    moveClips(p, [a, b], -10_000);
+    expect([at(p, a).at_ms, at(p, b).at_ms]).toEqual([0, 2000]);
+  });
+
+  it('removes a selection, and ripple delete closes the gaps on each track', () => {
+    const p = project();
+    const a = addClip(p, 'video', lib('a'), 0, 2000, 0);
+    const b = addClip(p, 'video', lib('b'), 0, 3000, 2000);
+    const c = addClip(p, 'video', lib('c'), 0, 1000, 5000);
+    const d = addClip(p, 'video', lib('d'), 0, 1000, 7000);
+    setTransition(p, b, 'crossfade', 500);
+    const q = structuredClone(p);
+    rippleDelete(p, [b, d]);
+    // b (3 s) went: c moves left 3 s; d went from the end.
+    expect(readAdvanced(p).tracks[0]!.clips.map((x) => [x.id, x.at_ms])).toEqual([
+      [a, 0],
+      [c, 2000],
+    ]);
+    expect(readAdvanced(p).transitions).toEqual([]);
+    removeClips(q, [a, c]);
+    expect(readAdvanced(q).tracks[0]!.clips.map((x) => [x.id, x.at_ms])).toEqual([
+      [b, 2000],
+      [d, 7000],
+    ]);
+  });
+
+  it('cuts where a clip shows, also one pulled under the clip before', () => {
+    const p = project();
+    const a = addClip(p, 'video', lib('a'), 0, 2000, 0);
+    const b = addClip(p, 'video', lib('b'), 0, 2000, 2000);
+    setTransition(p, a, 'crossfade', 500);
+    // b plays from 1500 (pulled under a by 500 ms): a cut at 1800 splits both.
+    expect(cutsAt(readAdvanced(p), null, 1800)).toEqual([
+      [a, 1800],
+      [b, 2300],
+    ]);
+    expect(cutsAt(readAdvanced(p), [b], 1500)).toEqual([]);
+    expect(splitClipsAt(p, [b], 1800)).toBe(1);
+    const clips = readAdvanced(p).tracks[0]!.clips;
+    expect(clips.map((x) => [x.at_ms, x.in_ms, x.out_ms])).toEqual([
+      [0, 0, 2000],
+      [2000, 0, 300],
+      [2300, 300, 2000],
+    ]);
+  });
+
+  it('rolls a cut: one clip longer, the next shorter, as far as both can', () => {
+    const p = project();
+    const a = addClip(p, 'video', lib('a'), 1000, 3000, 0);
+    const b = addClip(p, 'video', lib('b'), 500, 2500, 2000);
+    setTransition(p, a, 'dip', 400);
+    rollCut(p, a, 300, 10_000);
+    expect([at(p, a).out_ms, at(p, b).at_ms, at(p, b).in_ms, clipEnd(at(p, b))]).toEqual([3300, 2300, 800, 4000]);
+    // Left: b has 800 ms of source before its start; the cut stops there.
+    rollCut(p, a, -2000, 10_000);
+    expect([clipEnd(at(p, a)), at(p, b).at_ms, at(p, b).in_ms, clipEnd(at(p, b))]).toEqual([1500, 1500, 0, 4000]);
+    // Right: a's source ends at 3200 (srcMax), so b gives back what a couldn't take.
+    rollCut(p, a, 5000, 3200);
+    expect([at(p, a).out_ms, clipEnd(at(p, a)), at(p, b).at_ms]).toEqual([3200, 2200, 2200]);
+    expect(readAdvanced(p).transitions).toEqual([{ track: findClip(readAdvanced(p), a)!.track.id, after_clip: a, kind: 'dip', ms: 400 }]);
   });
 });

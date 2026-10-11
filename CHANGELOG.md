@@ -5,6 +5,21 @@ reason)`.
 
 ## Unreleased
 
+- M9.8.2–4 — FilmCraft feel on the Advanced timeline: the zoom stays put through edits
+  (Fit on first open, the Fit button, `\`, a double-click on the zoom bar); Shift/Ctrl-
+  click and marquee selection, a selection drags together, Delete removes it and
+  Shift+Delete ripple-deletes (`moveClips`, `removeClips`, `rippleDelete`); Selection (V)
+  and Razor (C) tools (blade cursor, cut line, Shift cuts every track incl. Main);
+  Ctrl+K splits at the playhead (the selection, else every track); Ctrl+A selects all;
+  dragging a transition's middle rolls the cut (`rollCut`). Checked in the mock over
+  CDP. (Claude Opus 5.5: the user's "FilmCraft feel" list after the M9.7 checks; the
+  roll replaces FilmCraft's off-centre slide, which needs media past the clips' ends)
+- M9.8.1 — No browser UI in the app: the WebView's context menu (outside text fields)
+  and its accelerators (Ctrl+P/S/F/G/R/U/J/H/O, Ctrl+Shift+I/J/C/R, F3/F5/F7/F12,
+  Alt+←/→) are cancelled in the page (`src/lib/browser-ui.ts`, the main window and the
+  overlay); the timeline's waveforms show down to −60 dB (was −48). (Claude Opus 5.5:
+  the user found Print and Save as; a quiet PAYDAY 3 capture peaking at −41 dB looked
+  empty)
 - M9.7.5 — Real-app acceptance of the FilmCraft-style Advanced mode (debug build
   off-screen over CDP, beside the user's running Klip): preview vs `editor.frame` 41.9–
   42.7 dB incl. mid-fade from below; thumbnails, waveforms, meters, drag from Project

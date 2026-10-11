@@ -2,15 +2,32 @@
   The Advanced workspace (ADR 0018, M9.5): media and effects on one side, the canvas
   preview with its transport in the middle, the inspector / history / export on the
   other side, the multi-track timeline below. The sides can swap and the panels resize
-  (kept per viewer). Keys: Space play, J/K/L shuttle, S split, Delete remove, M marker,
-  [ ] trim the selected clip to the playhead, ←/→ a frame (Shift: a second), Home/End,
-  Ctrl+Z / Ctrl+Y.
+  (kept per viewer). Keys: Space play, J/K/L shuttle, S split, Ctrl+K split at the
+  playhead (the selection, else every track), V / C the Selection / Razor tool, Ctrl+A
+  select all, Delete remove (Shift: ripple delete), M marker, [ ] trim the selected clip
+  to the playhead, ←/→ a frame (Shift: a second), Home/End, Ctrl+Z / Ctrl+Y.
 -->
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
 
   import type { Source } from '../../lib/advanced';
-  import { addMarker, clipLength, findClip, laneValue, overlapOf, readAdvanced, removeClip, setLane, setTransitionAt, splitClip, trimClipEnd, trimClipStart } from '../../lib/advanced';
+  import {
+    addMarker,
+    clipLength,
+    cutsAt,
+    findClip,
+    laneValue,
+    overlapOf,
+    readAdvanced,
+    removeClips,
+    rippleDelete,
+    setLane,
+    setTransitionAt,
+    splitClip,
+    splitClipsAt,
+    trimClipEnd,
+    trimClipStart,
+  } from '../../lib/advanced';
   import { call, thumbUrl } from '../../lib/api';
   import { compose, layerActive } from '../../lib/compose';
   import type { Layer } from '../../lib/compose';
@@ -26,6 +43,8 @@
     placedInfos,
     redo,
     seek,
+    selectClips,
+    selectedClips,
     splitAtPlayhead,
     undo,
   } from '../../lib/editor.svelte';
@@ -33,6 +52,7 @@
   import { lib } from '../../lib/library.svelte';
   import Panel from '../../lib/Panel.svelte';
   import type { Project } from '../../lib/timeline';
+  import { segments, split as splitMain } from '../../lib/timeline';
   import NormalTools from '../NormalTools.svelte';
   import Canvas from './Canvas.svelte';
   import EffectsPanel from './EffectsPanel.svelte';
@@ -310,9 +330,27 @@
       redo();
       return;
     }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      splitAtPlayheadAll();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a') {
+      e.preventDefault();
+      selectClips(readAdvanced(project).tracks.flatMap((t) => t.clips.map((c) => c.id)), ed.clipId);
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const f = found;
     switch (e.key) {
+      case 'v':
+      case 'V':
+        ed.tool = 'select';
+        break;
+      case 'c':
+      case 'C':
+        ed.tool = 'razor';
+        break;
       case ' ':
         e.preventDefault();
         togglePlay();
@@ -341,8 +379,12 @@
           edit((p) => setTransitionAt(p, track, after, 'cut', 0), 'Remove a transition');
           ed.transitionSel = null;
         } else if (f) {
-          edit((p) => removeClip(p, f.clip.id), 'Remove clip');
-          ed.clipId = null;
+          // Shift: ripple delete (the later clips of each track close the gap).
+          const ids = selectedClips();
+          const many = ids.length > 1;
+          if (e.shiftKey) edit((p) => rippleDelete(p, ids), many ? 'Ripple delete clips' : 'Ripple delete');
+          else edit((p) => removeClips(p, ids), many ? 'Remove clips' : 'Remove clip');
+          selectClips([]);
         } else cutSelection();
         break;
       case 'm':
@@ -373,9 +415,31 @@
         break;
       case 'Escape':
         if (ed.exportOpen) ed.exportOpen = false;
-        else ed.clipId = null;
+        else if (ed.tool === 'razor') ed.tool = 'select';
+        else selectClips([]);
         break;
     }
+  }
+
+  /**
+   * Ctrl+K (FilmCraft's Add Edit): cut the selected clips at the playhead, or, when none
+   * of them plays there, every track (Main too) — one undo step.
+   */
+  function splitAtPlayheadAll() {
+    const t = ed.playhead;
+    const adv = readAdvanced(project);
+    const ids = selectedClips();
+    if (ids.length && cutsAt(adv, ids, t).length) {
+      edit((p) => void splitClipsAt(p, ids, t), 'Split at the playhead');
+      return;
+    }
+    const clips = cutsAt(adv, null, t).length;
+    const main = segments(project).some((s) => t > s.out_start_ms && t < s.out_end_ms);
+    if (clips === 0 && !main) return;
+    edit((p) => {
+      splitClipsAt(p, null, t);
+      if (main) splitMain(p, t);
+    }, 'Split at the playhead');
   }
 </script>
 

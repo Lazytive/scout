@@ -4,14 +4,17 @@
   (V2… the Advanced video tracks, V1 = Main, the Normal-mode cut; A1 = Main's sound, A2…
   sound and music), video above a divider and sound below, all in ONE scroller with a
   sticky header column and ruler, and a zoom bar at the bottom (drag the bar to scroll,
-  its round ends to zoom; Ctrl/Alt+wheel zooms at the pointer).
+  its round ends to zoom; Ctrl/Alt+wheel zooms at the pointer). The zoom stays through
+  edits; Fit (the button, `\`, a double-click on the bar) shows the whole edit.
 
   Clips drag along and across tracks of their kind and trim at their edges, but only
-  once the pointer moved a few px (a click just selects). Everything snaps to the
+  once the pointer moved a few px (a click just selects). Shift/Ctrl-click and a marquee
+  over empty space select several; a selection drags together (in time). The Razor tool
+  (C; V for Selection) cuts where clicked, Shift every track. Everything snaps to the
   playhead, clip edges and markers (hold Alt to not snap). Transitions sit on the join
-  as hatched blocks: click selects, drag an end to change the length, right-click for
-  the menu; a + on a join without one adds a crossfade. Keyframes live in Effect
-  Controls, not here.
+  as hatched blocks: click selects, drag an end to change the length, the middle to roll
+  the cut, right-click for the menu; a + on a join without one adds a crossfade.
+  Keyframes live in Effect Controls, not here.
 -->
 <script lang="ts">
   import { tick } from 'svelte';
@@ -20,24 +23,29 @@
     addMarker,
     clipEnd,
     clipLength,
+    cutsAt,
+    findClip,
     fitsTrack,
     moveClip,
+    moveClips,
     overlapOf,
     readAdvanced,
+    rollCut,
     FROM_BELOW,
     fromBelow,
     setFromBelow,
     setTrack,
     setTransitionAt,
     sourceLabel,
+    splitClipsAt,
     trimClipEnd,
     trimClipStart,
   } from '../../lib/advanced';
   import type { Composition } from '../../lib/compose';
-  import { beginGesture, ed, edit, endGesture, gesture, seek } from '../../lib/editor.svelte';
+  import { beginGesture, ed, edit, endGesture, gesture, seek, selectClips, selectedClips } from '../../lib/editor.svelte';
   import { formatTimecode } from '../../lib/format';
   import type { Project } from '../../lib/timeline';
-  import { segments } from '../../lib/timeline';
+  import { segments, split } from '../../lib/timeline';
   import { stripPosition } from '../../lib/library';
   import Waveform from './Waveform.svelte';
   import type { TimelineRow, TransitionBox } from '../../lib/timeline-view';
@@ -94,19 +102,21 @@
   /** The visible width of the lanes (without the header column), px. */
   let viewW = $state(800);
   let scrollX = $state(0);
-  /** Pixels per second; 0 = fit the whole edit. */
+  /**
+   * Pixels per second, kept through edits like FilmCraft's (an edit that changes the
+   * length doesn't rescale the timeline); 0 until the view is measured, then Fit.
+   */
   let zoom = $state(0);
   let snapping = $state(true);
-  /** The zoom held while a drag runs (in Fit the edit's length would rescale it live). */
-  let frozen = $state<number | null>(null);
   let heights = $state(loadHeights());
 
   const adv = $derived(readAdvanced(project));
   const duration = $derived(Math.max(comp.duration_ms, 1000));
   const span = $derived(spanMs(duration));
   const fit = $derived(fitPps(span, viewW));
-  const pps = $derived(frozen ?? (zoom > 0 ? Math.min(MAX_PPS, Math.max(fit, zoom)) : fit));
-  const contentW = $derived(Math.ceil((span / 1000) * pps));
+  const pps = $derived(zoom > 0 ? Math.min(MAX_PPS, zoom) : fit);
+  // The lanes fill the view even when the edit got shorter than it.
+  const contentW = $derived(Math.max(viewW, Math.ceil((span / 1000) * pps)));
   const px = (ms: number) => (ms / 1000) * pps;
   const msAt = (x: number) => Math.max(0, Math.round((x / pps) * 1000));
 
@@ -150,10 +160,21 @@
   const rowH = (r: TimelineRow) => (r.group === 'video' ? heights.video : heights.sound);
 
   function observe(el: HTMLDivElement) {
-    const ro = new ResizeObserver(() => (viewW = Math.max(100, el.clientWidth - HEADER_W)));
+    const measure = () => {
+      viewW = Math.max(100, el.clientWidth - HEADER_W);
+      // First open: the whole edit. After that only on demand (Fit, `\`).
+      if (zoom === 0 && el.clientWidth > 0) zoom = fitPps(span, viewW);
+    };
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    viewW = Math.max(100, el.clientWidth - HEADER_W);
+    measure();
     return { destroy: () => ro.disconnect() };
+  }
+
+  /** Show the whole edit (the Fit button, a double-click on the zoom bar, `\`). */
+  function fitAll() {
+    zoom = fit;
+    if (scroller) scroller.scrollLeft = 0;
   }
 
   /** Ctrl/Alt + wheel zooms around the pointer (the plain wheel scrolls). */
@@ -170,9 +191,10 @@
 
   async function zoomTo(want: number, anchorX: number) {
     const el = scroller;
-    const next = Math.min(MAX_PPS, Math.max(fit, want));
+    // Zooming out stops at Fit (or where it is, when an edit made the edit shorter).
+    const next = Math.min(MAX_PPS, Math.max(Math.min(fit, pps), want));
     const left = el ? zoomAt(pps, next, Math.max(0, anchorX), el.scrollLeft) : 0;
-    zoom = next <= fit * 1.0001 ? 0 : next;
+    zoom = next;
     await tick();
     if (el) el.scrollLeft = left;
   }
@@ -193,10 +215,10 @@
     return ticks.step >= 1000 ? formatTimecode(t) : `${(t / 1000).toFixed(ticks.step >= 500 ? 1 : 2)} s`;
   }
 
-  function snapTargets(exceptClip: number | null): number[] {
+  function snapTargets(except: number[] | null): number[] {
     const out = [0, ed.playhead, comp.duration_ms];
     for (const s of segs) out.push(s.out_start_ms, s.out_end_ms);
-    for (const t of adv.tracks) for (const c of t.clips) if (c.id !== exceptClip) out.push(c.at_ms, clipEnd(c));
+    for (const t of adv.tracks) for (const c of t.clips) if (!except?.includes(c.id)) out.push(c.at_ms, clipEnd(c));
     for (const m of comp.markers) out.push(m.at_ms);
     return out;
   }
@@ -247,6 +269,10 @@
     zone: 'move' | 'start' | 'end';
     clip: PlacedClip;
     track: Track;
+    /** The clips a move takes along (the selection), else just `clip`. */
+    group: number[];
+    /** A plain press on a clip of a selection: a click (no drag) selects just it. */
+    collapse: boolean;
     x: number;
     y: number;
     at: number;
@@ -273,20 +299,53 @@
     window.addEventListener('pointercancel', onUp);
   }
 
+  // ---- selection (M9.8.3): click, Shift/Ctrl-click, marquee ----
+  const selection = $derived(new Set(selectedClips()));
+
   function select(clipId: number | null) {
-    ed.clipId = clipId;
-    ed.textId = null;
-    ed.transitionSel = null;
+    selectClips(clipId === null ? [] : [clipId]);
   }
 
   function clipDown(e: PointerEvent, track: Track, clip: PlacedClip) {
     if (e.button !== 0) return;
     e.stopPropagation();
-    select(clip.id);
     const el = e.currentTarget as HTMLElement;
+    if (ed.tool === 'razor') {
+      const lane = el.closest('.lane')?.getBoundingClientRect();
+      if (lane) razor(snap(msAt(e.clientX - lane.left), snapTargets(null), e.altKey), e.shiftKey ? 'all' : clip.id);
+      return;
+    }
+    const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+    const ids = selectedClips();
+    let collapse = false;
+    if (additive) {
+      // Shift/Ctrl-click adds or takes out; a clip taken out doesn't drag.
+      if (selection.has(clip.id)) {
+        selectClips(ids.filter((id) => id !== clip.id));
+        return;
+      }
+      selectClips([...ids, clip.id], clip.id);
+    } else if (selection.has(clip.id) && ids.length > 1) {
+      // A selected clip drags the whole selection; a plain click selects just it.
+      selectClips(ids, clip.id);
+      collapse = true;
+    } else select(clip.id);
     const r = el.getBoundingClientRect();
     const zone = clipZone(e.clientX - r.left, r.width);
-    press = { zone, clip, track, x: e.clientX, y: e.clientY, at: clip.at_ms, end: clipEnd(clip), targets: snapTargets(clip.id), started: false };
+    const group = zone === 'move' ? selectedClips() : [clip.id];
+    press = {
+      zone,
+      clip,
+      track,
+      group,
+      collapse,
+      x: e.clientX,
+      y: e.clientY,
+      at: clip.at_ms,
+      end: clipEnd(clip),
+      targets: snapTargets(group),
+      started: false,
+    };
     follow(clipMove, clipUp);
   }
 
@@ -294,7 +353,7 @@
     if (press) return;
     const el = e.currentTarget as HTMLElement;
     const r = el.getBoundingClientRect();
-    el.style.cursor = clipZone(e.clientX - r.left, r.width) === 'move' ? '' : 'ew-resize';
+    el.style.cursor = ed.tool === 'select' && clipZone(e.clientX - r.left, r.width) !== 'move' ? 'ew-resize' : '';
   }
 
   function trackUnder(e: PointerEvent, clip: PlacedClip): number | 'new' | null {
@@ -316,13 +375,17 @@
     if (!d.started) {
       if (!pastThreshold(e.clientX - d.x, e.clientY - d.y)) return;
       d.started = true;
-      frozen = pps;
       beginGesture();
     }
     const dms = ((e.clientX - d.x) / pps) * 1000;
     if (d.zone === 'move') {
       const len = d.end - d.at;
       const at = Math.max(0, snapMove(Math.round(d.at + dms), len, d.targets, e.altKey));
+      if (d.group.length > 1) {
+        // A selection moves together, in time only.
+        gesture((p) => moveClips(p, d.group, at - d.at));
+        return;
+      }
       const target = Math.abs(e.clientY - d.y) > rowH({ kind: 'main', label: '', group: 'video' }) / 2 ? trackUnder(e, d.clip) : null;
       dropTrack = target;
       gesture((p) => moveClip(p, d.clip.id, at, target === null ? undefined : target));
@@ -339,29 +402,100 @@
     const d = press;
     press = null;
     dropTrack = null;
-    frozen = null;
-    if (!d || !d.started) return;
-    endGesture(d.zone === 'move' ? 'Move clip' : 'Trim clip');
+    if (!d) return;
+    if (!d.started) {
+      if (d.collapse) select(d.clip.id);
+      return;
+    }
+    endGesture(d.zone !== 'move' ? 'Trim clip' : d.group.length > 1 ? 'Move clips' : 'Move clip');
+  }
+
+  // Marquee: a drag over empty lane space selects the clips it touches.
+  type Marquee = { x: number; y: number; x1: number; y1: number; additive: boolean; base: number[]; lane: DOMRect; started: boolean };
+  let marquee = $state<Marquee | null>(null);
+
+  function laneDown(e: PointerEvent, main: boolean) {
+    if (e.button !== 0) return;
+    const lane = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (ed.tool === 'razor') {
+      // The razor cuts Main where clicked (Shift: every track); empty space does nothing.
+      if (main || e.shiftKey) razor(snap(msAt(e.clientX - lane.left), snapTargets(null), e.altKey), e.shiftKey ? 'all' : 'main');
+      return;
+    }
+    const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+    marquee = { x: e.clientX, y: e.clientY, x1: e.clientX, y1: e.clientY, additive, base: additive ? selectedClips() : [], lane, started: false };
+    follow(marqueeMove, marqueeUp);
+  }
+
+  function marqueeMove(e: PointerEvent) {
+    const m = marquee;
+    if (!m) return;
+    if (!m.started && !pastThreshold(e.clientX - m.x, e.clientY - m.y)) return;
+    m.started = true;
+    m.x1 = e.clientX;
+    m.y1 = e.clientY;
+    const [l, r] = [Math.min(m.x, m.x1), Math.max(m.x, m.x1)];
+    const [t, b] = [Math.min(m.y, m.y1), Math.max(m.y, m.y1)];
+    const hits: number[] = [];
+    for (const el of scroller?.querySelectorAll<HTMLElement>('[data-clip]') ?? []) {
+      const c = el.getBoundingClientRect();
+      if (c.right > l && c.left < r && c.bottom > t && c.top < b) hits.push(Number(el.dataset.clip));
+    }
+    selectClips([...m.base, ...hits]);
+  }
+
+  function marqueeUp() {
+    const m = marquee;
+    marquee = null;
+    if (!m || m.started) return;
+    // A click on empty space: deselect (unless adding) and put the playhead there.
+    if (!m.additive) select(null);
+    ed.playing = false;
+    seek(Math.min(duration, snap(msAt(m.x - m.lane.left), snapTargets(null), false)));
+  }
+
+  // ---- razor (C): cut where clicked ----
+  let razorHover = $state<{ ms: number; row: string; all: boolean } | null>(null);
+
+  function razorMove(e: PointerEvent, row: string) {
+    if (ed.tool !== 'razor') {
+      razorHover = null;
+      return;
+    }
+    const lane = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    razorHover = { ms: snap(msAt(e.clientX - lane.left), snapTargets(null), e.altKey), row, all: e.shiftKey };
+  }
+
+  /** Cut one clip, Main, or every track (Shift) at `t`; a click that cuts nothing does nothing. */
+  function razor(t: number, what: number | 'main' | 'all') {
+    const clips = what === 'main' ? [] : cutsAt(adv, what === 'all' ? null : [what], t);
+    const main = (what === 'main' || what === 'all') && segs.some((s) => t > s.out_start_ms && t < s.out_end_ms);
+    if (clips.length === 0 && !main) return;
+    edit((p) => {
+      splitClipsAt(p, what === 'main' ? [] : what === 'all' ? null : [what], t);
+      if (main) split(p, t);
+    }, what === 'all' ? 'Cut every track' : 'Cut a clip');
   }
 
   // ---- transitions ----
   const KIND_LABEL: Record<TransitionKind, string> = { cut: 'Cut', crossfade: 'Crossfade', dip: 'Dip to black' };
-  type TPress = { box: TransitionBox; edge: 'start' | 'end'; x: number; y: number; started: boolean };
+  type TPress = { box: TransitionBox; edge: 'start' | 'end' | 'middle'; x: number; y: number; cut: number; targets: number[]; started: boolean };
   let tpress: TPress | null = null;
 
   function selectTransition(b: TransitionBox) {
-    ed.clipId = null;
-    ed.textId = null;
+    selectClips([]);
     ed.transitionSel = { track: b.track, after: b.after };
   }
   const isSel = (b: TransitionBox) => ed.transitionSel?.track === b.track && ed.transitionSel.after === b.after;
 
-  function transDown(e: PointerEvent, b: TransitionBox, edge: 'start' | 'end' | null) {
+  function transDown(e: PointerEvent, b: TransitionBox, edge: 'start' | 'end' | 'middle') {
     if (e.button !== 0) return;
     e.stopPropagation();
     selectTransition(b);
-    if (!edge) return;
-    tpress = { box: b, edge, x: e.clientX, y: e.clientY, started: false };
+    // The middle of a transition from below has no cut to roll.
+    if (edge === 'middle' && b.after === FROM_BELOW) return;
+    const next = findClip(adv, b.next)?.clip;
+    tpress = { box: b, edge, x: e.clientX, y: e.clientY, cut: next?.at_ms ?? 0, targets: snapTargets([b.after, b.next]), started: false };
     follow(transMove, transUp);
   }
   function transMove(e: PointerEvent) {
@@ -370,19 +504,25 @@
     if (!t.started) {
       if (!pastThreshold(e.clientX - t.x, e.clientY - t.y)) return;
       t.started = true;
-      frozen = pps;
       beginGesture();
     }
-    // The dragged end follows the pointer (a dip grows on both sides of the cut).
     const dms = ((e.clientX - t.x) / pps) * 1000;
+    if (t.edge === 'middle') {
+      // Roll the cut under the transition (it stays on the cut).
+      const prev = findClip(adv, t.box.after)?.clip;
+      if (!prev) return;
+      const cut = snap(Math.round(t.cut + dms), t.targets, e.altKey);
+      gesture((p) => rollCut(p, t.box.after, cut - t.cut, sourceMs(prev)));
+      return;
+    }
+    // The dragged end follows the pointer (a dip grows on both sides of the cut).
     const ms = transitionLength(t.box.ms, t.edge, dms, t.box.max);
     gesture((p) => setTransitionAt(p, t.box.track, t.box.after, t.box.kind, ms));
   }
   function transUp() {
     const t = tpress;
     tpress = null;
-    frozen = null;
-    if (t?.started) endGesture('Transition length');
+    if (t?.started) endGesture(t.edge === 'middle' ? 'Roll the cut' : 'Transition length');
   }
 
   let menu = $state<{ x: number; y: number; box: TransitionBox } | null>(null);
@@ -401,17 +541,9 @@
     const change = (p: Project) =>
       j.after === FROM_BELOW ? setFromBelow(p, j.next, DEFAULT_TRANSITION_MS) : setTransitionAt(p, j.track, j.after, 'crossfade', DEFAULT_TRANSITION_MS);
     if (edit(change, j.after === FROM_BELOW ? 'Crossfade in from below' : 'Add a crossfade')) {
-      ed.clipId = null;
+      selectClips([]);
       ed.transitionSel = { track: j.track, after: j.after };
     }
-  }
-
-  // ---- empty space: deselect and put the playhead there ----
-  function laneClick(e: MouseEvent) {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    select(null);
-    ed.playing = false;
-    seek(Math.min(duration, snap(msAt(e.clientX - r.left), snapTargets(null), e.altKey)));
   }
 
   // ---- track headers: mute, rename, height ----
@@ -467,7 +599,7 @@
     const f0 = d.part === 'l' ? Math.min(d.start + df, d.end - 0.002) : d.start;
     const f1 = d.part === 'r' ? Math.max(d.end + df, d.start + 0.002) : d.end;
     const v = fromHandles(f0, f1, span, viewW, MAX_PPS);
-    zoom = v.pps <= fit * 1.0001 ? 0 : v.pps;
+    zoom = v.pps;
     await tick();
     el.scrollLeft = v.scrollLeft;
   }
@@ -495,22 +627,36 @@
   const pressGroup = $derived(press?.started && press.zone === 'move' ? (press.track.kind === 'audio' || press.track.kind === 'music' ? 'sound' : 'video') : null);
 </script>
 
-<svelte:window onclick={() => (menu = null)} />
+<svelte:window
+  onclick={() => (menu = null)}
+  onkeydown={(e) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    if (e.key === '\\' && !e.ctrlKey && !e.metaKey && !e.altKey) fitAll();
+  }}
+/>
 
-<div class="timeline">
+<div class="timeline" class:razor={ed.tool === 'razor'}>
   <div class="scroll" id="timeline-scroll" bind:this={scroller} use:observe use:wheelZoom onscroll={(e) => (scrollX = (e.currentTarget as HTMLElement).scrollLeft)}>
     <div class="grid" style:width="{HEADER_W + contentW}px">
       <div class="top" style:height="{TOP_H}px">
         <div class="corner" style:width="{HEADER_W}px">
           <span class="tc mono" title="Playhead">{formatTimecode(ed.playhead)}</span>
           <div class="tools">
+            <button class="tool" class:on={ed.tool === 'select'} aria-pressed={ed.tool === 'select'} title="Selection tool (V)" onclick={() => (ed.tool = 'select')}>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M4 1.8v11.4l2.9-2.7 1.9 4.2 1.8-.8-1.9-4.1 3.9-.3z" /></svg>
+            </button>
+            <button class="tool" class:on={ed.tool === 'razor'} aria-pressed={ed.tool === 'razor'} title="Razor tool (C): click a clip to cut it there; Shift cuts every track" onclick={() => (ed.tool = 'razor')}>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13" /><rect class="fill" x="4.5" y="3" width="7" height="4.5" rx="1" /></svg>
+            </button>
+            <span class="tool-gap"></span>
             <button class="tool" class:on={snapping} aria-pressed={snapping} title="Snap to the playhead, clip edges and markers (hold Alt to not snap)" onclick={() => (snapping = !snapping)}>
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v5.5a4.5 4.5 0 0 0 9 0V2.5h-3v5.5a1.5 1.5 0 0 1-3 0V2.5z" /></svg>
             </button>
             <button class="tool" title="Add a marker at the playhead (M)" onclick={() => edit((p) => addMarker(p, ed.playhead, ''), 'Add a marker')}>
               <svg viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M4 2.5h8v8.5l-4 3-4-3z" /></svg>
             </button>
-            <button class="tool" title="Fit the whole edit (double-click the zoom bar)" onclick={() => (zoom = 0)}>
+            <button class="tool" title="Fit the whole edit (\, or double-click the zoom bar)" onclick={fitAll}>
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h13M1.5 8l3-3M1.5 8l3 3M14.5 8l-3-3M14.5 8l-3 3" /></svg>
             </button>
           </div>
@@ -551,16 +697,26 @@
             data-pps={pps}
             style:width="{contentW}px"
             role="presentation"
-            onclick={laneClick}
+            onpointerdown={(e) => laneDown(e, false)}
+            onpointermove={(e) => razorMove(e, `new-${group}`)}
+            onpointerleave={() => (razorHover = null)}
           ></div>
         </div>
+      {/snippet}
+
+      {#snippet razorLine(row: string)}
+        {#if ed.tool === 'razor' && razorHover && (razorHover.all || razorHover.row === row)}
+          <span class="razor-line" style:left="{px(razorHover.ms)}px"></span>
+        {/if}
       {/snippet}
 
       {#snippet clipBlock(t: Track, c: PlacedClip)}
         {@const under = overlapOf(adv, t, c)}
         <div
           class="clip {c.source.kind === 'image' ? 'image' : t.kind}"
-          class:sel={ed.clipId === c.id}
+          class:sel={selection.has(c.id)}
+          class:primary={ed.clipId === c.id}
+          data-clip={c.id}
           class:off={t.muted}
           style:left="{px(c.at_ms - under)}px"
           style:width="{Math.max(6, px(clipLength(c)))}px"
@@ -657,7 +813,8 @@
           </div>
           {#if r.kind === 'track'}
             {@const t = r.track}
-            <div class="lane" class:drop={dropTrack === t.id} data-track={t.id} data-kind={r.group} data-pps={pps} style:width="{contentW}px" role="presentation" onclick={laneClick}>
+            <div class="lane" class:drop={dropTrack === t.id} data-track={t.id} data-kind={r.group} data-pps={pps} style:width="{contentW}px" role="presentation" onpointerdown={(e) => laneDown(e, false)} onpointermove={(e) => razorMove(e, rowKey(r))} onpointerleave={() => (razorHover = null)}>
+              {@render razorLine(rowKey(r))}
               {#each t.clips as c (c.id)}
                 {@render clipBlock(t, c)}
               {/each}
@@ -669,8 +826,8 @@
                   style:width="{Math.max(8, px(b.end - b.start))}px"
                   role="button"
                   tabindex="-1"
-                  title="{KIND_LABEL[b.kind]} · {(b.ms / 1000).toFixed(2)} s (drag an end to change; right-click for more)"
-                  onpointerdown={(e) => transDown(e, b, null)}
+                  title="{KIND_LABEL[b.kind]} · {(b.ms / 1000).toFixed(2)} s (drag an end to change the length, the middle to move the cut; right-click for more)"
+                  onpointerdown={(e) => transDown(e, b, 'middle')}
                   onclick={(e) => e.stopPropagation()}
                   oncontextmenu={(e) => transMenu(e, b)}
                   onkeydown={() => {}}
@@ -683,14 +840,15 @@
                 </div>
               {/each}
               {#each touching.filter((j) => j.track === t.id) as j (j.after)}
-                <button class="join" style:left="{px(j.at)}px" title={j.after === FROM_BELOW ? 'Crossfade in from what is below' : 'Add a crossfade here'} onclick={(e) => {
+                <button class="join" style:left="{px(j.at)}px" title={j.after === FROM_BELOW ? 'Crossfade in from what is below' : 'Add a crossfade here'} onpointerdown={(e) => e.stopPropagation()} onclick={(e) => {
                   e.stopPropagation();
                   addCrossfade(j);
                 }}>+</button>
               {/each}
             </div>
           {:else}
-            <div class="lane" style:width="{contentW}px" role="presentation" onclick={laneClick}>
+            <div class="lane" style:width="{contentW}px" role="presentation" onpointerdown={(e) => laneDown(e, true)} onpointermove={(e) => razorMove(e, rowKey(r))} onpointerleave={() => (razorHover = null)}>
+              {@render razorLine(rowKey(r))}
               {#each segs as s, i (i)}
                 <div
                   class="clip main {r.kind === 'main' ? 'video' : 'audio'}"
@@ -715,9 +873,19 @@
     </div>
   </div>
 
+  {#if marquee?.started}
+    <div
+      class="marquee"
+      style:left="{Math.min(marquee.x, marquee.x1)}px"
+      style:top="{Math.min(marquee.y, marquee.y1)}px"
+      style:width="{Math.abs(marquee.x1 - marquee.x)}px"
+      style:height="{Math.abs(marquee.y1 - marquee.y)}px"
+    ></div>
+  {/if}
+
   <div class="zoombar">
     <span class="zb-label muted mono" style:width="{HEADER_W}px">{formatTimecode(comp.duration_ms)}</span>
-    <div class="zb-track" bind:this={bar} role="presentation" onpointerdown={barTrackDown} ondblclick={() => (zoom = 0)}>
+    <div class="zb-track" bind:this={bar} role="presentation" onpointerdown={barTrackDown} ondblclick={fitAll}>
       <div
         class="zb-thumb"
         style:left="{bar01.start * 100}%"
@@ -844,6 +1012,33 @@
   .tool.on {
     background: var(--border-strong);
     color: var(--text-strong);
+  }
+  .tool-gap {
+    width: 4px;
+  }
+  /* The razor: a blade cursor and a cut line where a click would cut. */
+  .timeline.razor .lane,
+  .timeline.razor .clip {
+    cursor:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 1v22' stroke='%23000' stroke-width='3'/%3E%3Cpath d='M12 1v22' stroke='%23fff'/%3E%3Crect x='6.5' y='2.5' width='11' height='7' rx='1.5' fill='%23fff' stroke='%23000'/%3E%3C/svg%3E")
+        12 12,
+      crosshair;
+  }
+  .razor-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 3;
+    width: 0;
+    border-left: 1px dashed #fff;
+    pointer-events: none;
+  }
+  .marquee {
+    position: fixed;
+    z-index: 20;
+    border: 1px solid var(--accent-text);
+    background: rgb(255 255 255 / 8%);
+    pointer-events: none;
   }
   svg {
     width: 14px;
@@ -1034,6 +1229,10 @@
     outline: 2px solid #fff;
     outline-offset: -2px;
     z-index: 1;
+  }
+  /* In a multi-selection, the clip the panels show. */
+  .clip.sel.primary {
+    box-shadow: inset 0 0 0 3px rgb(255 255 255 / 35%);
   }
   .clip.off {
     opacity: 0.45;

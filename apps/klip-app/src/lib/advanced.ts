@@ -486,6 +486,108 @@ export function removeClip(p: Project, clipId: number): void {
   dropEmptyTracks(a);
 }
 
+// ---- selections (M9.8.3) ----
+
+/**
+ * Move every clip of `ids` by `deltaMs` along its own track (a selection dragged
+ * together). Nothing goes before 0; a clip landing on one that stays is refused.
+ */
+export function moveClips(p: Project, ids: number[], deltaMs: number): void {
+  const a = advancedOf(p);
+  const moving = new Set(ids);
+  const found = ids.map((id) => findClip(a, id)).filter((f): f is Found => f !== null);
+  if (found.length === 0) return;
+  const d = Math.max(Math.round(Number.isFinite(deltaMs) ? deltaMs : 0), -Math.min(...found.map((f) => f.clip.at_ms)));
+  if (d === 0) return;
+  for (const { track, clip } of found) {
+    const at = clip.at_ms + d;
+    const end = at + clipLength(clip);
+    if (track.clips.some((c) => !moving.has(c.id) && at < clipEnd(c) && end > c.at_ms)) throw new EditError('bad_range', 'Clips can’t overlap on one track');
+  }
+  for (const { clip } of found) clip.at_ms = ms(clip.at_ms + d);
+  for (const t of a.tracks) sortClips(t);
+}
+
+/** Remove every clip of `ids` (one undo step for a selection). */
+export function removeClips(p: Project, ids: number[]): void {
+  for (const id of ids) removeClip(p, id);
+}
+
+/**
+ * Ripple delete (Shift+Delete): remove the clips and close the room each took, so the
+ * later clips of its track move left by its length.
+ */
+export function rippleDelete(p: Project, ids: number[]): void {
+  const a = advancedOf(p);
+  const gone = ids
+    .map((id) => findClip(a, id))
+    .filter((f): f is Found => f !== null)
+    .map((f) => ({ track: f.track, id: f.clip.id, at: f.clip.at_ms, end: clipEnd(f.clip) }))
+    // Right to left, so each shift is measured where the clips are at that moment.
+    .sort((x, y) => y.at - x.at);
+  for (const g of gone) {
+    const len = g.end - g.at;
+    for (const c of g.track.clips) if (c.id !== g.id && c.at_ms >= g.end) c.at_ms = Math.max(0, c.at_ms - len);
+    removeClip(p, g.id);
+  }
+}
+
+/**
+ * Split at output time `outMs` every clip of `ids` (all clips when `null`) that plays
+ * across it; a clip pulled under the one before by a crossfade is cut where it shows.
+ * Returns how many were split.
+ */
+export function splitClipsAt(p: Project, ids: number[] | null, outMs: number): number {
+  const cuts = cutsAt(advancedOf(p), ids, outMs);
+  for (const [id, at] of cuts) splitClip(p, id, at);
+  return cuts.length;
+}
+
+/** The clips of `ids` (all when `null`) a cut at output time `outMs` splits: `[id, at_ms of the cut]`. */
+export function cutsAt(a: Advanced, ids: number[] | null, outMs: number): [number, number][] {
+  const want = ids === null ? null : new Set(ids);
+  const cuts: [number, number][] = [];
+  for (const t of a.tracks)
+    for (const c of t.clips) {
+      if (want && !want.has(c.id)) continue;
+      const start = c.at_ms - overlapOf(a, t, c);
+      const local = Math.round(outMs) - start;
+      if (local > 0 && local < clipLength(c)) cuts.push([c.id, c.at_ms + local]);
+    }
+  return cuts;
+}
+
+/**
+ * Roll the cut after clip `afterId` by `deltaMs` (dragging a transition's middle): that
+ * clip's end and the next clip's start move together, one longer, the other shorter,
+ * as far as both can (the next clip needs source before its start to grow left;
+ * `srcMax` bounds the first clip's source).
+ */
+export function rollCut(p: Project, afterId: number, deltaMs: number, srcMax: number): void {
+  const a = advancedOf(p);
+  const found = findClip(a, afterId);
+  const next = found?.track.clips[found.index + 1];
+  if (!found || !next) return;
+  const prev = found.clip;
+  const d = Math.round(Number.isFinite(deltaMs) ? deltaMs : 0);
+  const prevEnd = clipEnd(prev);
+  const gap = next.at_ms - prevEnd;
+  if (d > 0) {
+    trimClipStart(p, next.id, next.at_ms + d);
+    const dn = next.at_ms - (prevEnd + gap);
+    trimClipEnd(p, prev.id, prevEnd + dn, srcMax);
+    const dp = clipEnd(prev) - prevEnd;
+    // The first clip ran out of source: the next one gives back what it lost.
+    if (dp < dn) trimClipStart(p, next.id, clipEnd(prev) + gap);
+  } else if (d < 0) {
+    trimClipEnd(p, prev.id, prevEnd + d, srcMax);
+    const dp = clipEnd(prev) - prevEnd;
+    trimClipStart(p, next.id, next.at_ms + dp);
+    const dn = next.at_ms - (prevEnd + gap);
+    if (dn > dp) trimClipEnd(p, prev.id, next.at_ms - gap, srcMax);
+  }
+}
+
 export type Lane = 'zoom' | 'x' | 'y' | 'opacity' | 'volume';
 
 export const LANES: { id: Lane; label: string; min: number; max: number; step: number; neutral: number }[] = [

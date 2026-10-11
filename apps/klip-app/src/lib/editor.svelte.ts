@@ -107,8 +107,12 @@ export const ed = $state({
   sources: {} as Record<string, SourceEntry>,
   /** Bumped when media became playable. */
   mediaVersion: 0,
-  /** The selected clip of an Advanced track. */
+  /** The selected clip of an Advanced track (the one the panels show). */
   clipId: null as number | null,
+  /** Every selected clip (a multi-selection); only counts while it holds `clipId`. */
+  selected: [] as number[],
+  /** The timeline's tool: Selection (V) or Razor (C). */
+  tool: 'select' as 'select' | 'razor',
   /** The selected transition of an Advanced track (the clip it follows). */
   transitionSel: null as { track: number; after: number } | null,
   /** Effect Controls groups whose stopwatch is on this session (`<clip id>:<group>`). */
@@ -170,6 +174,8 @@ export function openEditor(clip: LibClip): void {
     ed.selection = null;
     ed.textId = null;
     ed.clipId = null;
+    ed.selected = [];
+    ed.tool = 'select';
     ed.transitionSel = null;
     ed.animating = {};
     ed.undo = [];
@@ -381,6 +387,24 @@ export function redo(steps = 1): void {
     ed.project = next;
   }
   scheduleSave();
+}
+
+/**
+ * The selected Advanced clips: `ed.selected` while it holds the primary `ed.clipId`, else
+ * just that one (code that sets `ed.clipId` alone makes a single selection).
+ */
+export function selectedClips(): number[] {
+  if (ed.clipId === null) return [];
+  return ed.selected.includes(ed.clipId) ? ed.selected : [ed.clipId];
+}
+
+/** Select `ids`; `primary` (default: the last) is the one the panels show. */
+export function selectClips(ids: number[], primary: number | null = ids.at(-1) ?? null): void {
+  const list = ids.filter((id, i) => ids.indexOf(id) === i);
+  ed.clipId = primary !== null && list.includes(primary) ? primary : (list.at(-1) ?? null);
+  ed.selected = list;
+  ed.textId = null;
+  ed.transitionSel = null;
 }
 
 export function seek(outMs: number): void {
