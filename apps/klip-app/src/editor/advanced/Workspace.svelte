@@ -37,8 +37,9 @@
   import Canvas from './Canvas.svelte';
   import EffectsPanel from './EffectsPanel.svelte';
   import HistoryPanel from './HistoryPanel.svelte';
-  import Inspector from './Inspector.svelte';
+  import EffectControls from './EffectControls.svelte';
   import MediaPanel from './MediaPanel.svelte';
+  import Properties from './Properties.svelte';
   import type { Player, SourceMedia } from './player';
   import Timeline from './Timeline.svelte';
 
@@ -385,10 +386,12 @@
 {/snippet}
 
 {#snippet sideB()}
-  <Panel tabs={['Inspector', 'History', 'Export']}>
+  <Panel tabs={['Effect Controls', 'Properties', 'History', 'Export']}>
     {#snippet children(tab)}
-      {#if tab === 'Inspector'}
-        <Inspector {project} mainName={clip.name} {names} />
+      {#if tab === 'Effect Controls'}
+        <EffectControls {project} mainName={clip.name} {names} />
+      {:else if tab === 'Properties'}
+        <Properties {project} mainName={clip.name} {names} />
       {:else if tab === 'History'}
         <HistoryPanel />
       {:else}

@@ -1,40 +1,27 @@
 <!--
-  The selected clip in numbers: where it sits, its zoom/position/opacity/volume at the
-  playhead (◆ adds or removes a key there; without keys a value holds for the whole
-  clip), its speed points, the transition into the next clip on its track, and its
-  track (name, mute, order).
+  Properties: the selected clip (where it sits, split, remove), the transition into the
+  next clip on its track, and its track (name, mute, order); or the selected transition.
+  Its effects and keys are in Effect Controls.
 -->
 <script lang="ts">
-  import type { Lane, PlacedClip, Track, TransitionKind } from '../../lib/advanced';
+  import type { PlacedClip, Track, TransitionKind } from '../../lib/advanced';
   import {
-    LANES,
     MAX_TRANSITION_MS,
-    RATE_MAX,
-    RATE_MIN,
-    addKey,
-    clearLane,
     clipLength,
-    laneKeys,
-    laneValue,
     moveClip,
     moveTrack,
     nextOnTrack,
     overlapOf,
-    rateAt,
     readAdvanced,
     removeClip,
-    removeKey,
-    removeSpeedPoint,
     removeTrack,
-    setLane,
-    setSpeedPoint,
     setTrack,
     setTransition,
     sourceLabel,
     splitClip,
     transitionAfter,
   } from '../../lib/advanced';
-  import { ed, edit, seek } from '../../lib/editor.svelte';
+  import { ed, edit } from '../../lib/editor.svelte';
   import NumberField from '../../lib/forms/NumberField.svelte';
   import Segmented from '../../lib/forms/Segmented.svelte';
   import { formatTimecode } from '../../lib/format';
@@ -60,21 +47,6 @@
   /** The playhead in the clip's own time (what its keys are in). */
   function local(t: Track, c: PlacedClip): number {
     return Math.min(clipLength(c), Math.max(0, ed.playhead - start(t, c)));
-  }
-
-  function lanesFor(t: Track, c: PlacedClip): typeof LANES {
-    if (c.source.kind === 'image') return LANES.filter((l) => l.id !== 'volume');
-    if (t.kind === 'audio' || t.kind === 'music') return LANES.filter((l) => l.id === 'volume');
-    return LANES;
-  }
-
-  const fmt = (lane: Lane, v: number) => (lane === 'opacity' || lane === 'volume' ? Math.round(v * 100) : Math.round(v * 1000) / 1000);
-  const unfmt = (lane: Lane, v: number) => (lane === 'opacity' || lane === 'volume' ? v / 100 : v);
-
-  /** Every time (clip ms) that holds any key, sorted. */
-  function keys(c: PlacedClip): number[] {
-    const all = [...c.transform, ...c.opacity, ...c.volume].map((k) => k.at_ms).sort((a, b) => a - b);
-    return all.filter((t, i) => i === 0 || all[i - 1] !== t);
   }
 
   const TRANSITIONS: { value: TransitionKind; label: string }[] = [
@@ -108,67 +80,6 @@
       <NumberField label="Starts at" value={c.at_ms / 1000} min={0} max={86_400} step={0.001} unit="s" onchange={(v) => edit((p) => moveClip(p, c.id, v * 1000), 'Move clip')} />
     </div>
   </section>
-
-  <section>
-    <h3>At the playhead <span class="muted mono">{formatTimecode(at)}</span></h3>
-    {#each lanesFor(t, c) as l (l.id)}
-      {@const keys = laneKeys(c, l.id)}
-      {@const onKey = keys.includes(at)}
-      <div class="lane">
-        <span class="name">{l.label}</span>
-        <NumberField
-          label={l.label}
-          value={fmt(l.id, laneValue(c, l.id, at))}
-          min={fmt(l.id, l.min)}
-          max={fmt(l.id, l.max)}
-          step={l.id === 'opacity' || l.id === 'volume' ? 1 : l.step}
-          unit={l.id === 'opacity' || l.id === 'volume' ? '%' : ''}
-          onchange={(v) => edit((p) => setLane(p, c.id, l.id, at, unfmt(l.id, v)), `Set ${l.label.toLowerCase()}`)}
-        />
-        <button
-          class="flat key"
-          class:on={onKey}
-          aria-pressed={onKey}
-          title={onKey ? 'Remove the key here' : 'Add a key here'}
-          onclick={() => edit((p) => (onKey ? removeKey(p, c.id, l.id, at) : addKey(p, c.id, l.id, at)), onKey ? 'Remove a key' : 'Add a key')}
-        >◆</button>
-        {#if keys.length > 0}
-          <button class="flat tiny" title="Clear: no keys, the neutral value" onclick={() => edit((p) => clearLane(p, c.id, l.id), `Clear ${l.label.toLowerCase()}`)}>×</button>
-        {/if}
-      </div>
-    {/each}
-    {#if keys(c).length > 0}
-      <div class="row wrap">
-        {#each keys(c) as k (k)}
-          <button class="flat tiny mono" title="Go to this key" onclick={() => seek(from + k)}>{formatTimecode(k)}</button>
-        {/each}
-      </div>
-    {/if}
-  </section>
-
-  {#if c.source.kind !== 'image'}
-    <section>
-      <h3>Speed</h3>
-      <div class="lane">
-        <span class="name">From here</span>
-        <NumberField label="Speed" value={rateAt(c, at)} min={RATE_MIN} max={RATE_MAX} step={5} unit="%" onchange={(v) => edit((p) => setSpeedPoint(p, c.id, at, v), 'Set speed')} />
-      </div>
-      {#if c.speed.length > 0}
-        <ul class="points">
-          {#each c.speed as s (s.at_ms)}
-            <li>
-              <button class="flat tiny mono" onclick={() => seek(from + s.at_ms)}>{formatTimecode(s.at_ms)}</button>
-              <span class="mono">{s.rate_pct} %</span>
-              {#if s.at_ms > 0}
-                <button class="flat tiny" title="Remove" onclick={() => edit((p) => removeSpeedPoint(p, c.id, s.at_ms), 'Remove a speed point')}>×</button>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
-      <p class="hint muted">The clip keeps its part of the source: slower makes it longer. The pitch stays.</p>
-    </section>
-  {/if}
 
   {#if next && t.kind === 'video'}
     <section>
@@ -281,33 +192,8 @@
     color: var(--text-muted);
     font-size: var(--text-sm);
   }
-  .key {
-    min-width: 0;
-    padding: 0 6px;
-    color: var(--text-muted);
-  }
-  .key.on,
   .on {
     color: var(--accent-text);
-  }
-  .tiny {
-    min-width: 0;
-    padding: 0 5px;
-    height: 22px;
-    font-size: var(--text-xs);
-  }
-  .points {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .points li {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
   }
   .text {
     font: inherit;

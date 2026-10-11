@@ -110,6 +110,8 @@ export const ed = $state({
   clipId: null as number | null,
   /** The selected transition of an Advanced track (the clip it follows). */
   transitionSel: null as { track: number; after: number } | null,
+  /** Effect Controls groups whose stopwatch is on this session (`<clip id>:<group>`). */
+  animating: {} as Record<string, boolean>,
   /** The text cues as the engine draws them (both modes' previews). */
   cues: [] as Cue[],
 });
@@ -168,6 +170,7 @@ export function openEditor(clip: LibClip): void {
     ed.textId = null;
     ed.clipId = null;
     ed.transitionSel = null;
+    ed.animating = {};
     ed.undo = [];
     ed.redo = [];
     ed.undoLabels = [];
