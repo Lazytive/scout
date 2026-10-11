@@ -667,32 +667,32 @@ Use the release app (`target\release\Start Klip.cmd`) and two of your own clips.
 1. ✅ (2026-10-10: sound and sliders work) **Sound sliders (the M8 bug).** Open a clip that has your voice. In Normal mode
    press Play, then drag **Mic** to 0 %: your voice must go away while it plays; drag
    **Game** to 0 %: the game sound must go away. Tell me if you hear any echo or delay.
-2. **Switch to Advanced.** In the Mode section click **Advanced**. The layout changes:
+2. ✅ (2026-10-10) **Switch to Advanced.** In the Mode section click **Advanced**. The layout changes:
    Media/Effects/Main clip on the left, Inspector/History/Export on the right, the
    timeline at the bottom. Click **Normal** at the top of the preview: back; an
    orange **Advanced edits** badge appears once you made Advanced changes.
-3. **Montage.** Advanced → Media → tick two other clips → **Add 2 clips**. They appear
+3. ✅ (2026-10-10, after a redo) **Montage.** Advanced → Media → tick two other clips → **Add 2 clips**. They appear
    one after the other on the "Montage" track, after your clip. Click the first of the
    two; in the Inspector under **Into the next clip** choose **Crossfade**. Play across
    the join: the pictures must blend for half a second, and both clips' sound must play.
-4. **Zoom and move.** Select a montage clip, put the playhead in it, set **Zoom** to
+4. ✅ (2026-10-11) **Zoom and move.** Select a montage clip, put the playhead in it, set **Zoom** to
    1.5 in the Inspector. Drag the blue frame on the preview to move the picture; scroll
    on it to zoom more. Click ◆ at another time, change Zoom there: it must glide
    between the two when you play.
-5. **Sticker and music.** Media → **+ Sticker** (pick a PNG) and **+ Music** (pick an
+5. ✅ (2026-10-11) **Sticker and music.** Media → **+ Sticker** (pick a PNG) and **+ Music** (pick an
    MP3). The sticker shows over the video for 3 s; the music plays on its own track.
    Talk over a part (a clip with your voice): the music must get quieter while you
    speak (Effects → Music under voices).
-6. **Colour.** Effects → Colour: drag Saturation to 0: the preview turns grey (the
+6. ✅ (2026-10-11) **Colour.** Effects → Colour: drag Saturation to 0: the preview turns grey (the
    text, if any, keeps its colours).
-7. **Undo history.** Right side → History: every step has a name; click one further
+7. ✅ (2026-10-11) **Undo history.** Right side → History: every step has a name; click one further
    down to go back to it, then click a grey one above "Now" to go forward again.
-8. **Export → Custom.** Export… → **Custom** → 1280 wide (720 follows), 30 fps,
+8. ✅ (2026-10-11) **Export → Custom.** Export… → **Custom** → 1280 wide (720 follows), 30 fps,
    8000 kbit/s, H.264 → Export. Play the result: it must look like the preview, at that
    size (check the file's properties).
-9. **J / K / L.** With the timeline focused: L plays, L again plays 2x, K stops, J goes
+9. ✅ (2026-10-11: felt fine) **J / K / L.** With the timeline focused: L plays, L again plays 2x, K stops, J goes
    backwards. Tell me if anything feels sluggish (how long a montage, how many clips).
-10. **A montage of your own games.** Take the montage from steps 3–4 (two of your real
+10. ✅ (2026-10-11: a 3:13 edit exported in ~20 s, ~10x realtime; all checks passed, found in the Library) **A montage of your own games.** Take the montage from steps 3–4 (two of your real
     clips, a crossfade, a zoom) and export it with **YouTube**. Open the file in your
     usual video player: the join must blend, the zoom must be there, both clips' sound
     must play, and it must appear in the Library next to your first clip. Tell me how
