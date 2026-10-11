@@ -51,8 +51,10 @@
     rowsOf,
     spanMs,
     thumb,
+    thumbSlots,
     transitionBoxes,
     transitionLength,
+    visibleSpan,
     zoomAt,
   } from '../../lib/timeline-view';
 
@@ -74,8 +76,8 @@
     sourceMs: (c: PlacedClip) => number;
     /** A source's sprite strip for thumbnails, if the library has one. */
     thumbs: (s: Source) => { url: string; tiles: number; duration_ms: number } | null;
-    /** A source's sound file for its waveform, if any. */
-    audio: (s: Source) => string | null;
+    /** A source's sound files for its waveform (none: no waveform). */
+    audio: (s: Source) => string[];
   } = $props();
 
   const HEADER_W = 168;
@@ -489,21 +491,6 @@
     if (x < el.scrollLeft || x > el.scrollLeft + viewW - 40) el.scrollLeft = Math.max(0, x - 80);
   });
 
-  /** Thumbnails along a clip `w` × `h` px showing source `from`…`to` (ms), FilmCraft-style. */
-  function slots(w: number, h: number, from: number, to: number, strip: { tiles: number; duration_ms: number }): { x: number; w: number; pos: string }[] {
-    const th = h - 18;
-    if (th < 14 || strip.tiles < 1 || !(strip.duration_ms > 0)) return [];
-    const tw = Math.max(16, Math.round((th * 16) / 9));
-    const step = Math.max(tw, w / 40);
-    const out: { x: number; w: number; pos: string }[] = [];
-    for (let x = 0; x < w - 2; x += step) {
-      const t = from + ((x + tw / 2) / Math.max(1, w)) * (to - from);
-      const tile = Math.min(strip.tiles - 1, Math.max(0, Math.floor((t / strip.duration_ms) * strip.tiles)));
-      out.push({ x, w: Math.min(tw, w - x), pos: stripPosition(tile, strip.tiles) });
-    }
-    return out;
-  }
-
   const rowKey = (r: TimelineRow) => (r.kind === 'track' ? `t${r.track.id}` : r.kind);
   const pressGroup = $derived(press?.started && press.zone === 'move' ? (press.track.kind === 'audio' || press.track.kind === 'music' ? 'sound' : 'video') : null);
 </script>
@@ -587,24 +574,25 @@
             if (e.key === 'Enter') select(c.id);
           }}
         >
-          {@render body(t.kind === 'audio' || t.kind === 'music' ? 'sound' : 'video', c.source, Math.max(6, px(clipLength(c))), t.kind === 'audio' || t.kind === 'music' ? heights.sound : heights.video, c.in_ms, c.out_ms)}
+          {@render body(t.kind === 'audio' || t.kind === 'music' ? 'sound' : 'video', c.source, px(c.at_ms - under), Math.max(6, px(clipLength(c))), t.kind === 'audio' || t.kind === 'music' ? heights.sound : heights.video, c.in_ms, c.out_ms)}
           <span class="name">{sourceLabel(c.source, mainName, names)}</span>
           {#if c.speed.length > 1}<span class="badge">ramp</span>{/if}
         </div>
       {/snippet}
 
-      {#snippet body(kind: 'video' | 'sound', src: Source, w: number, h: number, from: number, to: number)}
+      {#snippet body(kind: 'video' | 'sound', src: Source, left: number, w: number, h: number, from: number, to: number)}
+        {@const vis = visibleSpan(left, w, scrollX, viewW)}
         {#if kind === 'video'}
           {@const strip = thumbs(src)}
           {#if strip}
             <span class="thumbs">
-              {#each slots(w, h, from, to, strip) as sl (sl.x)}
-                <span class="thumb" style:left="{sl.x}px" style:width="{sl.w}px" style:background-image="url('{strip.url}')" style:background-size="{Math.round(((h - 18) * 16) / 9)}px {strip.tiles * 100}%" style:background-position-y={sl.pos}></span>
+              {#each thumbSlots(w, h, from, to, strip.tiles, strip.duration_ms, vis.a, vis.b) as sl (sl.x)}
+                <span class="thumb" style:left="{sl.x}px" style:width="{sl.w}px" style:background-image="url('{strip.url}')" style:background-size="{Math.round(((h - 18) * 16) / 9)}px {strip.tiles * 100}%" style:background-position-y={stripPosition(sl.tile, strip.tiles)}></span>
               {/each}
             </span>
           {/if}
         {:else}
-          <span class="wavebox"><Waveform url={audio(src)} {from} {to} buckets={w / 2} /></span>
+          <span class="wavebox"><Waveform urls={audio(src)} {from} {to} {w} a={vis.a} b={vis.b} /></span>
         {/if}
       {/snippet}
 
@@ -710,7 +698,7 @@
                   style:width="{Math.max(4, px(s.out_end_ms - s.out_start_ms))}px"
                   title="{mainName} · {formatTimecode(s.src_start_ms)}–{formatTimecode(s.src_end_ms)}"
                 >
-                  {@render body(r.kind === 'main' ? 'video' : 'sound', { kind: 'main' }, Math.max(4, px(s.out_end_ms - s.out_start_ms)), h, s.src_start_ms, s.src_end_ms)}
+                  {@render body(r.kind === 'main' ? 'video' : 'sound', { kind: 'main' }, px(s.out_start_ms), Math.max(4, px(s.out_end_ms - s.out_start_ms)), h, s.src_start_ms, s.src_end_ms)}
                   <span class="name">{mainName}</span>
                   {#if s.speed !== 1}<span class="badge">{s.speed}x</span>{/if}
                 </div>

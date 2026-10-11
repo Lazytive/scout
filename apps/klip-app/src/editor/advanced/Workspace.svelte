@@ -136,10 +136,12 @@
     }
   }
 
-  /** A source's sound file for the timeline's waveform (its first track, else the file). */
-  function soundOf(s: Source): string | null {
+  /** A source's sound files for the timeline's waveform: all its tracks, else the file. */
+  function soundOf(s: Source): string[] {
     const m = resolve(s);
-    return m ? (m.tracks[0]?.url ?? m.url) : null;
+    if (!m) return [];
+    const tracks = m.tracks.map((t) => t.url).filter((u): u is string => !!u);
+    return tracks.length ? tracks : m.url ? [m.url] : [];
   }
 
   /** A source's length (ms) to bound a trim; 0 when unknown (no bound). */

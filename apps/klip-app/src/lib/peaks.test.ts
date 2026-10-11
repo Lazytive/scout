@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PEAKS_PER_SEC, peaksOf, peaksPath } from './peaks';
+import { PEAKS_PER_SEC, loudness, mergePeaks, peaksOf, peaksPath } from './peaks';
 
 describe('waveform peaks', () => {
   it('keeps the loudest sample of each slice over all channels', () => {
@@ -17,6 +17,21 @@ describe('waveform peaks', () => {
     expect(d).toBe('M0 0.5L0 0.5L1 0.5L1 0L2 0L2 1L1 1L1 0.5L0 0.5Z');
     // Only the loud half: both columns full.
     expect(peaksPath(peaks, 500, 1000, 2)).toBe('M0 0.5L0 0L1 0L1 0L2 0L2 1L1 1L1 1L0 1Z');
+  });
+
+  it('shows quiet sound on a loudness scale', () => {
+    expect(loudness(1)).toBe(1);
+    expect(loudness(0)).toBe(0);
+    // −24 dB is half the height; −60 dB doesn't show.
+    expect(loudness(10 ** (-24 / 20))).toBeCloseTo(0.5);
+    expect(loudness(0.001)).toBe(0);
+  });
+
+  it('draws a clip’s tracks together, the louder at each moment', () => {
+    const game = new Float32Array([0.5, 0, 0.2]);
+    const mic = new Float32Array([0.1, 0.8]);
+    expect([...mergePeaks([game, mic])!].map((v) => Math.round(v * 10) / 10)).toEqual([0.5, 0.8, 0.2]);
+    expect(mergePeaks([])).toBeNull();
   });
 
   it('is silent past the end of the sound', () => {

@@ -13,6 +13,8 @@ import {
   rowsOf,
   spanMs,
   thumb,
+  thumbSlots,
+  visibleSpan,
   transitionBoxes,
   transitionLength,
   zoomAt,
@@ -88,6 +90,23 @@ describe('zoom bar', () => {
   it('never zooms in past the limit nor out past fit', () => {
     expect(fromHandles(0.5, 0.5, 12_000, 600, 1000).pps).toBe(1000);
     expect(fromHandles(-1, 2, 12_000, 600, 1000).pps).toBe(50);
+  });
+});
+
+describe('thumbnails', () => {
+  it('fill the visible part of a long clip back to back', () => {
+    // A 10 000 px clip, 44 px rows: 46 px thumbnails; view 2 000…2 400 px of it.
+    const v = visibleSpan(1000, 10_000, 3000, 400, 0);
+    expect(v).toEqual({ a: 2000, b: 2400 });
+    const s = thumbSlots(10_000, 44, 0, 100_000, 100, 100_000, v.a, v.b);
+    expect(s.length).toBe(10); // 1 978, 2 024, … 2 392
+    expect(s[1]!.x - s[0]!.x).toBe(46);
+    expect(s[0]!.x).toBeLessThanOrEqual(2000);
+    // The middle of the first one is at 1 978 + 23 px of 10 000: 20 % into the source.
+    expect(s[0]!.tile).toBe(20);
+  });
+  it('shows none in rows too low for a picture', () => {
+    expect(thumbSlots(500, 30, 0, 1000, 10, 1000, 0, 500)).toEqual([]);
   });
 });
 

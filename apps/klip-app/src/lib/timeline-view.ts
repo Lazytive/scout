@@ -83,6 +83,41 @@ export function fromHandles(f0: number, f1: number, span: number, viewW: number,
   return { pps, scrollLeft: ((a * span) / 1000) * pps };
 }
 
+// ---- thumbnails and waveforms ----
+
+/** The part of a clip (px from its left edge, `left` px into the lane, `w` wide) in view, with a margin. */
+export function visibleSpan(left: number, w: number, scrollX: number, viewW: number, margin = 200): { a: number; b: number } {
+  const a = Math.max(0, Math.floor(scrollX - left - margin));
+  const b = Math.min(w, Math.ceil(scrollX + viewW - left + margin));
+  return { a: Math.min(a, b), b };
+}
+
+/**
+ * Back-to-back thumbnails over the visible part `a`…`b` of a clip `w` × `h` px showing
+ * source `from`…`to` (ms): each shows the strip tile of the source time at its middle.
+ */
+export function thumbSlots(
+  w: number,
+  h: number,
+  from: number,
+  to: number,
+  tiles: number,
+  durationMs: number,
+  a: number,
+  b: number,
+): { x: number; w: number; tile: number }[] {
+  const th = h - 18;
+  if (th < 14 || tiles < 1 || !(durationMs > 0) || !(w > 0)) return [];
+  const tw = Math.max(16, Math.round((th * 16) / 9));
+  const out: { x: number; w: number; tile: number }[] = [];
+  for (let x = Math.floor(a / tw) * tw; x < Math.min(b, w - 2) && out.length < 200; x += tw) {
+    const t = from + ((x + tw / 2) / w) * (to - from);
+    const tile = Math.min(tiles - 1, Math.max(0, Math.floor((t / durationMs) * tiles)));
+    out.push({ x, w: Math.min(tw, w - x), tile });
+  }
+  return out;
+}
+
 // ---- transitions ----
 
 export interface TransitionBox {

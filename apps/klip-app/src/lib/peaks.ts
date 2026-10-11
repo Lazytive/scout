@@ -1,6 +1,16 @@
 // Waveforms for the timeline (M9.7.3): a sound file decoded once into peaks (the largest
 // sample per 10 ms over all channels), cached by URL; `peaksPath` draws a stretch of them
-// as an SVG path (mirrored around the middle) in a `0 0 buckets 1` box.
+// as an SVG path (mirrored around the middle) in a `0 0 buckets 1` box, on a loudness
+// scale like Premiere's logarithmic waveforms (−48 dB … 0 dB fills the height).
+
+/** The quietest level a waveform still shows, dBFS. */
+export const FLOOR_DB = -48;
+
+/** A peak (0…1) as a share of the waveform's height, on the loudness scale. */
+export function loudness(peak: number): number {
+  if (!(peak > 0)) return 0;
+  return Math.min(1, Math.max(0, (20 * Math.log10(peak) - FLOOR_DB) / -FLOOR_DB));
+}
 
 /** Peaks per second of sound. */
 export const PEAKS_PER_SEC = 100;
@@ -60,6 +70,15 @@ export function peaksOf(channels: Float32Array[], sampleRate: number): Float32Ar
   return out;
 }
 
+/** Several sounds' peaks as one (the louder at each moment); null when there are none. */
+export function mergePeaks(all: Float32Array[]): Float32Array | null {
+  if (all.length === 0) return null;
+  if (all.length === 1) return all[0]!;
+  const out = new Float32Array(Math.max(...all.map((p) => p.length)));
+  for (const p of all) for (let i = 0; i < p.length; i++) out[i] = Math.max(out[i] ?? 0, p[i] ?? 0);
+  return out;
+}
+
 /** The peaks between source times `fromMs`…`toMs` as `buckets` columns, as an SVG path. */
 export function peaksPath(peaks: Float32Array, fromMs: number, toMs: number, buckets: number): string {
   const n = Math.max(1, Math.min(4000, Math.round(buckets)));
@@ -71,7 +90,7 @@ export function peaksPath(peaks: Float32Array, fromMs: number, toMs: number, buc
     const e = Math.max(s + 1, Math.floor(a + ((b - a) * (i + 1)) / n));
     let m = 0;
     for (let j = s; j < e && j < peaks.length; j++) m = Math.max(m, peaks[j] ?? 0);
-    tops.push(Math.min(1, m));
+    tops.push(loudness(m));
   }
   const r = (v: number) => Math.round(v * 1000) / 1000;
   let d = `M0 0.5`;
