@@ -22,9 +22,10 @@ describe('waveform peaks', () => {
   it('shows quiet sound on a loudness scale', () => {
     expect(loudness(1)).toBe(1);
     expect(loudness(0)).toBe(0);
-    // −24 dB is half the height; −60 dB doesn't show.
-    expect(loudness(10 ** (-24 / 20))).toBeCloseTo(0.5);
-    expect(loudness(0.001)).toBe(0);
+    // −30 dB is half the height, −41 dB (a quiet capture) about a third; −70 dB doesn’t show.
+    expect(loudness(10 ** (-30 / 20))).toBeCloseTo(0.5);
+    expect(loudness(10 ** (-41 / 20))).toBeCloseTo(19 / 60);
+    expect(loudness(10 ** (-70 / 20))).toBe(0);
   });
 
   it('draws a clip’s tracks together, the louder at each moment', () => {

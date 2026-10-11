@@ -1,10 +1,11 @@
 // Waveforms for the timeline (M9.7.3): a sound file decoded once into peaks (the largest
 // sample per 10 ms over all channels), cached by URL; `peaksPath` draws a stretch of them
 // as an SVG path (mirrored around the middle) in a `0 0 buckets 1` box, on a loudness
-// scale like Premiere's logarithmic waveforms (−48 dB … 0 dB fills the height).
+// scale like Premiere's logarithmic waveforms (−60 dB … 0 dB fills the height: a quiet
+// capture peaking at −41 dB still fills a third).
 
 /** The quietest level a waveform still shows, dBFS. */
-export const FLOOR_DB = -48;
+export const FLOOR_DB = -60;
 
 /** A peak (0…1) as a share of the waveform's height, on the loudness scale. */
 export function loudness(peak: number): number {
