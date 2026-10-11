@@ -67,8 +67,11 @@
       </nav>
     </div>
     <div class="title" data-live={st?.recording ?? false} data-rec={st?.session ?? false}>
-      {#if st?.recording}<span class="dot" aria-hidden="true"></span>{/if}
-      {title}
+      <!-- The Library's recorder bar says it already (the user, 2026-10-11). -->
+      {#if app.page !== 'library'}
+        {#if st?.recording}<span class="dot" aria-hidden="true"></span>{/if}
+        {title}
+      {/if}
     </div>
     <div class="right">
       <ThemeMenu />

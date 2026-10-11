@@ -5,6 +5,9 @@ reason)`.
 
 ## Unreleased
 
+- M11.2 — The app bar's middle title ("Waiting for a game", "ELDEN RING — buffering")
+  is hidden on the Library, whose recorder bar says the same; Settings and the Editor
+  keep it. (Claude Opus 5.5: the user, "remove the waiting for game at the top middle")
 - M11.2 — The Library is Scout's start page; Home is gone (the user: "lets do it",
   after I suggested folding Home into the Library the other way round). A recorder bar
   on top of the Library (`src/library/RecorderBar.svelte`): state, game, buffer meter,
