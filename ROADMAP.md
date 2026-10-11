@@ -422,11 +422,12 @@ klip-edit` and `vitest`.
 | Main hidden / muted (compose fixture shared by Rust and TS, unit tests both sides) | Main's layers `hidden` / `muted`, the edit keeps its length, a locked track above still plays; the switches move onto the main track when V1 is arranged and back with "Back to the simple cut"; `append_clips` and `addClip` skip locked tracks and V1 |
 | Home: recent clips (mock, 61 clips) | 8 cards, newest first (21:22 down to 22:55 the day before); the star toggles; a click opens the editor; a rename through the engine shows on Home from the `library_changed` event alone; every clip deleted → "No clips yet" with the Alt+F10 hint |
 | Editor opened from Home (mock) | the Project panel lists the 61 clips (it listed none before the fix: the editor read the Library page's listing, which Home never loaded) |
+| Real app (release build, off-screen, own settings, 2 test-game clips) | Home: 2 cards with real posters; a click opens the editor, Project lists the other clip; V2 locked + Main hidden and muted → the engine's saved project has `locked: true`, `main_hidden: true`, `main_muted: true`; after opening another clip and back: V2 still locked, V1 locked again, eye and M pressed and greyed; at 1 s the preview canvas is black (mean 0) and identical to `editor.frame` |
 
 ## Approximate / not done yet
 
-- **Track locks and Home's recent clips (M9.8.10–11, M11.1)**: driven against the mock
-  only; the real app and the human checklist below are owed. Normal mode's preview
+- **Track locks and Home's recent clips (M9.8.10–11, M11.1)**: the real app was driven
+  off-screen on test clips only; the human checklist below is owed. Normal mode's preview
   ignores Main's Hide/Mute like every Advanced edit (the export honours them). Home's
   cards have no Copy / Discord buttons yet (they come with M11's sharing).
 
