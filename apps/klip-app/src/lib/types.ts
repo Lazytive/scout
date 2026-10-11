@@ -97,6 +97,7 @@ export type KlipEvent =
   | { event: 'mic_level'; peak_db: number; rms_db: number }
   | { event: 'hotkeys'; bound: HotkeyState[] }
   | { event: 'settings_changed'; settings: unknown }
+  | { event: 'themes_changed'; id: string }
   | { event: 'storage_cleaned'; report: { removed: number; bytes: number } }
   | { event: 'recovered'; path: string; result: unknown }
   | { event: 'warning'; message: string }

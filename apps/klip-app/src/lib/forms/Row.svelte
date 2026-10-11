@@ -27,7 +27,7 @@
     display: grid;
     grid-template-columns: 190px minmax(0, 1fr);
     gap: var(--space-4);
-    padding: 10px 0;
+    padding: calc(var(--space-2) + 2px) 0;
     border-bottom: 1px solid var(--border);
     align-items: start;
   }

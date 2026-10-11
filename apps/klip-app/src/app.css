@@ -40,16 +40,36 @@
   --font: 'Segoe UI Variable Text', 'Segoe UI', 'Inter', system-ui, -apple-system, 'Noto Sans',
     'Cantarell', sans-serif;
   --font-mono: 'Cascadia Mono', 'Consolas', 'JetBrains Mono', ui-monospace, monospace;
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-md: 13px;
-  --text-lg: 15px;
-  --text-xl: 20px;
-  --text-timecode: 28px;
+  /* Text size (M10): the settings' 90–130 % scales every text size. */
+  --text-scale: 1;
+  --text-xs: calc(11px * var(--text-scale));
+  --text-sm: calc(12px * var(--text-scale));
+  --text-md: calc(13px * var(--text-scale));
+  --text-lg: calc(15px * var(--text-scale));
+  --text-xl: calc(20px * var(--text-scale));
+  --text-timecode: calc(28px * var(--text-scale));
   --header-h: 40px;
   --tabs-h: 32px;
   --statusbar-h: 24px;
+  --control-h: 28px;
   --motion: 120ms;
+  /* Custom theme picture (M10): set by src/lib/appearance.ts. */
+  --backdrop-image: none;
+  --backdrop-dim: transparent;
+}
+
+/* Compact density (M10): tighter spacing, smaller bars and controls. */
+:root[data-density='compact'] {
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 9px;
+  --space-4: 12px;
+  --space-5: 18px;
+  --space-6: 24px;
+  --header-h: 34px;
+  --tabs-h: 28px;
+  --statusbar-h: 22px;
+  --control-h: 24px;
 }
 
 /* First paint when the OS is in light mode (the default theme follows the system);
@@ -82,10 +102,25 @@
   }
 }
 
+/* Reduced motion (M10): the setting's choice (`data-motion`), else the OS's until the
+   settings load. Transitions and animations end at once. */
 @media (prefers-reduced-motion: reduce) {
-  :root {
+  :root:not([data-motion='full']) {
     --motion: 0ms;
   }
+}
+:root[data-motion='reduce'] {
+  --motion: 0ms;
+}
+:root[data-motion='reduce'] *,
+:root[data-motion='reduce'] *::before,
+:root[data-motion='reduce'] *::after {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
 }
 
 * {
@@ -97,7 +132,10 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--gutter);
+  background:
+    linear-gradient(var(--backdrop-dim), var(--backdrop-dim)),
+    var(--backdrop-image) center / cover no-repeat,
+    var(--gutter);
   color: var(--text);
   font-family: var(--font);
   font-size: var(--text-md);
@@ -123,7 +161,7 @@ button {
   background: transparent;
   border: 1.5px solid var(--border-strong);
   border-radius: 999px;
-  height: 28px;
+  height: var(--control-h);
   padding: 0 var(--space-4);
   cursor: pointer;
   display: inline-flex;

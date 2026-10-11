@@ -5,6 +5,7 @@
 import { CommandError } from './api';
 import { mockEditor } from './mock-editor';
 import { mockLibrary } from './mock-library';
+import { mockThemes } from './mock-themes';
 import type { LibClip } from './library';
 import type { Settings } from './settings';
 import type { Game, KlipEvent, Status } from './types';
@@ -94,7 +95,7 @@ export function mockBackend() {
     overlay: { mode: 'minimal', sound: true, notification: false, corner: 'top-right', seconds: 3, recording_dot: true },
     storage: { cap_gb: 50, over_cap: 'trash', low_disk_gb: 10 },
     export: { discord_limit_mb: 10 },
-    appearance: { theme: 'system' },
+    appearance: { theme: 'system', custom_theme: null, accent: null, density: 'comfortable', text_size: 'default', motion: 'system' },
     games: { buffer: 'games', detect_stores: true, user_games: [{ exe: 'MyIndieGame.exe', name: 'My Indie Game' }], never: [], profiles: {} },
   };
 
@@ -114,6 +115,13 @@ export function mockBackend() {
   const editor = mockEditor(emit, () => {
     const listing = library('library.list', { sort: 'newest' }) as { clips: LibClip[] } | undefined;
     return listing?.clips ?? [];
+  });
+
+  const themes = mockThemes(emit, (id) => {
+    if (settings.appearance.theme === 'custom' && settings.appearance.custom_theme === id) {
+      settings = merge(settings, { appearance: { theme: 'system' } }) as Settings;
+      emit({ event: 'settings_changed', settings: structuredClone(settings) });
+    }
   });
 
   const need = () => {
@@ -226,6 +234,8 @@ export function mockBackend() {
           emit({ event: 'bookmark', result: { recording_ms: status.session ? 4000 : null } });
           return {};
         default: {
+          const t = themes(cmd, args);
+          if (t !== undefined) return t;
           const r = library(cmd, args);
           if (r !== undefined) return r;
           const e2 = editor(cmd, args as Record<string, unknown> | null);

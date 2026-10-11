@@ -64,7 +64,7 @@
     background: var(--input);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
-    height: 28px;
+    height: var(--control-h);
     width: 96px;
     padding: 0 8px;
     text-align: right;

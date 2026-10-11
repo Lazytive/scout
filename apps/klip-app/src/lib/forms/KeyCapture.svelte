@@ -81,7 +81,7 @@
   }
   .capture {
     min-width: 170px;
-    height: 28px;
+    height: var(--control-h);
     justify-content: flex-start;
     gap: 3px;
     background: var(--input);

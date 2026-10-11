@@ -286,7 +286,7 @@
   .mark {
     top: auto;
     bottom: 0;
-    font-size: 10px;
+    font-size: calc(10px * var(--text-scale));
     color: var(--warn);
     margin-left: -5px;
     pointer-events: none;

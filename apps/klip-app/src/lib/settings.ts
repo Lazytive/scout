@@ -1,6 +1,8 @@
 // The settings as the engine sends them (klip-settings schema v1) and the pure helpers
 // the Settings page and first-run setup use. Unit-tested in settings.test.ts.
 
+import type { Appearance } from './appearance';
+
 export type Preset = 'low' | 'balanced' | 'high' | 'custom';
 export type VideoCodec = 'h264' | 'hevc' | 'av1';
 export type HotkeyAction = 'clip.save' | 'session.toggle' | 'bookmark.add' | 'overlay.menu';
@@ -58,7 +60,7 @@ export interface Settings {
   };
   storage: { cap_gb: number; over_cap: 'trash' | 'delete'; low_disk_gb: number };
   export: { discord_limit_mb: number };
-  appearance: { theme: string };
+  appearance: Appearance;
   games: {
     buffer: 'games' | 'always' | 'off';
     detect_stores: boolean;

@@ -2,6 +2,7 @@
 // the engine's events arrive on `klip://event`. In a plain browser (`npm run dev`) a
 // mock backend stands in, so the UI can be worked on without the app.
 
+import { convertFileSrc } from '@tauri-apps/api/core';
 import type { KlipEvent } from './types';
 
 export class CommandError extends Error {
@@ -145,6 +146,47 @@ async function viaTauri<T>(path: string, what: 'proxy' | 'audio' | 'files'): Pro
     const err = e as { code?: string; message?: string };
     throw new CommandError(err?.code ?? 'failed', err?.message ?? String(e));
   }
+}
+
+/** A custom theme's picture as a URL CSS can load: the asset protocol in the app (the
+    themes folder is in its scope; `version` busts the WebView's cache when a picture is
+    replaced); the mock's pictures are URLs already. */
+export function pictureUrl(path: string, version?: number): string {
+  if (!inTauri || /^(data:|https?:|blob:)/.test(path)) return path;
+  const url = convertFileSrc(path);
+  return version ? `${url}?v=${version}` : url;
+}
+
+/** Theme files: pick one to import, a place to export to, or a background picture. The
+    mock returns demo paths. */
+export async function pickThemeFile(): Promise<string | null> {
+  if (!inTauri) return 'C:/Users/You/Downloads/Sunset.klip-theme';
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const picked = await open({
+    directory: false,
+    multiple: false,
+    filters: [{ name: 'Klip theme', extensions: ['klip-theme', 'json'] }],
+  });
+  return typeof picked === 'string' ? picked : null;
+}
+
+export async function pickThemeExport(name: string): Promise<string | null> {
+  const file = `${name.replace(/[\\/:*?"<>|]/g, '').trim() || 'theme'}.klip-theme`;
+  if (!inTauri) return `C:/Users/You/Documents/${file}`;
+  const { save } = await import('@tauri-apps/plugin-dialog');
+  const picked = await save({ defaultPath: file, filters: [{ name: 'Klip theme', extensions: ['klip-theme'] }] });
+  return typeof picked === 'string' ? picked : null;
+}
+
+export async function pickThemePicture(): Promise<string | null> {
+  if (!inTauri) return 'C:/Users/You/Pictures/Klip demo backdrop.png';
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const picked = await open({
+    directory: false,
+    multiple: false,
+    filters: [{ name: 'Pictures (PNG, JPEG, WebP)', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+  });
+  return typeof picked === 'string' ? picked : null;
 }
 
 /** A file the engine named, as a URL the page can load (Tauri's asset protocol). */

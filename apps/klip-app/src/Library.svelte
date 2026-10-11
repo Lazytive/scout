@@ -389,7 +389,7 @@
     background: var(--input);
     border: 1px solid var(--border-strong);
     border-radius: 999px;
-    height: 28px;
+    height: var(--control-h);
     padding: 0 12px;
     width: min(320px, 40%);
     user-select: text;

@@ -4,9 +4,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
-  import { call, onEvent } from './lib/api';
+  import { call, onEvent, pictureUrl } from './lib/api';
+  import { applyLook, resolveLook, watchEnv, type Appearance, type CustomTheme } from './lib/appearance';
   import { formatDuration } from './lib/format';
-  import { applyTheme, resolve, type ThemeSetting } from './lib/themes';
 
   type Show =
     | {
@@ -27,9 +27,24 @@
   let thumb = $state<string | null>(null);
 
   const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-  const lightQuery = window.matchMedia('(prefers-color-scheme: light)');
-  let themeSetting: ThemeSetting = 'system';
-  const showTheme = () => applyTheme(resolve(themeSetting, lightQuery.matches));
+  // The overlay follows the theme (M10): colours, accent, corners, font and motion. Its
+  // window is sized by the app, so text size, density and the picture stay out.
+  let appearance: Partial<Appearance> | undefined;
+  let custom: CustomTheme[] = [];
+  const watcher = watchEnv(() => showTheme());
+  function showTheme() {
+    const look = resolveLook(appearance, custom, watcher.env(), pictureUrl);
+    applyLook({ ...look, background: null, textScale: 1, density: 'comfortable' }, undefined, false);
+  }
+  async function loadTheme() {
+    const [s, t] = await Promise.all([
+      call<{ settings: { appearance?: Partial<Appearance> } }>('settings.get').catch(() => null),
+      call<{ themes: CustomTheme[] }>('theme.list').catch(() => null),
+    ]);
+    if (s) appearance = s.settings.appearance;
+    if (t) custom = t.themes;
+    showTheme();
+  }
 
   function show(s: Show) {
     if (s.kind === 'thumb') {
@@ -53,18 +68,13 @@
 
   onMount(() => {
     const stops: (() => void)[] = [];
-    void call<{ settings: { appearance?: { theme?: ThemeSetting } } }>('settings.get')
-      .then((r) => {
-        themeSetting = r.settings.appearance?.theme ?? 'system';
-        showTheme();
-      })
-      .catch(() => showTheme());
-    lightQuery.addEventListener('change', showTheme);
+    void loadTheme();
     void onEvent((e) => {
       if (e.event === 'settings_changed') {
-        const s = e.settings as { appearance?: { theme?: ThemeSetting } };
-        themeSetting = s.appearance?.theme ?? 'system';
+        appearance = (e.settings as { appearance?: Partial<Appearance> }).appearance;
         showTheme();
+      } else if (e.event === 'themes_changed') {
+        void loadTheme();
       }
     }).then((u) => stops.push(u));
     if (inTauri) {
@@ -78,7 +88,7 @@
       show({ kind: 'clip', id: 1, game: 'ELDEN RING', duration_ms: 30_000, clip: null, thumb: null, seconds: 30 });
     }
     return () => {
-      lightQuery.removeEventListener('change', showTheme);
+      watcher.stop();
       stops.forEach((s) => s());
     };
   });
@@ -277,11 +287,9 @@
       transform: scaleX(0);
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .card,
-    .thumb img,
-    .timer {
-      animation: none;
-    }
+  :global(:root[data-motion='reduce']) .card,
+  :global(:root[data-motion='reduce']) .thumb img,
+  :global(:root[data-motion='reduce']) .timer {
+    animation: none !important;
   }
 </style>

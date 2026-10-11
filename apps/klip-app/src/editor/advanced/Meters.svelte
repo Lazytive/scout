@@ -108,14 +108,14 @@
     position: absolute;
     right: 0;
     transform: translateY(50%);
-    font-size: 9px;
+    font-size: calc(9px * var(--text-scale));
     color: var(--text-muted);
   }
   .labels {
     display: flex;
     gap: 3px;
     padding-top: 3px;
-    font-size: 9px;
+    font-size: calc(9px * var(--text-scale));
     color: var(--text-muted);
   }
   .labels span {

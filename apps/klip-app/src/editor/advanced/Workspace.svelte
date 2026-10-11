@@ -607,7 +607,8 @@
     display: grid;
     height: 100%;
     min-height: 0;
-    background: var(--gutter);
+    /* The window's gutter (and a theme's picture, M10) shows through. */
+    background: transparent;
   }
   .row3 {
     display: grid;
@@ -623,10 +624,10 @@
     flex: 1;
   }
   .gap {
-    background: var(--gutter);
+    background: transparent;
   }
   .splitter {
-    background: var(--gutter);
+    background: transparent;
     touch-action: none;
   }
   .splitter.v {
@@ -658,11 +659,11 @@
   }
   .tc {
     color: var(--accent-text);
-    font-size: 15px;
+    font-size: calc(15px * var(--text-scale));
   }
   .dur {
     color: var(--text);
-    font-size: 15px;
+    font-size: calc(15px * var(--text-scale));
   }
   .transport {
     display: grid;
@@ -686,14 +687,14 @@
     background: transparent;
     border: none;
     color: var(--text);
-    font-size: 12px;
+    font-size: calc(12px * var(--text-scale));
   }
   .icon:hover:not(:disabled) {
     color: var(--text-strong);
     background: var(--hover);
   }
   .icon.play {
-    font-size: 15px;
+    font-size: calc(15px * var(--text-scale));
     color: var(--text-strong);
   }
   .clipname {

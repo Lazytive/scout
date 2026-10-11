@@ -1,4 +1,5 @@
-<!-- The header's theme button (a sun, as in Photocraft) and its menu. -->
+<!-- The header's theme button (a sun, as in Photocraft) and its menu: the built-in and
+     custom themes, and the Appearance settings. -->
 <script lang="ts">
   import { app, setTheme } from './store.svelte';
   import { choices } from './themes';
@@ -7,10 +8,20 @@
   let root: HTMLElement | undefined = $state();
 
   const current = $derived(app.themeSetting);
+  const items = $derived([
+    ...choices.map((c) => ({ id: c.id as Parameters<typeof setTheme>[0], label: c.label })),
+    ...app.customThemes.map((t) => ({ id: `custom:${t.id}` as const, label: t.name })),
+  ]);
 
-  function pick(id: (typeof choices)[number]['id']) {
+  function pick(id: Parameters<typeof setTheme>[0]) {
     open = false;
     void setTheme(id);
+  }
+
+  function settings() {
+    open = false;
+    app.settingsPage = 'appearance';
+    app.page = 'settings';
   }
 
   function onWindowClick(e: MouseEvent) {
@@ -51,7 +62,8 @@
   </button>
   {#if open}
     <div class="menu" role="menu">
-      {#each choices as c (c.id)}
+      {#each items as c, i (c.id)}
+        {#if i === choices.length}<div class="sep" role="separator"></div>{/if}
         <button
           class="flat item"
           role="menuitemradio"
@@ -59,9 +71,14 @@
           onclick={() => pick(c.id)}
         >
           <span class="check" aria-hidden="true">{current === c.id ? '✓' : ''}</span>
-          {c.label}
+          <span class="label">{c.label}</span>
         </button>
       {/each}
+      <div class="sep" role="separator"></div>
+      <button class="flat item" role="menuitem" onclick={settings}>
+        <span class="check" aria-hidden="true"></span>
+        Appearance settings…
+      </button>
     </div>
   {/if}
 </div>
@@ -85,6 +102,7 @@
     right: 0;
     top: calc(100% + 4px);
     min-width: 170px;
+    max-width: 260px;
     background: var(--panel-raised);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -105,6 +123,16 @@
   }
   .check {
     width: 14px;
+    flex: none;
     color: var(--accent-text);
+  }
+  .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sep {
+    height: 1px;
+    margin: var(--space-1) 0;
+    background: var(--border);
   }
 </style>

@@ -208,7 +208,7 @@
     background: var(--input);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
-    height: 28px;
+    height: var(--control-h);
     padding: 0 8px;
     user-select: text;
   }

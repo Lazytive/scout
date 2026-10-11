@@ -38,7 +38,7 @@
     background: var(--input);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
-    height: 28px;
+    height: var(--control-h);
     padding: 0 28px 0 10px;
     min-width: 180px;
     max-width: 100%;
@@ -47,8 +47,8 @@
     background-image: linear-gradient(45deg, transparent 50%, var(--text) 50%),
       linear-gradient(135deg, var(--text) 50%, transparent 50%);
     background-position:
-      calc(100% - 15px) 12px,
-      calc(100% - 10px) 12px;
+      calc(100% - 15px) 50%,
+      calc(100% - 10px) 50%;
     background-size: 5px 5px;
     background-repeat: no-repeat;
   }

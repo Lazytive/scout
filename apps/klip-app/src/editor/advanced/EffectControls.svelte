@@ -333,7 +333,7 @@
     padding: 0 4px;
     background: var(--panel-raised);
     border: 1px solid var(--border-strong);
-    font-size: 10px;
+    font-size: calc(10px * var(--text-scale));
     line-height: 12px;
     white-space: nowrap;
     overflow: hidden;
@@ -343,7 +343,7 @@
   .tick {
     position: absolute;
     top: 1px;
-    font-size: 10px;
+    font-size: calc(10px * var(--text-scale));
     color: var(--text-muted);
     pointer-events: none;
   }
@@ -421,7 +421,7 @@
     min-width: 0;
     height: 20px;
     padding: 0 3px;
-    font-size: 10px;
+    font-size: calc(10px * var(--text-scale));
   }
   .key.on {
     color: var(--accent-text);

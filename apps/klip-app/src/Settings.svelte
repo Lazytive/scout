@@ -7,6 +7,7 @@
   import Panel from './lib/Panel.svelte';
   import type { Settings as SettingsData } from './lib/settings';
   import { app } from './lib/store.svelte';
+  import Appearance from './settings/Appearance.svelte';
   import Audio from './settings/Audio.svelte';
   import Games from './settings/Games.svelte';
   import General from './settings/General.svelte';
@@ -17,6 +18,7 @@
 
   const pages: { id: string; label: string; page: Component<{ s: SettingsData }> }[] = [
     { id: 'general', label: 'General', page: General },
+    { id: 'appearance', label: 'Appearance', page: Appearance },
     { id: 'recording', label: 'Recording', page: Recording },
     { id: 'audio', label: 'Audio', page: Audio },
     { id: 'hotkeys', label: 'Hotkeys', page: Hotkeys },
@@ -26,8 +28,7 @@
   ];
 
   let { initial = 'general' }: { initial?: string } = $props();
-  let picked = $state('');
-  const current = $derived(pages.find((p) => p.id === (picked || initial)) ?? pages[0]!);
+  const current = $derived(pages.find((p) => p.id === (app.settingsPage || initial)) ?? pages[0]!);
 </script>
 
 <div class="workspace">
@@ -40,7 +41,7 @@
               class="flat cat"
               class:active={current.id === p.id}
               aria-current={current.id === p.id ? 'page' : undefined}
-              onclick={() => (picked = p.id)}>{p.label}</button
+              onclick={() => (app.settingsPage = p.id)}>{p.label}</button
             >
           </li>
         {/each}

@@ -1,10 +1,8 @@
 <script lang="ts">
   import Row from '../lib/forms/Row.svelte';
-  import Segmented from '../lib/forms/Segmented.svelte';
   import Toggle from '../lib/forms/Toggle.svelte';
   import type { Settings } from '../lib/settings';
-  import { app, save, setTheme } from '../lib/store.svelte';
-  import { choices } from '../lib/themes';
+  import { save } from '../lib/store.svelte';
 
   let { s }: { s: Settings } = $props();
 </script>
@@ -30,14 +28,6 @@
   />
 </Row>
 
-<Row label="Appearance">
-  <Segmented
-    label="Theme"
-    value={app.themeSetting}
-    options={choices.map((c) => ({ value: c.id, label: c.label === 'Follow system' ? 'System' : c.label }))}
-    onchange={(v) => setTheme(v)}
-  />
-</Row>
 
 <Row
   label="Control from scripts"

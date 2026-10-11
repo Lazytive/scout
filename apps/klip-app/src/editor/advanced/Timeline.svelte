@@ -1100,7 +1100,7 @@
   }
   .tc {
     color: var(--accent-text);
-    font-size: 17px;
+    font-size: calc(17px * var(--text-scale));
     line-height: 1;
   }
   .tools {
@@ -1176,7 +1176,7 @@
     padding-left: 4px;
     border-left: 1px solid var(--border-strong);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: calc(10px * var(--text-scale));
     color: var(--text-muted);
     line-height: 14px;
     pointer-events: none;
@@ -1378,7 +1378,7 @@
   .badge {
     position: relative;
     flex: none;
-    font-size: 10px;
+    font-size: calc(10px * var(--text-scale));
     line-height: 14px;
     padding: 0 3px;
     border-radius: 3px;
@@ -1407,7 +1407,7 @@
     padding: 0 3px;
     background: rgb(0 0 0 / 67%);
     color: #d9d9d9;
-    font-size: 10px;
+    font-size: calc(10px * var(--text-scale));
     line-height: 13px;
     white-space: nowrap;
     overflow: hidden;
@@ -1441,7 +1441,7 @@
     background: var(--accent);
     color: var(--on-accent);
     border: 1px solid #fff;
-    font-size: 13px;
+    font-size: calc(13px * var(--text-scale));
     line-height: 1;
     opacity: 0;
     transition: opacity var(--motion);
@@ -1470,7 +1470,7 @@
   .zb-label {
     flex: none;
     padding: 0 8px;
-    font-size: 10px;
+    font-size: calc(10px * var(--text-scale));
   }
   .zb-track {
     position: relative;
@@ -1534,7 +1534,7 @@
   }
   kbd {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: calc(10px * var(--text-scale));
     color: var(--text-muted);
   }
   .mono {
