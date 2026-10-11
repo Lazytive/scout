@@ -24,7 +24,7 @@ Windows (Win32/DXGI via the `windows` crate):
   `xdg-open`; the freedesktop `FileManager1.ShowItems` through `gdbus`, else the folder
   with `xdg-open` (not yet run).
 - `process_usage(pid)`: CPU time and memory (Windows: GetProcessTimes +
-  GetProcessMemoryInfo; Linux: `/proc/<pid>/stat` + `statm`), for Klip's own processes
+  GetProcessMemoryInfo; Linux: `/proc/<pid>/stat` + `statm`), for Scout's own processes
   (idle cost, benchmarks). Monitors report `refresh_hz` (EnumDisplaySettingsW).
 - `list_processes`: pid, parent pid, executable name (Toolhelp snapshot).
   `process_path(pid)`: full executable path (`QueryFullProcessImageNameW` with
@@ -51,7 +51,7 @@ Windows (Win32/DXGI via the `windows` crate):
   is retried every 2 s. Packets that overlap generated silence are trimmed.
 - `GpuCapture` asks Windows for at most twice the recording's frame rate
   (`GraphicsCaptureSession::MinUpdateInterval`, Windows 11 24H2+; ignored before).
-- `GpuCapture` (`wgc.rs`, ADR 0010): Klip's own Windows.Graphics.Capture source for a
+- `GpuCapture` (`wgc.rs`, ADR 0010): Scout's own Windows.Graphics.Capture source for a
   window (client area) or monitor. D3D11 device on a chosen adapter, shared with
   GStreamer (`gst_d3d11.rs`: `GstD3D11Device` wrap, `GstContext`, D3D11 buffer pool,
   device lock); per frame one shader pass (crop, scale, letterbox; HDR monitors: FP16
@@ -88,7 +88,7 @@ Linux (`linux_impl.rs`, `screencast.rs`; ADR 0012):
   `Closed` signal (the user stopped sharing) or for the `ScreenCast` to be dropped (then
   it closes the session).
 - `AudioCapture` (`pipewire_audio.rs`, ADR 0008): PipeWire capture on its own thread and
-  main loop: output monitor, input device, or apps' playback streams linked by Klip
+  main loop: output monitor, input device, or apps' playback streams linked by Scout
   (include a process tree / everything except it; process ids from the client's
   `pipewire.sec.pid`, set by the daemon). Stamped with the graph cycle time minus the
   stream delay (CLOCK_MONOTONIC); silence while nothing plays; reconnects every 2 s.
@@ -101,7 +101,8 @@ Linux (`linux_impl.rs`, `screencast.rs`; ADR 0012):
   portals also key screen-cast restore tokens by it) and first writes a hidden desktop
   entry (`NoDisplay=true`, `Exec` = this executable) to `$XDG_DATA_HOME/applications`,
   because the portal only accepts ids with a desktop entry whose program exists.
-  `APP_ID = dev.klip.Klip` is a working id that changes with the final name.
+  `APP_ID = io.github.lazytive.Scout` (ADR 0020; the hidden entry of the old
+  `dev.klip.Klip` id is removed).
 - `process_path`: `/proc/<pid>/exe`, or the command line's program for Wine/Proton
   loaders (untested until the next Linux session).
 - Monitors and windows return `Unsupported` (Wayland has no window list).

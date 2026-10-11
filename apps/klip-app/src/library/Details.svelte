@@ -134,7 +134,7 @@
         <dd class="mono">{v}</dd>
       {/each}
     </dl>
-    {#if one.error && !one.info}<p class="note">Klip can't read this file: {one.error}</p>{/if}
+    {#if one.error && !one.info}<p class="note">Scout can't read this file: {one.error}</p>{/if}
     <p class="path" title={one.path}>{one.path}</p>
     <div class="actions end">
       <button class="danger" onclick={() => askDelete([one.key], false)}>Delete…</button>

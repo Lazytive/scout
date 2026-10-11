@@ -129,7 +129,7 @@ pub mod commands {
     pub const THEME_SAVE: &str = "theme.save";
     /// Delete a custom theme (`{id}`); the theme in use falls back to Follow system.
     pub const THEME_DELETE: &str = "theme.delete";
-    /// Import a `*.klip-theme` file (`{path}`) → `{id, theme, issues}`.
+    /// Import a `*.scout-theme` file (`{path}`) → `{id, theme, issues}`.
     pub const THEME_IMPORT: &str = "theme.import";
     /// Export a custom theme to one file (`{id, path}`).
     pub const THEME_EXPORT: &str = "theme.export";
@@ -215,12 +215,12 @@ pub struct Discovery {
     pub pid: u32,
 }
 
-/// Default discovery file: `%LOCALAPPDATA%\Klip\control.json` on Windows,
+/// Default discovery file: `%LOCALAPPDATA%\Scout\control.json` on Windows,
 /// `$XDG_RUNTIME_DIR/klip/control.json` on Linux (falling back to the local data dir).
 pub fn default_discovery_path() -> Option<PathBuf> {
     #[cfg(windows)]
     {
-        dirs::data_local_dir().map(|d| d.join("Klip").join("control.json"))
+        dirs::data_local_dir().map(|d| d.join("Scout").join("control.json"))
     }
     #[cfg(not(windows))]
     {

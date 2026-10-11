@@ -39,7 +39,7 @@ pub struct ClipInfo {
     /// Bookmark times, ms from the start (every chapter of the file).
     pub bookmarks_ms: Vec<u64>,
     /// Chapters with a title of their own (an auto-clip event, a chapter another tool
-    /// wrote), not Klip's `Bookmark <n>`: the editor shows them as event markers.
+    /// wrote), not Scout's `Bookmark <n>`: the editor shows them as event markers.
     pub events: Vec<ClipEvent>,
 }
 
@@ -54,7 +54,7 @@ pub struct ClipEvent {
 /// Longest event title kept.
 const MAX_EVENT_CHARS: usize = 80;
 
-/// Klip's own bookmark titles (`Bookmark`, `Bookmark 3`) and untitled chapters.
+/// Scout's own bookmark titles (`Bookmark`, `Bookmark 3`) and untitled chapters.
 fn is_bookmark_title(title: &str) -> bool {
     let t = title.trim();
     t.is_empty()

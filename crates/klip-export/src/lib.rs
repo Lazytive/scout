@@ -1,4 +1,4 @@
-//! Klip's export pipeline (ADR 0017, ADR 0018): a `klip_edit::Composition` (a project in
+//! Scout's export pipeline (ADR 0017, ADR 0018): a `klip_edit::Composition` (a project in
 //! either mode) plus a preset → an MP4 next to the clip. [`render`] plays every layer
 //! from its own decoding pipeline ([`source`]), composes each output frame in this
 //! process ([`canvas`]), mixes the sound with volume keyframes and ducking ([`mixer`]),

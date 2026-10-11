@@ -1,4 +1,4 @@
-// Klip test game: barcode band (see klip-testkit::barcode), flash, moving bar, checker.
+// Scout test game: barcode band (see klip-testkit::barcode), flash, moving bar, checker.
 
 struct U {
     // x: 32-bit code, y: flash (0/1), z: frame counter, w: cell count

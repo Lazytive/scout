@@ -1,6 +1,6 @@
 //! What the library shows about a clip, read from the `moov` box alone (no sample data):
 //! duration, creation time, the video's codec, size and frame rate, the number of audio
-//! tracks and the chapter (bookmark) times. Works on any MP4: Klip's faststart clips,
+//! tracks and the chapter (bookmark) times. Works on any MP4: Scout's faststart clips,
 //! files with the `moov` at the end, finalised and unfinalised recordings, and files
 //! from other programs.
 //!
@@ -47,13 +47,13 @@ pub struct Mp4Info {
     /// The first video track.
     pub video: Option<VideoSummary>,
     pub audio_tracks: u32,
-    /// The audio tracks' handler names in track order (Klip writes `Mix`, `Game`,
+    /// The audio tracks' handler names in track order (Scout writes `Mix`, `Game`,
     /// `Microphone`, ...; empty for an unnamed track).
     pub audio_names: Vec<String>,
-    /// Chapter starts (Klip's bookmarks), ms from the start.
+    /// Chapter starts (Scout's bookmarks), ms from the start.
     pub chapters_ms: Vec<u64>,
     /// The chapters' titles, in the order of `chapters_ms` (control characters
-    /// dropped; Klip's own bookmarks are `Bookmark <n>`).
+    /// dropped; Scout's own bookmarks are `Bookmark <n>`).
     pub chapter_titles: Vec<String>,
     /// The `moov` describes fragments (a recording that was never finalised).
     pub fragmented: bool,
@@ -296,7 +296,7 @@ fn codec_name(kind: &[u8; 4]) -> String {
     }
 }
 
-/// Chapter starts from a Nero `chpl` box (what Klip writes for bookmarks); empty when
+/// Chapter starts from a Nero `chpl` box (what Scout writes for bookmarks); empty when
 /// there is none or it doesn't parse.
 fn parse_udta(udta: &[u8]) -> Vec<(u64, String)> {
     let Ok(kids) = children(udta) else {

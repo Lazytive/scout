@@ -1,6 +1,6 @@
 [package]
 name = "klip-probe"
-description = "Encoder discovery for Klip: allowlist/denylist policy, ranking per GPU vendor, dummy-encode probe"
+description = "Encoder discovery for Scout: allowlist/denylist policy, ranking per GPU vendor, dummy-encode probe"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

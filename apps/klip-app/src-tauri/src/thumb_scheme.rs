@@ -95,8 +95,8 @@ mod tests {
     #[test]
     fn paths_and_escapes() {
         assert_eq!(
-            parse_path("/strip/Apex%2FKlip%201.mp4"),
-            Some(("strip", "Apex/Klip 1.mp4".into()))
+            parse_path("/strip/Apex%2FScout%201.mp4"),
+            Some(("strip", "Apex/Scout 1.mp4".into()))
         );
         assert_eq!(
             parse_path("/poster/%E6%97%A5.mp4"),

@@ -16,7 +16,7 @@ const DEMO_PICTURE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
 )}`;
 
 const PICTURES: Record<string, string> = {
-  'C:/Users/You/Pictures/Klip demo backdrop.png': DEMO_PICTURE,
+  'C:/Users/You/Pictures/Scout demo backdrop.png': DEMO_PICTURE,
 };
 
 const SUNSET: Omit<CustomTheme, 'id'> = {
@@ -58,7 +58,7 @@ export function mockThemes(
     const args = (raw ?? {}) as Record<string, unknown>;
     switch (cmd) {
       case 'theme.list':
-        return { dir: 'C:/Users/You/AppData/Roaming/Klip/themes', themes: structuredClone([...themes.values()]), issues: [] };
+        return { dir: 'C:/Users/You/AppData/Roaming/Scout/themes', themes: structuredClone([...themes.values()]), issues: [] };
       case 'theme.save': {
         const t = args.theme as Partial<CustomTheme> | undefined;
         if (!t || typeof t !== 'object') throw new CommandError('bad_args', 'theme: a theme must be a JSON object');

@@ -5,7 +5,7 @@
 //! - `Loopback`: the monitor of an output device (`stream.capture.sink`; the default one
 //!   follows the session manager's default).
 //! - `Input`: a capture device such as a microphone.
-//! - `Process`: apps' playback streams linked to the capture stream by Klip itself: the
+//! - `Process`: apps' playback streams linked to the capture stream by Scout itself: the
 //!   streams of one process tree (`include`), or every playback stream except that tree.
 //!   PipeWire mixes the links at the input ports. Links follow streams as they come and go.
 //!
@@ -156,7 +156,7 @@ struct Graph {
     streams: HashMap<u32, Option<u32>>,
     /// Ports: id → (node id, is output, channel name).
     ports: HashMap<u32, (u32, bool, String)>,
-    /// Links Klip created, by (output port, input port). Dropping one removes the link.
+    /// Links Scout created, by (output port, input port). Dropping one removes the link.
     links: HashMap<(u32, u32), pw::link::Link>,
 }
 
@@ -393,7 +393,7 @@ fn session(
         *pw::keys::MEDIA_CATEGORY => "Capture",
         *pw::keys::MEDIA_ROLE => "Production",
         *pw::keys::NODE_NAME => "klip-audio-capture",
-        *pw::keys::APP_NAME => "Klip",
+        *pw::keys::APP_NAME => "Scout",
     };
     let linker = match endpoint {
         CaptureEndpoint::Loopback { device } => {
@@ -410,7 +410,7 @@ fn session(
             None
         }
         CaptureEndpoint::Process { pid, include } => {
-            // Klip links the app streams itself; the session manager must not.
+            // Scout links the app streams itself; the session manager must not.
             props.insert("node.autoconnect", "false");
             Some(Rc::new(Linker {
                 core: core.clone(),
@@ -422,7 +422,7 @@ fn session(
             }))
         }
     };
-    let stream = pw::stream::StreamBox::new(&core, "Klip audio capture", props).map_err(pw_err)?;
+    let stream = pw::stream::StreamBox::new(&core, "Scout audio capture", props).map_err(pw_err)?;
     let _stream_listener = stream
         .add_local_listener_with_user_data(())
         .state_changed({

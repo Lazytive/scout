@@ -16,7 +16,7 @@ Read `AGENTS.md` first. Its hard rules override everything, including this file.
 |---|---|
 | `cargo xtask ci` | All gates: fmt, clippy `-D warnings`, tests, cargo deny, layers, audit |
 | `cargo xtask e2e` | Hardware acceptance tests (real GPU encode, real window capture, test game) |
-| `cargo xtask bench` | What Klip costs a game (fps off/on, CPU, RAM, save time); needs an idle GPU: ask the human |
+| `cargo xtask bench` | What Scout costs a game (fps off/on, CPU, RAM, save time); needs an idle GPU: ask the human |
 | `cargo xtask layers` | Dependency-direction and `unsafe` placement check |
 | `cargo xtask audit` | Licence/asset audit (GStreamer plugin denylist, ATTRIBUTION.md) |
 | `cargo run -p klip-testgame -- --help` | Test game with barcoded frame counter |

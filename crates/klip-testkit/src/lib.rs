@@ -1,4 +1,4 @@
-//! Test support for Klip (never shipped in the app):
+//! Test support for Scout (never shipped in the app):
 //!
 //! - [`barcode`]: the frame-counter code drawn by the test game, a CPU renderer for
 //!   synthetic sources, and a reader for decoded frames.

@@ -1,4 +1,4 @@
-// Effect Controls (M9.7.2): FilmCraft's / Premiere's stopwatch model over Klip's key
+// Effect Controls (M9.7.2): FilmCraft's / Premiere's stopwatch model over Scout's key
 // lanes. A group is "animated" once it has a key past the clip's start (or the user
 // turned its stopwatch on this session: `sticky`); then a changed value keys the
 // playhead, otherwise it changes the clip's constant. Zoom and position share their keys

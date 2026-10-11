@@ -1,4 +1,4 @@
-//! Klip's editor model (ADR 0017), pure: the project file (non-destructive edits of one
+//! Scout's editor model (ADR 0017), pure: the project file (non-destructive edits of one
 //! clip), the timeline math shared with the front end (cuts and speed: output time ↔
 //! source time), the 16:9 / 9:16 format crop, text layer presets and templates.
 //!

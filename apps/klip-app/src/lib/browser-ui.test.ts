@@ -18,7 +18,7 @@ describe('browser UI', () => {
     expect(browserKey(key('ArrowLeft', { alt: true }))).toBe(true);
   });
 
-  it('leaves Klip’s own keys alone', () => {
+  it('leaves Scout’s own keys alone', () => {
     for (const k of ['z', 'y', 'k', 'a']) expect(browserKey(key(k, { ctrl: true })), `Ctrl+${k}`).toBe(false);
     expect(browserKey(key('Z', { ctrl: true, shift: true }))).toBe(false);
     for (const k of ['p', 's', 'f', ' ', 'Delete', 'ArrowLeft', 'F2']) expect(browserKey(key(k)), k).toBe(false);

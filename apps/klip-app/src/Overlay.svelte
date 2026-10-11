@@ -114,10 +114,10 @@
 {:else if view.kind === 'dot'}
   <div class="dot" role="status" aria-label="Recording"></div>
 {:else if view.kind === 'menu'}
-  <div class="menu" role="dialog" aria-label="Klip quick menu">
+  <div class="menu" role="dialog" aria-label="Scout quick menu">
     <header>
       <span class="logo" aria-hidden="true"></span>
-      <span>{view.game ?? 'Klip'}</span>
+      <span>{view.game ?? 'Scout'}</span>
       {#if view.recording}<span class="rec">● REC</span>{/if}
     </header>
     <div class="actions">

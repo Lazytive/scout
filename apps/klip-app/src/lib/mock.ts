@@ -48,7 +48,7 @@ export function mockBackend() {
     status.game = game;
     status.recording = true;
     status.session = false;
-    status.clip_dir = 'C:\\Users\\you\\Videos\\Klip\\ELDEN RING';
+    status.clip_dir = 'C:\\Users\\you\\Videos\\Scout\\ELDEN RING';
     status.recorder = { encoder: 'nvd3d11h264enc', width: 1920, height: 1080, fps: 60, buffer_ms: 120_000 };
     emit({ event: 'game_started', game });
     emit({
@@ -208,7 +208,7 @@ export function mockBackend() {
           };
         case 'storage.status':
           return {
-            folder: 'C:\\Users\\you\\Videos\\Klip',
+            folder: 'C:\\Users\\you\\Videos\\Scout',
             cap_bytes: 50 * 1024 ** 3,
             over_cap: 'trash',
             usage: { clips: 214, bytes: 31.4 * 1024 ** 3, starred: 12, starred_bytes: 2.1 * 1024 ** 3 },
@@ -218,7 +218,7 @@ export function mockBackend() {
         case 'clip.save': {
           need();
           const last = (args as { last_ms?: number } | null)?.last_ms ?? 30_000;
-          const clip = { path: 'C:\\clips\\Klip_2026-10-09.mp4', duration_ms: last, bytes: last * 2600, frames: last * 0.06, save_ms: 9, bookmarks: 0 };
+          const clip = { path: 'C:\\clips\\Scout_2026-10-09.mp4', duration_ms: last, bytes: last * 2600, frames: last * 0.06, save_ms: 9, bookmarks: 0 };
           emit({ event: 'clip_saved', game: game.name, window: game.window, clip });
           return clip;
         }

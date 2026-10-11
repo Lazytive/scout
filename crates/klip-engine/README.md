@@ -1,6 +1,6 @@
 # klip-engine
 
-Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app and
+Scout's engine (ADR 0014): everything the app does that isn't UI. The desktop app and
 `klip-cli daemon` are front ends to it.
 
 - `games`: game detection from a `Snapshot` (processes, visible windows, executable paths
@@ -22,6 +22,13 @@ Klip's engine (ADR 0014): everything the app does that isn't UI. The desktop app
   Measured (Windows dev machine, ~300 processes): one poll (snapshot + detect) median
   3.6 ms, max 4.7 ms; at one poll per 2 s that is ≈ 0.2 % of one core.
 
+- `migrate` (ADR 0020): Klip → Scout at the first start of Scout: settings and custom
+  themes copied from `<config>/Klip`; the default `Videos/Klip` moved to `Videos/Scout` by
+  one directory rename, or kept (written into the settings) when it can't move; a chosen
+  folder is never touched. `NAME` / `LEGACY_NAME` name the folders. Run by the app and
+  `klip-cli daemon`, never with a custom settings file.
+- Custom themes (`engine/themes.rs`, ADR 0019): `theme.list|save|delete|import|export`
+  on `<settings dir>/themes/`.
 - `Engine` (`engine.rs`): `Engine::start(EngineOptions)` loads the settings (repaired
   files are rewritten, the original kept as `.bad`), warms up the encoders, binds the
   hotkeys, opens the control channel (if on) and starts the `klip-watch` thread. Every

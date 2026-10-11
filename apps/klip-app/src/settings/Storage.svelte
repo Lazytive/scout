@@ -16,7 +16,7 @@
   <FolderField
     label="clip folder"
     value={s.clips.folder}
-    fallback={st?.folder ?? 'Videos\\Klip'}
+    fallback={st?.folder ?? 'Videos\\Scout'}
     onchange={(v) => save(['clips', 'folder'], v)}
   />
   <Toggle

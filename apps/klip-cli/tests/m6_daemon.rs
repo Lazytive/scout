@@ -1,4 +1,4 @@
-//! M6.4 acceptance: Klip's engine without a window (`klip-cli daemon`). The test game is
+//! M6.4 acceptance: Scout's engine without a window (`klip-cli daemon`). The test game is
 //! on the user's game list; the engine must notice it, buffer it, save a continuous clip
 //! into its game folder when the clip hotkey is pressed, stop when the game exits, and
 //! cost next to nothing while no game runs.
@@ -105,7 +105,7 @@ fn parent_of(pid: u32) -> Option<u32> {
         .map(|p| p.parent_pid)
 }
 
-/// Klip processes (recorder, media worker) started by `pid` that still run.
+/// Scout processes (recorder, media worker) started by `pid` that still run.
 fn klip_children(pid: u32) -> Vec<u32> {
     klip_platform::list_processes()
         .unwrap()
@@ -151,7 +151,7 @@ fn write_settings(path: &Path, clips: &Path) {
             "buffer": "games",
             // Only the test game: never a game the human is playing.
             "detect_stores": false,
-            "user_games": [{"exe": "klip-testgame.exe", "name": "Klip Test Game"}],
+            "user_games": [{"exe": "klip-testgame.exe", "name": "Scout Test Game"}],
         },
     });
     std::fs::write(path, serde_json::to_vec_pretty(&settings).unwrap()).unwrap();
@@ -218,7 +218,7 @@ fn daemon_follows_a_game_and_clips_on_the_hotkey() {
     let started = Instant::now();
     let g = events.wait_for("game_started", Duration::from_secs(10));
     println!("detected after {:?}", started.elapsed());
-    assert_eq!(g["game"]["name"], "Klip Test Game");
+    assert_eq!(g["game"]["name"], "Scout Test Game");
     assert_eq!(g["game"]["source"]["kind"], "user");
     assert_eq!(g["game"]["window"], game_ready["hwnd"]);
     let rec = events.wait_for("recorder_started", Duration::from_secs(60));
@@ -230,7 +230,7 @@ fn daemon_follows_a_game_and_clips_on_the_hotkey() {
         rec["clip_dir"]
             .as_str()
             .unwrap()
-            .ends_with("Klip Test Game"),
+            .ends_with("Scout Test Game"),
         "{rec}"
     );
 
@@ -238,12 +238,12 @@ fn daemon_follows_a_game_and_clips_on_the_hotkey() {
     std::thread::sleep(Duration::from_secs(13));
     klip_platform::press_keys("F24").unwrap();
     let saved = events.wait_for("clip_saved", Duration::from_secs(15));
-    assert_eq!(saved["game"], "Klip Test Game");
+    assert_eq!(saved["game"], "Scout Test Game");
     assert_eq!(saved["window"], game_ready["hwnd"]);
     let path = Path::new(saved["clip"]["path"].as_str().unwrap()).to_path_buf();
     assert_eq!(
         path.parent().unwrap(),
-        clips.join("Klip Test Game"),
+        clips.join("Scout Test Game"),
         "clip in the game's folder"
     );
     let ms = saved["clip"]["duration_ms"].as_i64().unwrap();
@@ -320,7 +320,7 @@ fn daemon_follows_a_game_and_clips_on_the_hotkey() {
     println!("stopped {:?} after the game exited", stopped_at.elapsed());
     assert_eq!(parent_of(second_recorder), None, "recorder process gone");
     // The library makes the clips' scrub strips now that the game is over, in a media
-    // worker that stops after 20 s idle (ADR 0015): then no Klip process is left.
+    // worker that stops after 20 s idle (ADR 0015): then no Scout process is left.
     let deadline = Instant::now() + Duration::from_secs(60);
     while !klip_children(pid).is_empty() {
         assert!(

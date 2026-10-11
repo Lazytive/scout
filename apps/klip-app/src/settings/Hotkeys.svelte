@@ -34,7 +34,7 @@
 
 <p class="intro muted">
   Hotkeys work while a game has focus. A combination you set here is taken from other apps while
-  Klip runs, so pick one your games don't use.
+  Scout runs, so pick one your games don't use.
 </p>
 
 <table>

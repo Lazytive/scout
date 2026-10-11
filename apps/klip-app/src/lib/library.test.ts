@@ -38,7 +38,9 @@ function clip(key: string, date: Date): LibClip {
 }
 
 describe('names', () => {
-  it('turns Klip file names into short titles and keeps others', () => {
+  it('turns Scout file names (and Klip ones from before the rename) into short titles and keeps others', () => {
+    expect(displayName('Scout_2026-10-11_18-22-01')).toBe('Clip 18:22:01');
+    expect(displayName('Scout_Recording_2026-10-11_07-05-59_3')).toBe('Recording 07:05:59');
     expect(displayName('Klip_2026-10-09_18-22-01')).toBe('Clip 18:22:01');
     expect(displayName('Klip_2026-10-09_18-22-01_2')).toBe('Clip 18:22:01');
     expect(displayName('Klip_Recording_2026-10-09_07-05-59')).toBe('Recording 07:05:59');

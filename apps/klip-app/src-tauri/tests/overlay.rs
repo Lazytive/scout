@@ -50,7 +50,7 @@ fn connect(discovery: &Path) -> klip_control::Client {
 }
 
 fn overlay_window() -> Option<u64> {
-    klip_platform::find_windows("Klip overlay")
+    klip_platform::find_windows("Scout overlay")
         .ok()?
         .into_iter()
         .next()

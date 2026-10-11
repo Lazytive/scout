@@ -11,7 +11,7 @@
   `overlay.preview`).
 - `Handler`: implemented by whoever executes commands (the recorder now, the app later).
 - `Server`: listens on `127.0.0.1:<ephemeral>`, writes a discovery file
-  (`%LOCALAPPDATA%\Klip\control.json` / `$XDG_RUNTIME_DIR/klip/control.json`) with the
+  (`%LOCALAPPDATA%\Scout\control.json` / `$XDG_RUNTIME_DIR/klip/control.json`) with the
   port, a 256-bit random token and the pid. First line of each connection must be
   `{"auth":"<token>"}` (constant-time compare); then JSON-lines requests/responses.
   Limits: 64 KiB lines, 8 connections, 8 malformed requests per connection, 60 s idle.

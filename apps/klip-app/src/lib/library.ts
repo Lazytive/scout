@@ -104,9 +104,10 @@ export function filtered(q: Query): boolean {
   return q.search.trim() !== '' || q.game !== null || q.starred || q.tag !== null || q.range !== 'all';
 }
 
-const DEFAULT_NAME = /^Klip(_Recording)?_(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})(?:_\d+)?$/;
+// Klip_… are the names from before the rename to Scout (ADR 0020).
+const DEFAULT_NAME = /^(?:Scout|Klip)(_Recording)?_(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})(?:_\d+)?$/;
 
-/** What a card calls a clip: Klip's own file names become `Clip 18:22:01` /
+/** What a card calls a clip: Scout's own file names become `Clip 18:22:01` /
     `Recording 18:22:01` (clips are often saved seconds apart); names people gave stay as
     they are. */
 export function displayName(name: string): string {

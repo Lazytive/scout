@@ -19,14 +19,14 @@ A wgpu (Direct3D 12 on Windows, Vulkan on Linux) window used to verify clips:
 klip-testgame [--width 1280] [--height 720] [--fps 120]
               [--mode windowed|borderless|exclusive] [--duration 60s]
               [--frames-log frames.csv] [--beep] [--beep-log beeps.csv] [--tap-log tap.csv]
-              [--background] [--title "Klip Test Game"]
+              [--background] [--title "Scout Test Game"]
 ```
 
 `--background` opens the window without taking focus (automated tests). `--monitor NAME`
 (or `secondary`: a monitor not at the desktop origin) makes it borderless fullscreen on
 that monitor; on Wayland, where apps can't place windows, that is how tests keep it off
 the main screen. The ready line lists `monitors` (name, position, size, scale) and
-`monitor_name`. On Linux the `--tap-log` reference comes from Klip's PipeWire capture of
+`monitor_name`. On Linux the `--tap-log` reference comes from Scout's PipeWire capture of
 the default sink's monitor (ALSA through cpal can't capture an output, and cpal's ALSA
 clock starts at the stream), and the ready line's `anchor` is CLOCK_MONOTONIC.
 

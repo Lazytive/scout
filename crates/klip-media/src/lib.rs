@@ -1,4 +1,4 @@
-//! Shared media types for Klip: codecs, track descriptions and encoded packets.
+//! Shared media types for Scout: codecs, track descriptions and encoded packets.
 //!
 //! Pure data, no I/O. Timestamps are nanoseconds in a signed 64-bit integer so that
 //! differences and pre-roll can be represented without wrapping.
@@ -21,14 +21,14 @@ pub const NANOS_PER_SEC: Nanos = 1_000_000_000;
 /// Nanoseconds per millisecond.
 pub const NANOS_PER_MILLI: Nanos = 1_000_000;
 
-/// Largest single encoded packet Klip accepts (64 MiB). Anything bigger is treated as
+/// Largest single encoded packet Scout accepts (64 MiB). Anything bigger is treated as
 /// corrupt input rather than allocated.
 pub const MAX_PACKET_BYTES: usize = 64 * 1024 * 1024;
 
-/// Largest codec configuration blob (avcC, hvcC, …) Klip accepts.
+/// Largest codec configuration blob (avcC, hvcC, …) Scout accepts.
 pub const MAX_CODEC_DATA_BYTES: usize = 64 * 1024;
 
-/// Compressed formats Klip stores and muxes.
+/// Compressed formats Scout stores and muxes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Codec {
     H264,

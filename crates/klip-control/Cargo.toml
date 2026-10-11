@@ -1,6 +1,6 @@
 [package]
 name = "klip-control"
-description = "Klip command protocol and the loopback JSON-lines control channel"
+description = "Scout command protocol and the loopback JSON-lines control channel"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

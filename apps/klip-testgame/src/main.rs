@@ -1,4 +1,4 @@
-//! Klip test game: a wgpu window that draws a barcoded frame counter (klip-testkit
+//! Scout test game: a wgpu window that draws a barcoded frame counter (klip-testkit
 //! layout), a moving bar and scrolling checker for motion, and a white flash once per
 //! second. Prints one JSON line `{"event":"ready",...}` with its pid and window handle
 //! after the first frame, so tests can point the recorder at it. With `--beep` it also
@@ -36,7 +36,7 @@ enum Mode {
     Exclusive,
 }
 
-/// Test game for Klip clip checks.
+/// Test game for Scout clip checks.
 #[derive(Parser, Debug)]
 #[command(version, about)]
 struct Args {
@@ -58,7 +58,7 @@ struct Args {
     #[arg(long)]
     frames_log: Option<PathBuf>,
     /// Window title.
-    #[arg(long, default_value = "Klip Test Game")]
+    #[arg(long, default_value = "Scout Test Game")]
     title: String,
     /// Play a short tone at every flash (once per second of game time).
     #[arg(long)]
@@ -99,7 +99,7 @@ struct Args {
     /// window stays but shows no new frames, like a game hanging or a capture stall.
     #[arg(long, value_parser = parse_span)]
     freeze: Option<(Duration, Duration)>,
-    /// Render as fast as the GPU allows (benchmarks: whatever Klip takes shows up as lost
+    /// Render as fast as the GPU allows (benchmarks: whatever Scout takes shows up as lost
     /// frames); `--fps` then only sets the animation rate.
     #[arg(long)]
     uncapped: bool,

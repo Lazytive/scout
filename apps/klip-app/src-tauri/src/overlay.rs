@@ -134,7 +134,7 @@ impl Overlay {
     /// Create the (hidden) overlay window.
     pub fn create(app: &AppHandle, prefs: Prefs) -> tauri::Result<Arc<Overlay>> {
         let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("overlay.html".into()))
-            .title("Klip overlay")
+            .title("Scout overlay")
             .transparent(true)
             .decorations(false)
             .always_on_top(true)

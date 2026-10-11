@@ -1,4 +1,4 @@
-//! Klip's own Windows.Graphics.Capture source.
+//! Scout's own Windows.Graphics.Capture source.
 //!
 //! Why not `d3d11screencapturesrc`: it stamps frames with its own clock slots, delivers
 //! only 8-bit BGRA (HDR games come out clipped), and needs 8x polling to keep timing

@@ -1,6 +1,6 @@
 [package]
 name = "klip-platform"
-description = "OS integration for Klip: GPU adapters, windows, monitors. The only crate allowed `unsafe`."
+description = "OS integration for Scout: GPU adapters, windows, monitors. The only crate allowed `unsafe`."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

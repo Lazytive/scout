@@ -1,5 +1,5 @@
 //! The tray icon: its picture (drawn here, so there is no image asset to license) shows
-//! whether Klip waits for a game, buffers or records; its menu saves a clip, starts or
+//! whether Scout waits for a game, buffers or records; its menu saves a clip, starts or
 //! stops a recording, opens the window or quits.
 
 use std::sync::{Arc, Mutex, PoisonError};
@@ -42,9 +42,9 @@ impl TrayState {
     pub fn tooltip(&self) -> String {
         let who = self.game.as_deref().unwrap_or("the desktop");
         match self.look() {
-            Look::Recording => format!("Klip: recording {who}"),
-            Look::Buffering => format!("Klip: buffering {who}"),
-            Look::Idle => "Klip: waiting for a game".into(),
+            Look::Recording => format!("Scout: recording {who}"),
+            Look::Buffering => format!("Scout: buffering {who}"),
+            Look::Idle => "Scout: waiting for a game".into(),
         }
     }
 
@@ -162,8 +162,8 @@ pub fn create<R: Runtime>(
     let save = MenuItem::with_id(app, "save", "Save clip", true, None::<&str>)?;
     let record = MenuItem::with_id(app, "record", "Start or stop recording", true, None::<&str>)?;
     let bookmark = MenuItem::with_id(app, "bookmark", "Bookmark", true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "Open Klip", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Klip", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open Scout", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Scout", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&save, &record, &bookmark, &sep, &open, &quit])?;
     let tooltip = state
@@ -247,7 +247,7 @@ mod tests {
             foreground: true,
         };
         let mut s = TrayState::default();
-        assert_eq!(s.tooltip(), "Klip: waiting for a game");
+        assert_eq!(s.tooltip(), "Scout: waiting for a game");
         assert!(s.apply(&Event::GameStarted { game: game.clone() }));
         assert!(s.apply(&Event::RecorderStarted {
             game: Some("Game".into()),
@@ -260,7 +260,7 @@ mod tests {
             audio: Value::Null,
         }));
         assert_eq!(s.look(), Look::Buffering);
-        assert_eq!(s.tooltip(), "Klip: buffering Game");
+        assert_eq!(s.tooltip(), "Scout: buffering Game");
         assert!(s.apply(&Event::RecordingStarted {
             path: String::new()
         }));

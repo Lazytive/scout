@@ -409,7 +409,7 @@ pub fn process_path(pid: u32) -> Result<std::path::PathBuf, PlatformError> {
     }
 }
 
-/// CPU time and memory of a process (for Klip's own processes: idle cost, benchmarks).
+/// CPU time and memory of a process (for Scout's own processes: idle cost, benchmarks).
 pub fn process_usage(pid: u32) -> Result<ProcessUsage, PlatformError> {
     #[cfg(windows)]
     {

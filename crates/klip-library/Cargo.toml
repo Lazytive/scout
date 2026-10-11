@@ -1,6 +1,6 @@
 [package]
 name = "klip-library"
-description = "Klip clip folder: metadata (stars, tags), scan, rename, info and thumbnail caches, search, storage-cap policy"
+description = "Scout clip folder: metadata (stars, tags), scan, rename, info and thumbnail caches, search, storage-cap policy"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

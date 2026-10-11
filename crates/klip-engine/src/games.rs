@@ -429,7 +429,7 @@ pub struct Candidate {
     pub detected: bool,
 }
 
-/// Programs with a visible window of at least 320x240 (not Klip, not store clients,
+/// Programs with a visible window of at least 320x240 (not Scout, not store clients,
 /// browsers or helpers), one per executable, detected games first. For the settings
 /// page's "add a game" list; window titles are never included.
 pub fn candidates(snap: &Snapshot, settings: &GameSettings) -> Vec<Candidate> {

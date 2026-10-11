@@ -145,7 +145,7 @@ pub struct Project {
     /// Advanced mode's section (ADR 0018); absent on disk while empty.
     #[serde(skip_serializing_if = "Advanced::is_empty")]
     pub advanced: Advanced,
-    /// Keys this build doesn't know (a newer Klip): kept as they are so switching
+    /// Keys this build doesn't know (a newer Scout): kept as they are so switching
     /// modes never loses work; shown as the "advanced edits" badge.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
@@ -260,7 +260,7 @@ impl Project {
                 "version",
                 if self.version > SCHEMA_VERSION {
                     format!(
-                        "written by a newer Klip (schema {}); read as schema {SCHEMA_VERSION}",
+                        "written by a newer Scout (schema {}); read as schema {SCHEMA_VERSION}",
                         self.version
                     )
                 } else {

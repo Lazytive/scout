@@ -14,7 +14,7 @@ use gstreamer::prelude::*;
 
 use crate::ExportError;
 
-/// Most audio tracks split (Klip writes 1–4).
+/// Most audio tracks split (Scout writes 1–4).
 pub const MAX_AUDIO_TRACKS: u32 = 16;
 
 fn gst_err(e: impl std::fmt::Display) -> ExportError {

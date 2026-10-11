@@ -54,7 +54,7 @@ pub(crate) fn from_value(mut v: Value) -> Parsed {
     {
         issues.push(Issue::new(
             "version",
-            format!("written by a newer Klip (version {n}); settings it added are ignored"),
+            format!("written by a newer Scout (version {n}); settings it added are ignored"),
         ));
     }
     cap_sizes(&mut v, "", &mut issues);

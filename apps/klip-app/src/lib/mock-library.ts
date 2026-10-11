@@ -34,12 +34,12 @@ function makeClips(): LibClip[] {
     const d = new Date(t);
     const recording = r() < 0.06;
     const duration = recording ? Math.round((8 + r() * 50) * 60_000) : r() < 0.7 ? 30_000 : 120_000;
-    const name = recording ? `Klip_Recording_${stamp(d)}` : `Klip_${stamp(d)}`;
+    const name = recording ? `Scout_Recording_${stamp(d)}` : `Scout_${stamp(d)}`;
     const key = `${game}/${name}.mp4`;
     const ultrawide = g === 2 && r() < 0.5;
     clips.push({
       key,
-      path: `C:\\Users\\you\\Videos\\Klip\\${game}\\${name}.mp4`,
+      path: `C:\\Users\\you\\Videos\\Scout\\${game}\\${name}.mp4`,
       name,
       game,
       bytes: Math.round((duration / 1000) * 2_600_000 * (0.8 + r() * 0.4)),
@@ -64,7 +64,7 @@ function makeClips(): LibClip[] {
   }
   clips.push({
     key: 'old-download.mp4',
-    path: 'C:\\Users\\you\\Videos\\Klip\\old-download.mp4',
+    path: 'C:\\Users\\you\\Videos\\Scout\\old-download.mp4',
     name: 'old-download',
     game: null,
     bytes: 4_200_000,
@@ -170,7 +170,7 @@ export function mockLibrary(emit: (e: KlipEvent) => void) {
       for (const t of c.tags) tags.set(t, (tags.get(t) ?? 0) + 1);
     }
     return {
-      folder: 'C:\\Users\\you\\Videos\\Klip',
+      folder: 'C:\\Users\\you\\Videos\\Scout',
       clips: structuredClone(out),
       matched: out.length,
       total: clips.length,

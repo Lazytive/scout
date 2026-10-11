@@ -9,7 +9,7 @@
 
 <Row label="Start">
   <Toggle
-    label="Start Klip with Windows"
+    label="Start Scout with Windows"
     checked={s.app.autostart}
     onchange={(v) => save(['app', 'autostart'], v)}
   />
@@ -20,9 +20,9 @@
   />
 </Row>
 
-<Row label="Closing the window" hint="Klip keeps recording games from the tray.">
+<Row label="Closing the window" hint="Scout keeps recording games from the tray.">
   <Toggle
-    label="Keep Klip running in the tray"
+    label="Keep Scout running in the tray"
     checked={s.app.close_to_tray}
     onchange={(v) => save(['app', 'close_to_tray'], v)}
   />
@@ -31,7 +31,7 @@
 
 <Row
   label="Control from scripts"
-  hint="Lets klip-cli and your own scripts on this PC save clips (for a desktop shortcut, a Stream Deck…). Nothing outside this PC can connect. Takes effect when Klip starts."
+  hint="Lets klip-cli and your own scripts on this PC save clips (for a desktop shortcut, a Stream Deck…). Nothing outside this PC can connect. Takes effect when Scout starts."
 >
   <Toggle
     label="Allow local control"

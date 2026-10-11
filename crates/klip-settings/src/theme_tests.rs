@@ -68,7 +68,7 @@ fn the_ui_form_has_the_id_and_picture_path() {
     assert_eq!(ui["id"], "sunset");
     assert_eq!(ui["background"]["path"], "C:/x/themes/sunset.png");
     assert_eq!(ui["colors"]["accent"], "#e0601f");
-    assert!(ui.get("klip_theme").is_none());
+    assert!(ui.get("scout_theme").is_none());
     assert_eq!(
         CustomTheme::default().to_ui("a", None)["background"],
         Value::Null
@@ -78,7 +78,7 @@ fn the_ui_form_has_the_id_and_picture_path() {
 #[test]
 fn wrong_fields_are_repaired_one_by_one() {
     let file = json!({
-        "klip_theme": 1,
+        "scout_theme": 1,
         "name": "  \u{7}Neon\n  ",
         "base": "purple",
         "colors": {
@@ -125,8 +125,24 @@ fn wrong_fields_are_repaired_one_by_one() {
 }
 
 #[test]
+fn files_from_before_the_rename_still_import() {
+    let r = parse_export(br##"{"klip_theme": 1, "name": "Old", "colors": {"panel": "#101010"}}"##)
+        .unwrap();
+    assert!(r.issues.is_empty(), "{:?}", r.issues);
+    assert_eq!(r.theme.name, "Old");
+    // Written back with the new key.
+    let v = r.theme.to_export(None);
+    assert_eq!(v[FORMAT_KEY], 1);
+    assert!(v.get(LEGACY_FORMAT_KEY).is_none());
+    assert_eq!(
+        parse_export(br#"{"klip_theme": 9}"#).unwrap_err(),
+        ThemeError::Newer(9)
+    );
+}
+
+#[test]
 fn a_name_that_is_only_spaces_gets_the_default() {
-    let r = parse_export(&bytes(&json!({ "klip_theme": 1, "name": " \t " }))).unwrap();
+    let r = parse_export(&bytes(&json!({ "scout_theme": 1, "name": " \t " }))).unwrap();
     assert_eq!(r.theme.name, "Custom theme");
     assert_eq!(paths(&r.issues), ["name"]);
 }
@@ -140,15 +156,15 @@ fn non_theme_files_are_refused() {
         ThemeError::NotTheme
     );
     assert_eq!(
-        parse_export(b"{\"klip_theme\":0}").unwrap_err(),
+        parse_export(b"{\"scout_theme\":0}").unwrap_err(),
         ThemeError::NotTheme
     );
     assert_eq!(
-        parse_export(b"{\"klip_theme\":\"1\"}").unwrap_err(),
+        parse_export(b"{\"scout_theme\":\"1\"}").unwrap_err(),
         ThemeError::NotTheme
     );
     assert_eq!(
-        parse_export(b"{\"klip_theme\":2}").unwrap_err(),
+        parse_export(b"{\"scout_theme\":2}").unwrap_err(),
         ThemeError::Newer(2)
     );
     let big = vec![b' '; MAX_EXPORT_BYTES + 1];
@@ -159,7 +175,7 @@ fn non_theme_files_are_refused() {
 
 #[test]
 fn deep_nesting_is_refused_not_overflowed() {
-    let mut s = String::from("{\"klip_theme\":1,\"colors\":");
+    let mut s = String::from("{\"scout_theme\":1,\"colors\":");
     s.push_str(&"[".repeat(100_000));
     assert_eq!(parse_export(s.as_bytes()).unwrap_err(), ThemeError::NotJson);
 }
@@ -186,7 +202,7 @@ fn pictures_are_checked_by_their_bytes() {
 
     // The URI's type is ignored: the bytes decide (a JPEG labelled PNG is a JPEG).
     let enc = base64::engine::general_purpose::STANDARD.encode(JPG);
-    let file = json!({ "klip_theme": 1, "name": "x",
+    let file = json!({ "scout_theme": 1, "name": "x",
         "background": { "image": format!("data:image/png;base64,{enc}") } });
     let r = parse_export(&bytes(&file)).unwrap();
     assert_eq!(r.picture.unwrap().ext, "jpg");
@@ -205,7 +221,7 @@ fn a_bad_picture_drops_only_the_background() {
         )),
         json!(42),
     ] {
-        let file = json!({ "klip_theme": 1, "name": "x", "colors": { "panel": "#101010" },
+        let file = json!({ "scout_theme": 1, "name": "x", "colors": { "panel": "#101010" },
             "background": { "image": image } });
         let r = parse_export(&bytes(&file)).unwrap();
         assert_eq!(r.picture, None);
@@ -227,7 +243,7 @@ fn stored_picture_names_cannot_leave_the_folder() {
         "-x.png",
         "X.png",
     ] {
-        let file = json!({ "klip_theme": 1, "name": "x", "background": { "file": f } });
+        let file = json!({ "scout_theme": 1, "name": "x", "background": { "file": f } });
         let r = parse_stored(&bytes(&file)).unwrap();
         assert_eq!(r.picture_file, None, "{f}");
         assert_eq!(r.theme.backdrop, None, "{f}");
@@ -302,7 +318,7 @@ fn many_problems_are_summarised() {
         .map(|i| (format!("c{i}"), json!("#000000")))
         .collect();
     let r = parse_export(&bytes(
-        &json!({ "klip_theme": 1, "name": "x", "colors": colors }),
+        &json!({ "scout_theme": 1, "name": "x", "colors": colors }),
     ))
     .unwrap();
     assert_eq!(r.issues.len(), 33);
@@ -321,7 +337,7 @@ fn arb_json() -> impl Strategy<Value = Value> {
     ];
     leaf.prop_recursive(4, 48, 6, |inner| {
         let key = prop_oneof![
-            Just("klip_theme"),
+            Just("scout_theme"),
             Just("name"),
             Just("base"),
             Just("colors"),
@@ -351,7 +367,7 @@ proptest! {
     #[test]
     fn any_file_parses_or_is_refused_and_output_is_stable(mut v in arb_json()) {
         if let Value::Object(m) = &mut v {
-            m.insert("klip_theme".into(), json!(1));
+            m.insert("scout_theme".into(), json!(1));
         }
         if let Ok(r) = parse_export(&bytes(&v)) {
             let again = parse_export(&bytes(&r.theme.to_export(r.picture.as_ref()))).unwrap();

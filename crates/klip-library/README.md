@@ -1,6 +1,6 @@
 # klip-library
 
-The clip folder (ADR 0014, ADR 0015). Clips stay plain MP4 files in a normal folder; Klip's
+The clip folder (ADR 0014, ADR 0015). Clips stay plain MP4 files in a normal folder; Scout's
 own data lives in `<folder>/.klip/`: `library.json` (stars and tags: the user's), and two
 caches rebuilt from the clips (`index.json`, `thumbs/`). Losing `.klip/` loses stars and
 tags, never clips. Pure: file I/O only.
@@ -48,7 +48,7 @@ tags, never clips. Pure: file I/O only.
   the cap: oldest (modification time) unstarred first, never a starred or protected one
   (the clip just saved); if starred + protected clips alone exceed the cap, all others
   go. `cap_bytes = 0`: no cap. `usage()`: counts and bytes, starred included.
-- `forget(meta, keys)`: drop entries of clips Klip removed. Entries of clips deleted
+- `forget(meta, keys)`: drop entries of clips Scout removed. Entries of clips deleted
   elsewhere are kept (the file may be on a drive that is unplugged right now).
 - Units: the storage settings are in GiB (`GIB`), like Explorer shows sizes.
 

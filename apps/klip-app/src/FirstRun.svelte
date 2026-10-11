@@ -66,7 +66,7 @@
 <div class="backdrop">
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="fr-title">
     <header>
-      <h2 id="fr-title">Set up Klip</h2>
+      <h2 id="fr-title">Set up Scout</h2>
       <ol class="steps">
         {#each steps as name, i (name)}
           <li class:done={i < step} class:now={i === step}>{name}</li>
@@ -76,9 +76,9 @@
 
     <div class="body">
       {#if step === 0}
-        <h3>Klip keeps the last moments of your games</h3>
+        <h3>Scout keeps the last moments of your games</h3>
         <p class="muted">
-          While a game runs, Klip keeps the last minutes in memory. Press your hotkey and the moment
+          While a game runs, Scout keeps the last minutes in memory. Press your hotkey and the moment
           is saved as a clip. Nothing is uploaded, and there is no account.
         </p>
         <div class="hw">
@@ -156,7 +156,7 @@
         <FolderField
           label="clip folder"
           value={s.clips.folder}
-          fallback={app.storage?.folder ?? 'Videos\\Klip'}
+          fallback={app.storage?.folder ?? 'Videos\\Scout'}
           onchange={(v) => save(['clips', 'folder'], v)}
         />
         <Toggle label="A folder per game" checked={s.clips.per_game_folders} onchange={(v) => save(['clips', 'per_game_folders'], v)} />

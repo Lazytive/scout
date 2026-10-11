@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Klip developer tasks: ci, layers, audit, e2e"
+description = "Scout developer tasks: ci, layers, audit, e2e"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

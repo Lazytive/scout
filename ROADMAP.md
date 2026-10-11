@@ -148,30 +148,30 @@ game audio, buffer 30 s, clip hotkey F24 (10 s):
 - Detection poll (process + window snapshot + rules): median 3.6 ms, max 4.7 ms (one
   poll every 2 s). A user-listed game was noticed 0.8 s after its window appeared; the
   buffer stopped 2.0 s after the game exited.
-- The hotkey (pressed with `SendInput`) saved a 10.03 s clip into `clips/Klip Test Game/`
+- The hotkey (pressed with `SendInput`) saved a 10.03 s clip into `clips/Scout Test Game/`
   in 88 ms (82 ms of it waiting for audio): 600 frames, none repeated, unreadable or out
   of order; H.264 + the game's audio track.
 - Idle cost of the engine with no game: 0.00 % of one core over 6 s, 22 MB private
   memory (57 MB resident). After a game it stayed at 0.26 % CPU but **106 MB private**
   (111 MB resident) until M6.12; since the recorder runs in a child process (ADR 0016)
   it is back where it was: 23.1 MB private before and 23.1 MB after the game (release
-  build, 2026-10-09), and no Klip worker process is left 22 s after the game (the
+  build, 2026-10-09), and no Scout worker process is left 22 s after the game (the
   library's media worker makes the clips' strips once the game is over, then stops).
 - A recorder process killed mid-recording (M6.12 e2e): a new one runs 1.4–1.5 s later,
   and the recording it left is finalised by recovery 17.5 s after the kill (it waits
   until nothing could still be writing it) and plays as H.264 with what was written.
 
-### What Klip costs a game (M6.10, `cargo xtask bench`)
+### What Scout costs a game (M6.10, `cargo xtask bench`)
 
 Same machine (i7-14700KF, RTX 4080 SUPER, driver 32.0.16.1742), GPU otherwise idle,
 2026-10-09. Scene: the test game at 1920x1080 in an off-screen window, a shader load
-calibrated to ~240 fps uncapped. Klip: the engine (`klip-cli daemon`) on Balanced
+calibrated to ~240 fps uncapped. Scout: the engine (`klip-cli daemon`) on Balanced
 (nvd3d11h264enc 1080p60 20 Mbit/s, game audio, 2 min buffer). Each scenario is one long
 game run with the replay buffer switched off and on (8 and 4 interleaved pairs, each
 "on" stretch against the "off" stretch just before it), because GPU boost and background
 use drift by several percent between separate runs.
 - **Capped at 144 fps (frame cap / vsync, the usual case): no cost.** 144.0 fps with
-  and without Klip; frame-time p99 7.58 → 7.66 ms.
+  and without Scout; frame-time p99 7.58 → 7.66 ms.
 - **Uncapped, GPU-bound (worst case): 2.9 % ± 1.0 % (95 %) fewer frames** (median 3.4 %,
   238.6 → 231.8 fps; p99 4.78 → 4.83 ms). Earlier runs of intermediate code measured
   8–10 % (with a frame-skipping experiment since removed, and possibly more background GPU
@@ -186,7 +186,7 @@ use drift by several percent between separate runs.
   engine's first seconds: it holds ~100 MB more for ~8 s after start, then 22 MB.)
 - Capture asks Windows for at most 2x the recording rate (`MinUpdateInterval`, Windows 11
   24H2+): no measurable change in this scene, but it spares the compositor half the
-  copies at 240 Hz. Finding along the way: GStreamer's WGC source and Klip's own capture
+  copies at 240 Hz. Finding along the way: GStreamer's WGC source and Scout's own capture
   cost about the same here, and HDR (FP16) capture costs no more than 8-bit.
 
 ### Recorder in a child process (M6.12, `cargo xtask bench` before/after)
@@ -360,7 +360,7 @@ H.264 12 Mbit/s.
 ### Advanced mode in FilmCraft's layout (M9.7)
 
 Measured 2026-10-11 in the real app (debug build, off-screen, driven over CDP, the
-user's own Klip running beside it; scratch library: two 12 s barcoded test clips with two
+user's own Scout running beside it; scratch library: two 12 s barcoded test clips with two
 AAC tracks each, a 6 s WAV as music). Project: Clutch as Main, Second on a montage track
 from 12 s crossfading in **from below** over 1 s, a second montage clip at 15 s, music
 at 0 s.
@@ -378,7 +378,7 @@ at 0 s.
 
 Measured 2026-10-11. Mock = the UI against the mock engine in headless Edge with trusted
 CDP input; real app = debug build, off-screen, its own settings and WebView2 profile,
-the user's Klip running beside it.
+the user's Scout running beside it.
 
 | Check | Result |
 |---|---|
@@ -388,13 +388,13 @@ the user's Klip running beside it.
 | Rolling a cut (mock) | a dip's middle dragged 33 px → the cut moved 1010 ms: the first clip 1010 ms longer, the next 1010 ms shorter (source in point +1010 ms) |
 | Dip to black on V2 over Main, export (`dip_on_a_montage_track_goes_through_black`) | 241 frames: 60 in the dip (1 s), every other frame on the plan; mean luma **70.9** before, **35.3** half way, **0.0** at the cut (Main used to show there) |
 | The same in the preview | mock canvas mean 66.6 → 33.1 → **0** → 59.5; real app vs `editor.frame` at 640 px: 38.4 dB (plain), 43.5 dB (mid-dip), **identical** at the cut (both black), 41.9 / 40.0 dB after |
-| Browser UI (real app, trusted keys) | Ctrl+P, Ctrl+S, Ctrl+F, F5, Ctrl+Shift+I and a right-click on the page: default cancelled; Ctrl+Z still reaches Klip; a right-click in a text field keeps its menu |
+| Browser UI (real app, trusted keys) | Ctrl+P, Ctrl+S, Ctrl+F, F5, Ctrl+Shift+I and a right-click on the page: default cancelled; Ctrl+Z still reaches Scout; a right-click in a text field keeps its menu |
 
 ### Themes v1 (M10)
 
 Measured 2026-10-11. Mock = the UI against the mock engine in headless Edge (CDP);
 real app = debug and release builds off-screen, own settings and WebView2 profile, the
-user's Klip running beside them.
+user's Scout running beside them.
 
 | Check | Result |
 |---|---|
@@ -424,7 +424,7 @@ user's Klip running beside them.
   crossfade still pulls the next clip earlier and leaves clips after it where they
   were (as before M9.7). Tools are two toggles in the timeline header, not a strip (the
   user's choice). Dragging a transition's middle rolls the cut instead of sliding the
-  transition off-centre (Klip has no media past a clip's ends). A selection moves in
+  transition off-centre (Scout has no media past a clip's ends). A selection moves in
   time only (one clip may still change track). Arranged V1 (M9.8.9): Normal mode is off
   until "Back to the simple cut"; the Library's edited length still counts Normal mode's
   cut; no crossfade "from below" on V1 (nothing is below it).
@@ -449,7 +449,7 @@ user's Klip running beside them.
   - `editor.frame` opens every clip on screen per call (no cache): fine for a paused
     preview and parity checks, too slow to scrub with (the canvas preview, M9.5, is for
     that). In the app it runs in a media worker of its own (not measured in the app yet).
-  - Event markers come from chapters with a title other than `Bookmark <n>`; Klip writes
+  - Event markers come from chapters with a title other than `Bookmark <n>`; Scout writes
     none yet (auto-clip integrations are M10+), so in practice they are bookmarks.
   - Deleting a montage's first clip deletes the montage (its project lives under that
     clip). Deleting another clip leaves it `missing` in the montage; the export refuses
@@ -500,7 +500,7 @@ user's Klip running beside them.
   ligatures as separate letters, emoji as the font's "no glyph" box. A second font or a
   shaping crate (e.g. `cosmic-text`) is the fix if users ask for it.
 - **Library (M7)**:
-  - No playback inside Klip yet: Open hands the clip to the default player (the editor's
+  - No playback inside Scout yet: Open hands the clip to the default player (the editor's
     preview is M8). Hover-scrub shows 16 key frames per clip, not every frame; long
     recordings get coarse strips.
   - The first listing of a big folder reads every clip's `moov` before the grid shows
@@ -527,7 +527,7 @@ user's Klip running beside them.
     its effect on VRR/G-Sync over a real game is unmeasured (human checklist or
     PresentMon); the quick menu takes the focus while open, so it isn't shown over an
     exclusive-fullscreen game.
-  - While a game is recorded there are two Klip processes (the engine, ~22 MB private,
+  - While a game is recorded there are two Scout processes (the engine, ~22 MB private,
     and its recorder, ~240 MB with the 2 min Balanced buffer): 22 MB more than one
     process, 63 MB more resident. A game's recorder starts ~1.75 s after it is found
     (Media Foundation start-up included). A recorder process that hangs (alive but not
@@ -543,7 +543,7 @@ user's Klip running beside them.
   --bookmark-hotkey`.
 - **Finished recordings are not faststart** (index at the end); sharing goes through the
   editor's export. Most video editors ignore `chpl` chapters, so bookmarks show in VLC,
-  mpv and ffprobe now, and in Klip's editor later.
+  mpv and ffprobe now, and in Scout's editor later.
 - A power cut can lose up to ~10 s of a recording (fsync interval); a killed process at
   most the fragment being written (≤ 1 s with our GOP).
 
@@ -570,7 +570,7 @@ user's Klip running beside them.
   display's peak); it may need tuning by eye on real HDR games. The fallback source
   (`d3d11screencapturesrc`) still clips HDR content. A window that moves to a monitor
   with a different HDR state keeps its start monitor's settings.
-- **A/V timing under GPU load**: frames are stamped when they reach Klip (bounded by
+- **A/V timing under GPU load**: frames are stamped when they reach Scout (bounded by
   WGC's time). Idle GPU: video +4.6 ms after the game's GPU-finish time, A/V −3.8 ms
   (old source: +4.2 to +5.9 ms). With another game holding the GPU at 86–100 %,
   composition itself runs late and every source drifts to +13–26 ms, so the ≤ 1 frame
@@ -622,7 +622,7 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    highlights look too dull or too harsh (the curve can be tuned).
 2. **Exclusive fullscreen**: a game set to "Fullscreen" (not borderless): start
    `klip-cli record --window-title "<game>"`, play a minute, save a clip; it must show
-   the game, and `klip-cli status` → `video.switches` tells whether Klip switched to
+   the game, and `klip-cli status` → `video.switches` tells whether Scout switched to
    monitor or DXGI capture.
 3. **Alt-tab** out of that game and back while recording: the clip should follow (some
    desktop frames while tabbed out are expected).
@@ -642,7 +642,7 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    timing there is uncompensated (0 ms) until measured; the hotkey portal on GNOME shows
    its own dialog.
 4. **X11 session**: Bazzite's KDE is Wayland-only; on an X11 desktop the portal may not
-   offer screen casting, and Klip has no X11 fallback yet (`ximagesrc`), so recording is
+   offer screen casting, and Scout has no X11 fallback yet (`ximagesrc`), so recording is
    expected to fail with a portal error there.
 5. **HDR desktop**: both monitors here run KDE in HDR mode and clips looked normal in the
    tests (the screencast is SDR); an HDR *game* on Linux (e.g. with gamescope/Proton HDR)
@@ -651,8 +651,8 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 ## Manual checks for the human (M5)
 
 1. **Play a killed recording**: `klip-cli record --session --out <folder>`, record a
-   minute of anything, kill the recorder in Task Manager. Open the `Klip_Recording_…mp4`
-   in Films & TV (or Media Player), VLC and your editor *before* starting Klip again: it
+   minute of anything, kill the recorder in Task Manager. Open the `Scout_Recording_…mp4`
+   in Films & TV (or Media Player), VLC and your editor *before* starting Scout again: it
    should play (seeking may be slow in some players). Then run `klip-cli record` again
    (it finalises leftovers and prints `"event":"recovered"`), stop it, and open the file
    once more: it should now seek normally everywhere.
@@ -667,7 +667,7 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 1. The app: `cd apps/klip-app && npm ci && npm run build`, then `cargo run -p klip-app`
    (it uses your real settings: default hotkeys Alt+F10 etc., buffers detected games).
    The first-run setup appears once. Tray icon grey while waiting, blue while a game is
-   buffered, red dot while recording; left click opens the window, closing it keeps Klip
+   buffered, red dot while recording; left click opens the window, closing it keeps Scout
    in the tray, Quit in the tray menu ends it. Does the look match Photocraft / FilmCraft
    closely enough? The sun button switches follow system / Dark / Graphite / Light / OLED.
 2. Hotkeys: in a real (non anti-cheat) game in fullscreen, Alt+F10 saves a clip; a key
@@ -684,7 +684,7 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    anti-cheat titles without asking): Home shows the right name and starts buffering;
    launchers and store clients don't count. Battle.net games have no common library
    folder: add them under Settings → Games.
-5. Settings: "Start Klip with Windows" adds Klip to Task Manager's startup apps and
+5. Settings: "Start Scout with Windows" adds Scout to Task Manager's startup apps and
    unticking removes it; "Choose…" opens the folder picker; the microphone Test meter
    moves when you speak; a hotkey field takes a new combination (your old hotkeys don't
    fire while it listens).
@@ -704,9 +704,9 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 3. Select a clip: rename it in Details (Enter), add tags, star it; check in Explorer that
    the file was renamed. Double-click opens it in your player; "Show in folder" opens
    Explorer with it selected.
-4. Delete (Del): it lands in the Recycle Bin and can be restored (Klip shows it again
+4. Delete (Del): it lands in the Recycle Bin and can be restored (Scout shows it again
    after restoring, when the window gets focus). Shift+Del deletes permanently after a
-   warning. Rename or delete a clip that is open in a player: Klip should show the error,
+   warning. Rename or delete a clip that is open in a player: Scout should show the error,
    nothing breaks.
 5. Put a few MP4s from another program (OBS, ShadowPlay, phone) in the clip folder: they
    show up with length, resolution and pictures; a broken file shows "No preview".
@@ -732,7 +732,7 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 
 ## Manual checks for the human (M9, the Advanced editor and montages)
 
-Use the release app (`target\release\Start Klip.cmd`) and two of your own clips.
+Use the release app (`target\release\Start Scout.cmd`) and two of your own clips.
 
 1. ✅ (2026-10-10: sound and sliders work) **Sound sliders (the M8 bug).** Open a clip that has your voice. In Normal mode
    press Play, then drag **Mic** to 0 %: your voice must go away while it plays; drag
@@ -770,8 +770,8 @@ Use the release app (`target\release\Start Klip.cmd`) and two of your own clips.
 
 ## Manual checks for the human (M9.7, Advanced mode like FilmCraft)
 
-Use the release app (`target\release\Start Klip.cmd`) and a few of your own clips.
-Quit and restart Klip first, so the new version runs.
+Use the release app (`target\release\Start Scout.cmd`) and a few of your own clips.
+Quit and restart Scout first, so the new version runs.
 
 1. ✅ (2026-10-11) **The layout.** Open a clip, switch to **Advanced**. It should look like FilmCraft's
    Editing workspace: Effect Controls top-left, the Program preview in the middle,
@@ -805,7 +805,7 @@ Tell me what looks or feels wrong, and anything that still doesn't feel like Fil
 
 ## Manual checks for the human (M9.8, FilmCraft feel)
 
-Use the release app: quit Klip and start it again with `target\release\Start Klip.cmd`,
+Use the release app: quit Scout and start it again with `target\release\Start Scout.cmd`,
 so the new version runs. Open a clip, switch to **Advanced**, add two or three clips from
 **Project** so they sit next to each other on a track.
 
@@ -828,14 +828,14 @@ so the new version runs. Open a clip, switch to **Advanced**, add two or three c
 7. ✅ (2026-10-11) **Dip to black is black.** With a Dip to black on a montage track above your clip,
    play across it: the picture must go fully black in the middle (not show your clip
    underneath), then come back. Export it: same.
-8. ✅ (2026-10-11; Klip's own menus on Library cards and transitions checked still open) **No browser stuff.** Right-click anywhere outside a text box: no menu. Press Ctrl+P,
+8. ✅ (2026-10-11; Scout's own menus on Library cards and transitions checked still open) **No browser stuff.** Right-click anywhere outside a text box: no menu. Press Ctrl+P,
    Ctrl+S, Ctrl+F, F5: nothing happens (no Print, no Save as, no reload).
 9. ✅ (2026-10-11) **Quiet waveforms.** Open your quiet PAYDAY 3 clip (11-39-03) in Advanced mode: its
    waveform should now be visible.
 
 ## Manual checks for the human (M9.8.7–9, Hide/Mute and V1)
 
-Restart Klip with `Start Klip.cmd` first.
+Restart Scout with `Start Scout.cmd` first.
 
 1. ✅ (2026-10-11) **Hide and Mute.** On a montage (video) track there are now two buttons: the eye and
    **M**. Click the eye: the track's picture disappears but you still hear it. Click
@@ -851,7 +851,7 @@ Restart Klip with `Start Klip.cmd` first.
 
 ## Manual checks for the human (M10, themes)
 
-Restart Klip with `Start Klip.cmd` first. Everything below is in **Settings →
+Restart Scout with `Start Scout.cmd` first. Everything below is in **Settings →
 Appearance** (or click the sun at the top right → **Appearance settings…**).
 
 1. **Themes.** Click the **Light** card, then **Graphite**, then **Dark**: the whole app
@@ -872,10 +872,10 @@ Appearance** (or click the sun at the top right → **Appearance settings…**).
 7. **Background picture.** **Edit** → **Choose a picture…** → pick a wallpaper. It shows
    behind the panels; move **Dim** and **Panel opacity**. If the **Contrast** row warns,
    it says which text is hard to read. **Save**.
-8. **Share it.** **Export…** → save it on the Desktop. **Delete** → **Delete**: Klip goes
+8. **Share it.** **Export…** → save it on the Desktop. **Delete** → **Delete**: Scout goes
    back to Follow system. **Import…** → pick the file: your theme is back, picture
    included, and in use.
-9. **Restart Klip**: it opens straight in your theme (no flash of the dark theme first).
+9. **Restart Scout**: it opens straight in your theme (no flash of the dark theme first).
 10. **Overlay.** With your theme in use, save a clip in a game: the "Clip saved" pop-up
     uses your theme's colours and corners.
 

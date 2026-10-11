@@ -3,7 +3,7 @@
 //! The test game and the synthetic audio test play short tone bursts ("beeps") that start
 //! at full amplitude, so the start of each burst can be found to within a fraction of a
 //! millisecond in the decoded clip, even after AAC (whose pre-echo stays well below the
-//! detection threshold at the bitrates Klip uses).
+//! detection threshold at the bitrates Scout uses).
 
 use std::f64::consts::TAU;
 

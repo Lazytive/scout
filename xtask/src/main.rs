@@ -1,10 +1,10 @@
-//! `cargo xtask <task>`: Klip's quality gates.
+//! `cargo xtask <task>`: Scout's quality gates.
 //!
 //! - `ci`: front end (eslint, svelte-check, vitest, build), fmt, clippy `-D warnings`,
 //!   tests, cargo deny, layers, audit
 //! - `layers`: dependency direction + `unsafe` only in klip-platform
 //! - `audit`: licence/asset audit
-//! - `bench`: what Klip costs a game (needs an idle GPU)
+//! - `bench`: what Scout costs a game (needs an idle GPU)
 //! - `e2e`: hardware acceptance tests (`#[ignore]`d tests except `diag_*` diagnostics,
 //!   release build, one at a time)
 //!
@@ -220,7 +220,7 @@ fn e2e() -> Result<()> {
     run_step("hardware acceptance tests", c)
 }
 
-/// What Klip costs a game (M6.10): see `apps/klip-cli/tests/bench.rs`.
+/// What Scout costs a game (M6.10): see `apps/klip-cli/tests/bench.rs`.
 fn bench() -> Result<()> {
     let mut c = cargo();
     c.args([

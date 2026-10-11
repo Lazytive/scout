@@ -20,13 +20,13 @@ use crate::games::{DetectedGame, folder_name};
 /// Folder name for recordings of the desktop (Always mode, no game).
 pub const DESKTOP_FOLDER: &str = "Desktop";
 
-/// The clip folder: the setting, else `Videos/Klip`.
+/// The clip folder: the setting, else `Videos/Scout`.
 pub fn clip_base(settings: &Settings) -> Result<PathBuf, EngineError> {
     match &settings.clips.folder {
         Some(f) => Ok(PathBuf::from(f)),
         None => dirs::video_dir()
             .or_else(dirs::home_dir)
-            .map(|d| d.join("Klip"))
+            .map(|d| d.join(crate::migrate::NAME))
             .ok_or_else(|| EngineError::Config("no Videos folder; choose a clip folder".into())),
     }
 }
@@ -103,7 +103,7 @@ pub fn encoder_cache_path() -> Option<PathBuf> {
     if let Some(p) = overrides().cache {
         return Some(p);
     }
-    dirs::cache_dir().map(|d| d.join("Klip").join("encoders.json"))
+    dirs::cache_dir().map(|d| d.join(crate::migrate::NAME).join("encoders.json"))
 }
 
 /// The probe cache for this machine's current setup (empty if none or outdated).
@@ -349,7 +349,7 @@ const MAX_PORTAL_TOKEN: u64 = 1024;
 pub fn portal_token_path() -> Option<PathBuf> {
     dirs::state_dir()
         .or_else(dirs::data_local_dir)
-        .map(|d| d.join("Klip").join("screencast-token"))
+        .map(|d| d.join(crate::migrate::NAME).join("screencast-token"))
 }
 
 /// The stored restore token, if the file holds a plausible one (it is user-writable, so

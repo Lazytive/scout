@@ -70,7 +70,7 @@ fn shared_file(dir: &Path, name: &str, picture: Option<&[u8]>) -> PathBuf {
             opacity: 75,
         });
     }
-    let path = dir.join(format!("{name}.klip-theme"));
+    let path = dir.join(format!("{name}.scout-theme"));
     std::fs::write(
         &path,
         serde_json::to_vec(&t.to_export(pic.as_ref())).unwrap(),
@@ -123,7 +123,7 @@ fn import_list_export_round_trip() {
     assert_eq!(l["issues"], json!([]));
 
     // Export = the original file's content.
-    let out = dir.path().join("out.klip-theme");
+    let out = dir.path().join("out.scout-theme");
     engine
         .handle("theme.export", &json!({ "id": "sun-set", "path": out }))
         .unwrap();
@@ -255,7 +255,7 @@ fn hostile_files_are_refused_or_repaired() {
 
     for (name, bytes) in [
         ("garbage", b"\x00\x01binary".to_vec()),
-        ("newer", br#"{"klip_theme": 7, "name": "x"}"#.to_vec()),
+        ("newer", br#"{"scout_theme": 7, "name": "x"}"#.to_vec()),
         ("huge", vec![b' '; theme_file::MAX_EXPORT_BYTES + 1]),
     ] {
         let p = dir.path().join(name);
@@ -267,7 +267,7 @@ fn hostile_files_are_refused_or_repaired() {
         );
     }
     assert_eq!(
-        code(engine.handle("theme.import", &json!({ "path": "relative.klip-theme" }))),
+        code(engine.handle("theme.import", &json!({ "path": "relative.scout-theme" }))),
         "bad_args"
     );
     assert_eq!(
@@ -276,10 +276,10 @@ fn hostile_files_are_refused_or_repaired() {
     );
 
     // Repairs come back as issues.
-    let p = dir.path().join("odd.klip-theme");
+    let p = dir.path().join("odd.scout-theme");
     std::fs::write(
         &p,
-        json!({ "klip_theme": 1, "name": "Odd", "colors": { "panel": "nope" }, "radius": 50 })
+        json!({ "scout_theme": 1, "name": "Odd", "colors": { "panel": "nope" }, "radius": 50 })
             .to_string(),
     )
     .unwrap();
@@ -294,11 +294,11 @@ fn hostile_files_are_refused_or_repaired() {
         .collect();
     assert_eq!(paths, ["colors.panel", "radius"]);
 
-    // Files edited behind Klip's back: a picture outside the theme, an oversized file,
+    // Files edited behind Scout's back: a picture outside the theme, an oversized file,
     // a name that isn't an id. None of them crash the list.
     std::fs::write(
         themes.join("sneaky.json"),
-        json!({ "klip_theme": 1, "name": "S", "background": { "file": "odd.png" } }).to_string(),
+        json!({ "scout_theme": 1, "name": "S", "background": { "file": "odd.png" } }).to_string(),
     )
     .unwrap();
     std::fs::write(

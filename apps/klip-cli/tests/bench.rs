@@ -1,8 +1,8 @@
-//! `cargo xtask bench` (M6.10): what Klip costs a game, measured on the benchmark scene
+//! `cargo xtask bench` (M6.10): what Scout costs a game, measured on the benchmark scene
 //! (the test game at 1920x1080 with a GPU load calibrated to ~240 fps uncapped), with
 //! the app's engine (`klip-cli daemon`) on the Balanced preset (1080p60, 20 Mbit/s, game
 //! audio, 2 min buffer). Two scenarios:
-//! - **uncapped**: the game takes the whole GPU (the worst case: anything Klip does on
+//! - **uncapped**: the game takes the whole GPU (the worst case: anything Scout does on
 //!   the GPU shows up as lost frames);
 //! - **capped** at 144 fps: the usual case (frame cap or vsync), where the GPU has
 //!   headroom; does the game still hold 144, and how does its frame-time p99 change?
@@ -136,7 +136,7 @@ impl Events {
     }
 }
 
-/// The daemon and the Klip worker processes it started.
+/// The daemon and the Scout worker processes it started.
 fn klip_tree(pid: u32) -> Vec<u32> {
     let mut out = vec![pid];
     out.extend(
@@ -216,14 +216,14 @@ fn cpu_name() -> String {
 }
 
 /// The daemon and how to drive it.
-struct Klip {
+struct Scout {
     events: Events,
     discovery: std::path::PathBuf,
     pid: u32,
     _child: KillOnDrop,
 }
 
-impl Klip {
+impl Scout {
     fn buffer(&self, mode: &str) {
         let out = cli(&self.discovery)
             .args([
@@ -279,7 +279,7 @@ impl Scenario {
 /// Run the scene and switch the buffer off/on `n` times; leaves the buffer on and the
 /// game running (returned) so the caller can save clips.
 fn measure(
-    klip: &mut Klip,
+    klip: &mut Scout,
     load: u32,
     cap: Option<u32>,
     n: usize,
@@ -424,7 +424,7 @@ fn bench_game_cost() {
             }
         }
     });
-    let mut klip = Klip {
+    let mut klip = Scout {
         events: Events {
             rx,
             backlog: VecDeque::new(),
@@ -537,13 +537,13 @@ fn bench_game_cost() {
 
     let mb = |b: u64| b as f64 / 1e6;
     let u = scenario_json(&uncapped);
-    println!("\n=== Klip benchmark ({}) ===", file.display());
+    println!("\n=== Scout benchmark ({}) ===", file.display());
     println!(
         "machine: {} / {} (driver {})",
         report["machine"]["cpu"], report["machine"]["gpu"], report["machine"]["gpu_driver"]
     );
     println!(
-        "scene: {WIDTH}x{HEIGHT}, gpu load {load}, off-screen window; Klip: Balanced, {} {}x{}@{}, game audio, 2 min buffer",
+        "scene: {WIDTH}x{HEIGHT}, gpu load {load}, off-screen window; Scout: Balanced, {} {}x{}@{}, game audio, 2 min buffer",
         rec["encoder"], rec["width"], rec["height"], rec["fps"]
     );
     print_scenario("uncapped (worst case)", &uncapped);

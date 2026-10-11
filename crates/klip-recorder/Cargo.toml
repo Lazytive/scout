@@ -1,6 +1,6 @@
 [package]
 name = "klip-recorder"
-description = "Klip recorder: capture session feeding the replay ring, clip saves to MP4, command handler"
+description = "Scout recorder: capture session feeding the replay ring, clip saves to MP4, command handler"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

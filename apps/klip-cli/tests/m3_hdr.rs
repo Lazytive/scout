@@ -127,7 +127,7 @@ fn sdr_game_on_hdr_desktop_is_unchanged() {
     };
     println!("capture: {}", run.status["capture"]);
     println!("patches {:?}, checker {:?}", run.patches, run.checker);
-    assert_eq!(run.status["capture_api"], "Klip");
+    assert_eq!(run.status["capture_api"], "Scout");
     for (got, want) in run.patches.iter().zip(patches::SDR_CODES) {
         assert!((got - f32::from(want)).abs() <= 2.5, "patch {want}: {got}");
     }

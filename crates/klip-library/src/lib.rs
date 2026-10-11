@@ -1,4 +1,4 @@
-//! The clip folder (ADR 0014, ADR 0015): Klip's metadata about it (stars, tags), a scan
+//! The clip folder (ADR 0014, ADR 0015): Scout's metadata about it (stars, tags), a scan
 //! of the clips in it, renaming, the info cache and thumbnail cache, searching and
 //! filtering for the library grid, and the storage-cap policy.
 //!
@@ -52,7 +52,7 @@ pub const RECORDING_SIDECAR: &str = ".recording.json";
 /// One GiB, the unit of the storage settings.
 pub const GIB: u64 = 1 << 30;
 
-/// What Klip knows about one clip besides the file itself.
+/// What Scout knows about one clip besides the file itself.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ClipMeta {
@@ -397,7 +397,7 @@ pub fn over_cap(
     out
 }
 
-/// Forget the metadata of clips Klip removed. (Entries of clips deleted elsewhere stay:
+/// Forget the metadata of clips Scout removed. (Entries of clips deleted elsewhere stay:
 /// a missing file may be on a drive that is just unplugged.)
 pub fn forget(meta: &mut Meta, keys: &[String]) -> bool {
     let before = meta.clips.len();

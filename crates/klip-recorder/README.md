@@ -9,7 +9,7 @@ Ties capture, the replay ring and the MP4 writer together.
 - `save_from(sink, dir, length, names)`: notes the video end, waits up to
   `AUDIO_CATCH_UP` (250 ms) for live audio tracks to reach it (stalled tracks are not
   waited for), snapshots up to that end under the lock (refcount copies only), then writes
-  `Klip_YYYY-MM-DD_HH-MM-SS[_n].mp4` atomically outside the lock. Tracks get their names;
+  `Scout_YYYY-MM-DD_HH-MM-SS[_n].mp4` (`Klip_…` before the rename, ADR 0020) atomically outside the lock. Tracks get their names;
   only the first audio track is enabled (ADR 0008). Measured 3–9 ms for 10–30 s video-only
   clips; with audio the wait adds the audio latency (see ROADMAP).
 - `Recorder`: one `TimeBase`, the video `CaptureSession` and (if configured) an

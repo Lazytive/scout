@@ -1,5 +1,5 @@
 //! Text layers: what the user typed, where and when, in one of a few preset styles.
-//! Styles are data; [`render`] draws them to bitmaps (ADR 0017: Klip draws the text,
+//! Styles are data; [`render`] draws them to bitmaps (ADR 0017: Scout draws the text,
 //! so preview and export show the same pixels).
 
 use serde::{Deserialize, Serialize};

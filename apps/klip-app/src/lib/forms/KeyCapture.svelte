@@ -44,7 +44,7 @@
         note = `That key (${c.code}) can't be used.`;
         return;
       case 'combo':
-        note = c.bare ? 'A key without Ctrl/Alt/Shift/Win is taken from every app while Klip runs.' : '';
+        note = c.bare ? 'A key without Ctrl/Alt/Shift/Win is taken from every app while Scout runs.' : '';
         onchange(c.keys);
         void stop();
     }

@@ -1,6 +1,6 @@
 [package]
 name = "klip-export"
-description = "Klip export pipeline: decode a clip, apply the editor's plan (cuts, speed, crop, text, volumes), re-encode with the hardware encoders and write an MP4"
+description = "Scout export pipeline: decode a clip, apply the editor's plan (cuts, speed, crop, text, volumes), re-encode with the hardware encoders and write an MP4"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

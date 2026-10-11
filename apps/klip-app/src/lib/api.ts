@@ -79,8 +79,8 @@ export const SOUND_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus
 
 /** Demo files the browser mock offers instead of a file picker. */
 const DEMO_FILES: Record<'image' | 'audio', string> = {
-  image: 'C:/Users/You/Pictures/Klip demo sticker.png',
-  audio: 'C:/Users/You/Music/Klip demo sound.wav',
+  image: 'C:/Users/You/Pictures/Scout demo sticker.png',
+  audio: 'C:/Users/You/Music/Scout demo sound.wav',
 };
 
 const DEMO_STICKER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
@@ -160,26 +160,26 @@ export function pictureUrl(path: string, version?: number): string {
 /** Theme files: pick one to import, a place to export to, or a background picture. The
     mock returns demo paths. */
 export async function pickThemeFile(): Promise<string | null> {
-  if (!inTauri) return 'C:/Users/You/Downloads/Sunset.klip-theme';
+  if (!inTauri) return 'C:/Users/You/Downloads/Sunset.scout-theme';
   const { open } = await import('@tauri-apps/plugin-dialog');
   const picked = await open({
     directory: false,
     multiple: false,
-    filters: [{ name: 'Klip theme', extensions: ['klip-theme', 'json'] }],
+    filters: [{ name: 'Scout theme', extensions: ['scout-theme', 'klip-theme', 'json'] }],
   });
   return typeof picked === 'string' ? picked : null;
 }
 
 export async function pickThemeExport(name: string): Promise<string | null> {
-  const file = `${name.replace(/[\\/:*?"<>|]/g, '').trim() || 'theme'}.klip-theme`;
+  const file = `${name.replace(/[\\/:*?"<>|]/g, '').trim() || 'theme'}.scout-theme`;
   if (!inTauri) return `C:/Users/You/Documents/${file}`;
   const { save } = await import('@tauri-apps/plugin-dialog');
-  const picked = await save({ defaultPath: file, filters: [{ name: 'Klip theme', extensions: ['klip-theme'] }] });
+  const picked = await save({ defaultPath: file, filters: [{ name: 'Scout theme', extensions: ['scout-theme'] }] });
   return typeof picked === 'string' ? picked : null;
 }
 
 export async function pickThemePicture(): Promise<string | null> {
-  if (!inTauri) return 'C:/Users/You/Pictures/Klip demo backdrop.png';
+  if (!inTauri) return 'C:/Users/You/Pictures/Scout demo backdrop.png';
   const { open } = await import('@tauri-apps/plugin-dialog');
   const picked = await open({
     directory: false,

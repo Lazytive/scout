@@ -8,9 +8,12 @@
 
 use crate::PlatformError;
 
-/// Working app id, used by the portals to remember the user's choices (shortcuts,
-/// screen-cast restore tokens). Changes with the app's final name (AGENTS.md rule 8).
-pub const APP_ID: &str = "dev.klip.Klip";
+/// App id, used by the portals to remember the user's choices (shortcuts, screen-cast
+/// restore tokens); the same as the Tauri identifier (ADR 0020).
+pub const APP_ID: &str = "io.github.lazytive.Scout";
+/// The id before the rename to Scout; its hidden desktop entry is removed.
+#[cfg(target_os = "linux")]
+const LEGACY_APP_ID: &str = "dev.klip.Klip";
 
 /// A shortcut to ask the desktop for.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,7 +38,7 @@ pub struct BoundShortcut {
 
 /// Tell the portals which app this is (host apps only; sandboxed ones already have an
 /// id). Must come before any other portal call of the process, else it is refused. The
-/// portal looks the id up as a desktop entry; an installed Klip ships one, and for the
+/// portal looks the id up as a desktop entry; an installed Scout ships one, and for the
 /// CLI a hidden one (`NoDisplay=true`, no menu item) is written to
 /// `$XDG_DATA_HOME/applications` if it is missing.
 pub fn register_app_id(app_id: &str) -> Result<(), PlatformError> {
@@ -177,6 +180,13 @@ mod linux {
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
             .ok_or_else(|| PlatformError::Os("no XDG_DATA_HOME or HOME".into()))?;
         let dir = data.join("applications");
+        // The entry written before the rename (ADR 0020), when it is our small hidden one.
+        let old = dir.join(format!("{LEGACY_APP_ID}.desktop"));
+        if std::fs::metadata(&old).is_ok_and(|m| m.len() < 4096)
+            && std::fs::read_to_string(&old).is_ok_and(|c| c.contains("NoDisplay=true"))
+        {
+            let _ = std::fs::remove_file(&old);
+        }
         let path = dir.join(format!("{app_id}.desktop"));
         let exe = std::env::current_exe()
             .ok()
@@ -187,7 +197,7 @@ mod linux {
             })
             .unwrap_or_else(|| "true".into());
         let content = format!(
-            "[Desktop Entry]\nType=Application\nName=Klip\nComment=Game clip recorder\n\
+            "[Desktop Entry]\nType=Application\nName=Scout\nComment=Game clip recorder\n\
              Exec={exe}\nTerminal=true\nNoDisplay=true\n"
         );
         // Small file we wrote ourselves; anything bigger is not ours to compare.

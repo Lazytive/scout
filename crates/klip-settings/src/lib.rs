@@ -1,4 +1,4 @@
-//! Klip's settings (ADR 0014): the schema with defaults, loading that never fails on a
+//! Scout's settings (ADR 0014): the schema with defaults, loading that never fails on a
 //! hostile or broken file, strict changes through JSON merge patches, quality presets,
 //! per-game profiles and the hotkey syntax.
 
@@ -131,7 +131,7 @@ pub struct AppSettings {
     pub autostart: bool,
     /// Open to the tray instead of showing the window.
     pub start_minimized: bool,
-    /// Closing the window keeps Klip running in the tray.
+    /// Closing the window keeps Scout running in the tray.
     pub close_to_tray: bool,
     /// Local control channel for `klip-cli` and scripts (loopback + token, ADR 0006).
     pub control_channel: bool,
@@ -152,7 +152,7 @@ impl Default for AppSettings {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ClipSettings {
-    /// Absolute folder for clips; `None`: `Videos/Klip`.
+    /// Absolute folder for clips; `None`: `Videos/Scout`.
     pub folder: Option<String>,
     /// Clips go into a sub-folder per game.
     pub per_game_folders: bool,

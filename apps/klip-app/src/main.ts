@@ -8,7 +8,7 @@ import { blockBrowserUi } from './lib/browser-ui';
 const target = document.getElementById('app');
 if (!target) throw new Error('no #app element');
 
-// In the app the WebView's Print / Save as / Inspect are not Klip's (the browser mock
+// In the app the WebView's Print / Save as / Inspect are not Scout's (the browser mock
 // keeps them for working on the UI).
 if ('__TAURI_INTERNALS__' in window) blockBrowserUi();
 

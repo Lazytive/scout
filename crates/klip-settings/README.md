@@ -1,6 +1,6 @@
 # klip-settings
 
-Klip's settings (ADR 0014). Pure: no OS calls besides reading and writing the file.
+Scout's settings (ADR 0014). Pure: no OS calls besides reading and writing the file.
 
 - `Settings`: the schema v1 with defaults (`app`, `clips`, `recording`, `audio`,
   `hotkeys`, `overlay`, `storage`, `appearance`, `games`, `export`). Every struct is
@@ -30,10 +30,10 @@ Klip's settings (ADR 0014). Pure: no OS calls besides reading and writing the fi
   theme's own; `#rgb` and upper case are normalised); `density` (`comfortable` default |
   `compact`); `text_size` (`small` | `default` | `large` | `larger`); `motion`
   (`system` default | `reduce` | `full`).
-- `theme_file` (M10): custom theme files. `parse_export` (a shared `*.klip-theme`, picture
+- `theme_file` (M10): custom theme files. `parse_export` (a shared `*.scout-theme`, picture
   embedded as a data URI, ≤ 12 MiB), `parse_stored` (`themes/<id>.json` ≤ 64 KiB, the
   picture named in `background.file`), `from_value` (the editor's edits); all repair
-  field by field with issues and refuse only non-JSON, a missing/newer `klip_theme`
+  field by field with issues and refuse only non-JSON, a missing/newer `scout_theme` (or `klip_theme`, before the rename)
   version or an oversized file. `Picture::from_bytes` checks PNG/JPEG/WebP magic bytes
   and ≤ 8 MiB. `to_export`/`to_stored`/`to_ui` write the three forms; `slug`/`valid_id`
   make and check ids (`[a-z0-9-]`, ≤ 40); `valid_font` keeps CSS syntax out of font

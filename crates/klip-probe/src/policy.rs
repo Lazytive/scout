@@ -1,4 +1,4 @@
-//! Which encoders Klip may ever use (AGENTS.md rules 5 and 6).
+//! Which encoders Scout may ever use (AGENTS.md rules 5 and 6).
 //!
 //! The **allowlist** is the gate: only GPU vendor encoders, OS encoders (Media
 //! Foundation, Direct3D 12 Video Encode) and, on Linux only, openh264 (meant to be Cisco's binary from the Flatpak

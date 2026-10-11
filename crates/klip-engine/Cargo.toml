@@ -1,6 +1,6 @@
 [package]
 name = "klip-engine"
-description = "Klip's engine: settings, game detection, recorder lifecycle, hotkeys, events, commands"
+description = "Scout's engine: settings, game detection, recorder lifecycle, hotkeys, events, commands"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

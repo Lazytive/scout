@@ -371,7 +371,7 @@ pub fn save_from(
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let path = unique_path(dir, "Klip")?;
+    let path = unique_path(dir, "Scout")?;
     let markers: Vec<Marker> = bookmarks
         .iter()
         .filter(|b| **b >= snap.start && **b <= snap.end)

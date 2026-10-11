@@ -1,4 +1,4 @@
-//! Klip's desktop app: a thin Tauri 2 shell over `klip-engine` (ADR 0014). It runs the
+//! Scout's desktop app: a thin Tauri 2 shell over `klip-engine` (ADR 0014). It runs the
 //! engine, forwards its events to the window (`klip://event`) and the tray, and passes
 //! the window's commands to it (`klip`). No recording logic lives here.
 //!
@@ -65,7 +65,7 @@ fn create_main<R: Runtime>(
     pos: Option<(i32, i32)>,
 ) -> tauri::Result<()> {
     let mut b = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::default())
-        .title("Klip")
+        .title("Scout")
         .inner_size(1180.0, 760.0)
         .min_inner_size(820.0, 520.0);
     if let Ok(page) = std::env::var("KLIP_START_PAGE")
@@ -140,7 +140,54 @@ fn show_main<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// Klip is now Scout (ADR 0020): move the user's settings, themes and clip folder over
+/// once, before the engine reads them. Not for a custom settings file (tests).
+fn migrate_from_klip() {
+    if std::env::var_os("KLIP_SETTINGS").is_some() {
+        return;
+    }
+    let Some(places) = klip_engine::migrate::Places::for_user() else {
+        return;
+    };
+    let r = klip_engine::migrate::migrate(&places);
+    if r.settings {
+        tracing::info!(clips = ?r.clips, themes = r.theme_files, "moved over from Klip");
+    }
+    for e in &r.errors {
+        tracing::warn!(error = %e, "moving over from Klip");
+    }
+}
+
+/// Klip's "start with the OS" entry (ADR 0020): when it is on, it is removed and Scout's
+/// is switched on instead (the OS would otherwise keep starting it under the old name,
+/// and switching Scout's off would not stop it).
+fn migrate_autostart<R: Runtime>(app: &AppHandle<R>) {
+    use tauri_plugin_autostart::ManagerExt;
+    let Some(exe) = std::env::current_exe()
+        .ok()
+        .map(|p| p.display().to_string())
+    else {
+        return;
+    };
+    let Ok(old) = auto_launch::AutoLaunchBuilder::new()
+        .set_app_name(klip_engine::migrate::LEGACY_NAME)
+        .set_app_path(&exe)
+        .build()
+    else {
+        return;
+    };
+    if old.is_enabled().unwrap_or(false)
+        && let Err(e) = old
+            .disable()
+            .map_err(|e| e.to_string())
+            .and_then(|()| app.autolaunch().enable().map_err(|e| e.to_string()))
+    {
+        tracing::warn!(error = %e, "moving start with the OS over from Klip");
+    }
+}
+
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+    migrate_from_klip();
     let settings_path = std::env::var_os("KLIP_SETTINGS")
         .map(PathBuf::from)
         .or_else(klip_engine::default_settings_path)
@@ -150,7 +197,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .ok()
         .and_then(|s| parse_pos(&s));
 
-    // One Klip per user: a second start shows the running one. A Klip on its own
+    // One Scout per user: a second start shows the running one. A Scout on its own
     // settings file (KLIP_SETTINGS: tests, development) runs beside it instead, so a
     // test never pops the user's window.
     let mut builder = tauri::Builder::default();
@@ -205,6 +252,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 engine: Mutex::new(Some(engine)),
                 media: Mutex::new(std::collections::VecDeque::new()),
             });
+            if std::env::var_os("KLIP_SETTINGS").is_none() {
+                migrate_autostart(app.handle());
+            }
             // Custom theme pictures (ADR 0019) are shown through the asset protocol:
             // the themes folder only, not recursively.
             let themes = klip_engine::themes_dir(&settings_path);
@@ -339,7 +389,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            tracing::error!(error = %e, "Klip could not start");
+            tracing::error!(error = %e, "Scout could not start");
             ExitCode::FAILURE
         }
     }

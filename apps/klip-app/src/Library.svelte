@@ -144,7 +144,7 @@
   onMount(() => {
     lib.active = true;
     void refreshLibrary();
-    // Clips may have been added or removed outside Klip while the window was away.
+    // Clips may have been added or removed outside Scout while the window was away.
     const onFocus = () => {
       if (Date.now() - lastFocusRefresh > 5000) {
         lastFocusRefresh = Date.now();
@@ -229,7 +229,7 @@
             {:else if listing.total === 0}
               <div class="empty-state">
                 <p class="big">No clips yet</p>
-                <p class="muted">Clips you save while playing show up here. Klip keeps them as plain MP4 files in {listing.folder}.</p>
+                <p class="muted">Clips you save while playing show up here. Scout keeps them as plain MP4 files in {listing.folder}.</p>
               </div>
             {:else if clips.length === 0}
               <div class="empty-state">

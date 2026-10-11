@@ -169,7 +169,7 @@ fn montage_of_two_recorded_clips_with_a_crossfade_and_a_zoom() {
             "games": {
                 "buffer": "games",
                 "detect_stores": false,
-                "user_games": [{"exe": "klip-testgame.exe", "name": "Klip Test Game"}],
+                "user_games": [{"exe": "klip-testgame.exe", "name": "Scout Test Game"}],
             },
         }))
         .unwrap(),
@@ -233,7 +233,7 @@ fn montage_of_two_recorded_clips_with_a_crossfade_and_a_zoom() {
         json!({"path": a_s, "add": [b_s]}),
     );
     let b_key = format!(
-        "Klip Test Game/{}",
+        "Scout Test Game/{}",
         b.file_name().unwrap().to_string_lossy()
     );
     let b_entry = m["clips"]
@@ -423,7 +423,7 @@ fn montage_of_two_recorded_clips_with_a_crossfade_and_a_zoom() {
     let list = call(&discovery, "library.list", Value::Null);
     assert_eq!(list["total"], 3, "{list}");
     let key = format!(
-        "Klip Test Game/{}",
+        "Scout Test Game/{}",
         out.file_name().unwrap().to_string_lossy()
     );
     let c = list["clips"]
@@ -448,7 +448,7 @@ fn montage_of_two_recorded_clips_with_a_crossfade_and_a_zoom() {
     assert_eq!(renamed.len(), 1, "{again}");
     assert_eq!(renamed[0]["status"], "ok", "{again}");
     assert_eq!(
-        renamed[0]["key"], "Klip Test Game/Second.mp4",
+        renamed[0]["key"], "Scout Test Game/Second.mp4",
         "{again} {r}"
     );
 }

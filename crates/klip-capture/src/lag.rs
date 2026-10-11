@@ -9,7 +9,7 @@
 //! envelopes of the two streams. Envelopes, not raw samples: a pure tone correlates
 //! equally well at every period of the tone.
 //!
-//! Linux (PipeWire): an app's stream, linked straight to Klip's capture, arrives one graph
+//! Linux (PipeWire): an app's stream, linked straight to Scout's capture, arrives one graph
 //! cycle *before* the output's mix carries it (measured −10.5 to −10.75 ms with a
 //! 512-frame quantum). The capture already stamps such streams one buffer later; the
 //! estimator corrects what remains (either sign).
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn finds_streams_that_are_early() {
-        // Linux: an app's stream reaches Klip one graph cycle before the output's mix.
+        // Linux: an app's stream reaches Scout one graph cycle before the output's mix.
         for delay in [-10_666_667, -21_333_333, -42_666_667] {
             let e = run(&signal(12, false), &vec![0.0; 12 * 48_000], delay);
             assert!(e.measurements() >= 3, "{delay}: {e:?}");

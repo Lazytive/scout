@@ -75,7 +75,7 @@ fn library_over_real_clips() {
                 "buffer": "games",
                 // Only the test game: never a game the human is playing.
                 "detect_stores": false,
-                "user_games": [{"exe": "klip-testgame.exe", "name": "Klip Test Game"}],
+                "user_games": [{"exe": "klip-testgame.exe", "name": "Scout Test Game"}],
             },
         }))
         .unwrap(),
@@ -131,7 +131,7 @@ fn library_over_real_clips() {
     assert_eq!(list["total"], 2, "{list}");
     for k in [&k1, &k2] {
         let c = clip_of(&list, k);
-        assert_eq!(c["game"], "Klip Test Game");
+        assert_eq!(c["game"], "Scout Test Game");
         let info = &c["info"];
         let ms = info["duration_ms"].as_u64().unwrap();
         assert!((7_000..=9_000).contains(&ms), "{ms} ms");
@@ -234,7 +234,7 @@ fn library_over_real_clips() {
         json!({"path": p1, "name": "Test clip"}),
     );
     let new_key = r["key"].as_str().unwrap().to_string();
-    assert_eq!(new_key, "Klip Test Game/Test clip.mp4");
+    assert_eq!(new_key, "Scout Test Game/Test clip.mp4");
     let list = call(&discovery, "library.list", json!({"search": "test clip"}));
     assert_eq!(list["matched"], 1, "{list}");
     let c = clip_of(&list, &new_key);

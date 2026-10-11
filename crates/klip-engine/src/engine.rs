@@ -78,9 +78,9 @@ impl EngineOptions {
 
 pub use themes::themes_dir;
 
-/// `<config dir>/Klip/settings.json`.
+/// `<config dir>/Scout/settings.json`.
 pub fn default_settings_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("Klip").join("settings.json"))
+    dirs::config_dir().map(|d| d.join(crate::migrate::NAME).join("settings.json"))
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -377,7 +377,7 @@ impl Inner {
         self.stop_recorder("shutdown");
     }
 
-    /// Finalise recordings a killed Klip left (recordings folder and its game folders).
+    /// Finalise recordings a killed Scout left (recordings folder and its game folders).
     fn recover(&self) {
         let Ok(base) = config::recordings_base(&self.settings()) else {
             return;

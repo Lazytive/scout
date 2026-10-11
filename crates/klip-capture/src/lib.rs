@@ -1,6 +1,6 @@
 //! Capture + hardware-encode pipelines that deliver **encoded packets** to a sink.
 //!
-//! Windows video path (ADR 0002, 0010): Klip's own WGC capture
+//! Windows video path (ADR 0002, 0010): Scout's own WGC capture
 //! (`klip_platform::GpuCapture`: frames stamped with WGC's capture time, cropped and
 //! scaled on the GPU) `→ appsrc → videorate (drop only) → d3d11convert → NV12 → queue →
 //! encoder → parser → appsink`, all on one D3D11 device shared through a `GstContext`.
@@ -115,10 +115,10 @@ pub struct VideoConfig {
 /// Capture implementation for video.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CaptureApi {
-    /// Klip's own WGC capture, falling back to GStreamer's WGC source.
+    /// Scout's own WGC capture, falling back to GStreamer's WGC source.
     #[default]
     Auto,
-    /// Klip's own WGC capture only (`klip_platform::GpuCapture`).
+    /// Scout's own WGC capture only (`klip_platform::GpuCapture`).
     Klip,
     /// GStreamer's `d3d11screencapturesrc` in WGC mode.
     GstWgc,
@@ -134,7 +134,7 @@ pub enum CaptureApi {
 pub struct EncodeConfig {
     pub encoder: EncoderChoice,
     pub bitrate_kbps: u32,
-    /// Keyframe interval in frames (Klip uses 1 s).
+    /// Keyframe interval in frames (Scout uses 1 s).
     pub keyframe_interval: u32,
     /// Peak bitrate; `None` = 1.5 x `bitrate_kbps` (the export's size-fit sets it).
     pub max_bitrate_kbps: Option<u32>,
@@ -873,7 +873,7 @@ pub struct CaptureSession {
     bus_thread: Option<JoinHandle<()>>,
     stats: Arc<CaptureStats>,
     output: (u32, u32),
-    /// Klip's own capture feeding the pipeline (stopped before the pipeline).
+    /// Scout's own capture feeding the pipeline (stopped before the pipeline).
     #[cfg(windows)]
     gpu: Option<klip_platform::GpuCapture>,
     /// Keeps the screen-cast session open while its stream is captured.
@@ -1083,7 +1083,7 @@ fn source_size(target: VideoTarget) -> Result<(u32, u32, VideoTarget), CaptureEr
     }
 }
 
-/// Feeds frames from Klip's own capture into the pipeline's `appsrc`, stamped on the
+/// Feeds frames from Scout's own capture into the pipeline's `appsrc`, stamped on the
 /// recording's timeline.
 #[cfg(windows)]
 struct AppsrcFeed {
@@ -1190,7 +1190,7 @@ impl CaptureSession {
         Self::start_gst_wgc(video, encode, sink, timebase, target, (out_w, out_h))
     }
 
-    /// Klip's own WGC capture into an `appsrc` (see the crate docs).
+    /// Scout's own WGC capture into an `appsrc` (see the crate docs).
     #[cfg(windows)]
     fn start_klip(
         video: &VideoConfig,
@@ -1409,7 +1409,7 @@ impl CaptureSession {
         // Leave `on-disconnect` at "none": its "error"/"eos" modes fire on every buffer
         // renegotiation (all buffers are removed then too; KWin renegotiates right after
         // the first frame), not only when the stream goes away.
-        props::set_str(&src, "client-name", "Klip");
+        props::set_str(&src, "client-name", "Scout");
         if let Some(tb) = timebase {
             stamp_portal_frames(&src, tb)?;
         }
@@ -1585,7 +1585,7 @@ impl CaptureSession {
         self.api
     }
 
-    /// Frames the source has produced so far (Klip's capture: captured frames; GStreamer
+    /// Frames the source has produced so far (Scout's capture: captured frames; GStreamer
     /// sources: encoded packets). For stall detection.
     pub fn frames_captured(&self) -> u64 {
         #[cfg(windows)]
@@ -1600,7 +1600,7 @@ impl CaptureSession {
         self.stats.errors.load(Ordering::Relaxed) > 0
     }
 
-    /// Counters of Klip's own capture, when it runs.
+    /// Counters of Scout's own capture, when it runs.
     #[cfg(windows)]
     pub fn gpu_stats(&self) -> Option<Arc<klip_platform::GpuCaptureStats>> {
         self.gpu.as_ref().map(klip_platform::GpuCapture::stats)

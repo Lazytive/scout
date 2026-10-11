@@ -1,6 +1,6 @@
 [package]
 name = "klip-settings"
-description = "Klip settings: schema, hostile-file loading, presets, per-game profiles, hotkey syntax"
+description = "Scout settings: schema, hostile-file loading, presets, per-game profiles, hotkey syntax"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

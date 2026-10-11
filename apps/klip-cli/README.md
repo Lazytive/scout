@@ -41,7 +41,7 @@ method and numbers). e2e tests place the test game on a secondary monitor;
 `KLIP_E2E_MONITOR=offscreen` puts it beyond all monitors instead (window capture still
 works there).
 
-`daemon` (ADR 0014) runs Klip's engine without a window: it reads the app's settings
+`daemon` (ADR 0014) runs Scout's engine without a window: it reads the app's settings
 file (or `--settings`), buffers while a detected game runs (per-game clip folders,
 per-game profiles), binds the hotkeys from the settings (Windows: RegisterHotKey; Linux:
 the portal), serves the control channel, and prints every engine event as a JSON line
@@ -53,11 +53,11 @@ worker (`--klip-media-worker`, ADR 0015). e2e: `tests/m6_daemon.rs`; recorder pr
 input checks: `tests/workers.rs`.
 
 `record` prints one JSON line `{"event":"ready",...}` to stdout, logs to stderr, and
-serves the control channel (discovery file in `%LOCALAPPDATA%\Klip\control.json`, or
+serves the control channel (discovery file in `%LOCALAPPDATA%\Scout\control.json`, or
 `--discovery`). Bind `klip-cli clip` to a desktop shortcut as a hotkey fallback.
 
 Full-session recording (ADR 0013): `--session` (or `klip-cli session start`) writes
-`Klip_Recording_<time>.mp4` into `--session-dir` (default: the clip folder) as a
+`Scout_Recording_<time>.mp4` into `--session-dir` (default: the clip folder) as a
 fragmented MP4, so a crash leaves a playable file; stopping (or stopping the recorder)
 finalises it into a regular MP4 and prints `{"event":"recording_stopped",...}`.
 Bookmarks become chapters ("Bookmark n") in the recording and in clips that cover them.
@@ -66,7 +66,7 @@ At start, `record` finalises recordings a killed recorder left in that folder
 
 Linux (ADR 0012): `record` captures through the desktop's screen-cast portal (the only
 way on Wayland; `--window-*`/`--monitor` are Windows options). The first run shows the
-desktop's dialog; the restore token in `$XDG_STATE_HOME/Klip/screencast-token` (or
+desktop's dialog; the restore token in `$XDG_STATE_HOME/Scout/screencast-token` (or
 `--portal-token`) makes later runs start without asking. The ready line reports the
 stream (`portal`: node, kind, logical position and size). The portal doesn't say which app
 is on the captured screen, so audio defaults to system audio; `--game EXE` records that
@@ -76,7 +76,7 @@ program's audio as the Game track instead (as window capture does on Windows).
 `{"event":"clip",...}`. Without the portal, bind `klip-cli clip` in the desktop's
 shortcut settings instead.
 
-Default clip folder: `Videos\Klip`. Default byte cap: estimated from buffer length and
+Default clip folder: `Videos\Scout`. Default byte cap: estimated from buffer length and
 bitrate (120 s at 20 Mbit/s ≈ 454 MB).
 
 Acceptance tests (run with `cargo xtask e2e`): `tests/m1_acceptance.rs` (video) and

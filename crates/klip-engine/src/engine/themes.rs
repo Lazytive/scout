@@ -351,7 +351,7 @@ impl Inner {
         Ok(json!({ "id": id, "theme": ui(&id, &l), "issues": issues_json(&imp.issues) }))
     }
 
-    /// `theme.export {id, path}`: one self-contained `*.klip-theme` file.
+    /// `theme.export {id, path}`: one self-contained `*.scout-theme` file.
     pub(super) fn theme_export(&self, args: &Value) -> Result<Value, CommandError> {
         let id = arg_id(args)?;
         let path = arg_path(args, "path")?;

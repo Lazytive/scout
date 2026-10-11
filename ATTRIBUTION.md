@@ -6,7 +6,7 @@ each file under `assets/` has an entry.
 
 | Path | Source | Author | Licence |
 |---|---|---|---|
-| `apps/klip-app/src-tauri/icons/` | `app-icon.svg` drawn for Klip; the other sizes generated from it with `tauri icon` | Klip contributors | MIT OR Apache-2.0 |
+| `apps/klip-app/src-tauri/icons/` | `app-icon.svg` drawn for Scout; the other sizes generated from it with `tauri icon` | Scout contributors | MIT OR Apache-2.0 |
 | `assets/fonts/` | Inter 4.1 (`Inter-Bold.ttf`, `Inter-ExtraBold.ttf` from the release's `extras/ttf`, licence in `Inter-LICENSE.txt`), https://github.com/rsms/inter/releases/tag/v4.1 | The Inter Project Authors (Rasmus Andersson) | SIL Open Font License 1.1 |
 
 The tray icons are drawn at runtime (`apps/klip-app/src-tauri/src/tray.rs`). The UI uses

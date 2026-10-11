@@ -51,7 +51,7 @@ into a regular MP4 in place. Decision records: `docs/adr/0003-own-mp4-writer.md`
 - `probe(reader)` → `Mp4Info`: movie duration, creation time, the first video track
   (codec name, width, height, average fps from samples / track duration), audio track
   count and handler names (`audio_names`: `Mix`, `Game`, `Microphone`, ...), chapter
-  times and titles (`udta/chpl`: Klip's bookmarks are `Bookmark <n>`; the library
+  times and titles (`udta/chpl`: Scout's bookmarks are `Bookmark <n>`; the library
   treats other titles as events), whether it is fragmented. Reads
   box headers and the `moov` only (≤ 64 MiB), wherever it is (front, end, after
   fragments); works on files from other programs (unknown codecs are named by their four

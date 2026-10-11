@@ -1,4 +1,4 @@
-//! Klip's engine (ADR 0014): everything the app does that isn't UI. It owns the settings,
+//! Scout's engine (ADR 0014): everything the app does that isn't UI. It owns the settings,
 //! watches for games, runs the recorder while one plays, binds hotkeys, reports events
 //! and executes every command. The desktop app and `klip-cli daemon` are front ends.
 
@@ -9,6 +9,7 @@ mod engine;
 pub mod events;
 pub mod games;
 pub mod media_worker;
+pub mod migrate;
 mod worker;
 
 pub use engine::{

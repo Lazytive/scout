@@ -1,6 +1,6 @@
 [package]
 name = "klip-edit"
-description = "Klip editor model: project file, timeline math (cuts, speed), format crop, text presets, templates"
+description = "Scout editor model: project file, timeline math (cuts, speed), format crop, text presets, templates"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

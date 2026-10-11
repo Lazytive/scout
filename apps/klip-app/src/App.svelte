@@ -25,7 +25,7 @@
 
   const st = $derived(app.status);
   const title = $derived.by(() => {
-    if (!st) return 'Klip';
+    if (!st) return 'Scout';
     const who = st.game?.name ?? (st.desktop ? 'Desktop' : null);
     if (!who) return st.buffer_mode === 'off' ? 'Replay buffer off' : 'Waiting for a game';
     if (st.starting) return `${who} — starting`;
@@ -34,7 +34,7 @@
 
   const hint = $derived.by(() => {
     const clip = st?.hotkeys.find((h) => h.action === 'clip.save' && !h.error);
-    if (!st?.recording) return 'Klip starts the replay buffer by itself when a game opens.';
+    if (!st?.recording) return 'Scout starts the replay buffer by itself when a game opens.';
     if (clip?.keys && clip.secs) return `${clip.keys} saves the last ${formatDuration(clip.secs * 1000)}.`;
     return 'Save a clip with the button or a hotkey.';
   });

@@ -106,7 +106,7 @@ pub enum Event {
     StorageCleaned {
         report: Value,
     },
-    /// Clips were renamed, tagged, starred or deleted through Klip (`reason`).
+    /// Clips were renamed, tagged, starred or deleted through Scout (`reason`).
     LibraryChanged {
         reason: String,
     },

@@ -70,7 +70,7 @@ fn nvenc_survives_media_foundation_in_between() {
     assert!(nvenc_ok(), "NVENC again");
 }
 
-/// Reproduce the driver/GStreamer behaviour without Klip's warm-up:
+/// Reproduce the driver/GStreamer behaviour without Scout's warm-up:
 /// `KLIP_DIAG_SEQ=nvd3d11h264enc,mfaacenc,nvd3d11h264enc cargo test -p klip-probe
 /// --test nvenc_media_foundation diag_ -- --ignored --nocapture`
 #[test]

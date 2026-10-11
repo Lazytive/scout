@@ -1,6 +1,6 @@
 # klip-app
 
-Klip's desktop app (ADR 0004, ADR 0014): a thin Tauri 2 shell over `klip-engine`, with a
+Scout's desktop app (ADR 0004, ADR 0014): a thin Tauri 2 shell over `klip-engine`, with a
 Svelte 5 + TypeScript front end. All recording logic is in the engine; the app runs it,
 shows it and passes the window's actions to it.
 
@@ -29,7 +29,7 @@ Compact = `:root[data-density='compact']` with tighter `--space-*`, bars and
 `--control-h`), **motion** (System / Reduced / Full: `data-motion='reduce'` zeroes every
 transition and animation) and a **contrast check** (the `textPairs`/`uiPairs` below WCAG
 AA for the look on screen). **Custom themes** (`theme.*` commands): New theme (a copy of
-the current one, put in use), Import… (`*.klip-theme`; what was repaired is listed),
+the current one, put in use), Import… (`*.scout-theme`; what was repaired is listed),
 Edit, Export…, Delete (asks first; the theme in use falls back to Follow system). The
 editor (`settings/ThemeEditor.svelte`) previews every change on the whole app
 (`app.themePreview`) until Save or Cancel: name, base theme, 21 colours in five groups
@@ -126,7 +126,7 @@ app sizes its window).
   usage), Overlay. Every control saves at once with a strict `settings.set`; a
   rejection shows its reason under the field (`store.save`, `fieldError`).
 - `src/FirstRun.svelte`: shown while `app.first_run_done` is false: your PC (GPU and the
-  encoder Klip will use), quality + buffer with RAM estimate, clip hotkey, microphone
+  encoder Scout will use), quality + buffer with RAM estimate, clip hotkey, microphone
   with test meter, clip folder, pop-up style; each step saves as it goes; Skip/Finish
   set `first_run_done`.
 - `src/lib/forms/`: Row, Toggle (blue square checkbox), Select, NumberField, Segmented
@@ -137,7 +137,7 @@ app sizes its window).
   every start).
 - `src/Home.svelte` (Monitor, Info/Storage, Activity/Hotkeys panels),
   `src/lib/Panel.svelte` (panel with a tab strip), `src/App.svelte` (header, status bar).
-- Icons: `src-tauri/icons/app-icon.svg` (made for Klip), sizes generated with
+- Icons: `src-tauri/icons/app-icon.svg` (made for Scout), sizes generated with
   `npx tauri icon src-tauri/icons/app-icon.svg -o src-tauri/icons` (desktop sizes kept).
 - CSP: scripts and styles from the app only, no remote URLs. `connect-src` allows the
   asset protocol so the timeline can `fetch` a sound it already plays for its waveform
@@ -233,8 +233,8 @@ and audits npm licences from `package-lock.json` (shipped packages: permissive o
 
 Development and test overrides (environment): `KLIP_SETTINGS` (settings file),
 `KLIP_DISCOVERY` (control-channel discovery file), `KLIP_START_PAGE=home|library|settings`
-(the page the window opens on; a Klip on its own `KLIP_SETTINGS` skips the
-single-instance hand-over, so it runs beside the user's Klip instead of showing it; give
+(the page the window opens on; a Scout on its own `KLIP_SETTINGS` skips the
+single-instance hand-over, so it runs beside the user's Scout instead of showing it; give
 it its own `WEBVIEW2_USER_DATA_FOLDER` too), `KLIP_WINDOW_POS=x,y` (create the
 window there, visible and **not activated**: tests put it off-screen, e.g. `12000,200`,
 and capture it with `tools/window-shot.ps1`). Never

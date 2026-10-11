@@ -1,6 +1,6 @@
 param([long]$Hwnd, [string]$Out)
 # Usage: powershell -File tools/window-shot.ps1 -Hwnd <HWND> -Out shot.png
-# (find the HWND with `klip-cli windows Klip`). For UI checks run the app with
+# (find the HWND with `klip-cli windows Scout`). For UI checks run the app with
 # KLIP_WINDOW_POS off-screen (e.g. 12000,200): nothing shows on anyone's monitors.
 # Capture one window's own content (PrintWindow with PW_RENDERFULLCONTENT), even when
 # other windows cover it; nothing else on screen ends up in the picture.

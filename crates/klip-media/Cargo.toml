@@ -1,6 +1,6 @@
 [package]
 name = "klip-media"
-description = "Shared media types for Klip: codecs, track descriptions, encoded packets"
+description = "Shared media types for Scout: codecs, track descriptions, encoded packets"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

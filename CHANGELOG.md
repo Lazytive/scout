@@ -5,6 +5,19 @@ reason)`.
 
 ## Unreleased
 
+- Rename — Klip is now **Scout** (ADR 0020): every user-visible name (windows, tray,
+  overlay, setup, settings, notifications, CLI help, docs, Tauri `productName`), app id
+  `io.github.lazytive.Scout` (was `dev.klip.Klip`; the old hidden Linux desktop entry is
+  removed), clip names `Scout_…` / `Scout_Recording_…` (the library still shortens
+  `Klip_…`), theme files `*.scout-theme` / `"scout_theme"` (old ones still import),
+  default folders `Videos/Scout` and `<config>/Scout`. One-time migration
+  (`klip_engine::migrate`, app + `klip-cli daemon`): settings and themes copied from
+  `<config>/Klip`; the default `Videos/Klip` moved to `Videos/Scout` by one directory
+  rename, or kept and written into the settings when it can't move; Klip's
+  start-with-the-OS entry moved to Scout. Internal names stay (`klip-*` crates and
+  binaries, `KLIP_*` overrides, the `.klip` folder). Tests: migration (moved, kept when
+  the target exists or a clip is held open, chosen folder untouched, once only), old
+  theme key, old clip names. (Claude Opus 5.5: the user: "Do the rename")
 - M10.4–M10.5 — Settings → Appearance (`settings/Appearance.svelte`): theme cards drawn in
   each theme's colours (built-in and custom), accent colour (Theme's own, 8 swatches that
   keep AA on every built-in theme, any colour), text size, density, motion and a live

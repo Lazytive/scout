@@ -1,6 +1,6 @@
 //! The engine's commands and settings handling, without recording: the replay buffer is
 //! off (so a game the human is playing is never recorded by a test) and the control
-//! channel is off (so a running Klip's discovery file is never touched).
+//! channel is off (so a running Scout's discovery file is never touched).
 
 #![allow(
     clippy::unwrap_used,

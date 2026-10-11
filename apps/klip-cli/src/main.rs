@@ -22,7 +22,7 @@ use klip_recorder::{Recorder, RecorderConfig, SessionConfig, estimate_buffer_byt
 use serde_json::json;
 
 #[derive(Parser, Debug)]
-#[command(name = "klip-cli", version, about = "Klip game clipper: recorder CLI")]
+#[command(name = "klip-cli", version, about = "Scout game clipper: recorder CLI")]
 struct Cli {
     /// Control-channel discovery file (default: per-user runtime dir).
     #[arg(long, global = true)]
@@ -35,11 +35,11 @@ struct Cli {
 enum Cmd {
     /// Run the replay buffer until stopped (Ctrl+C or `klip-cli stop`).
     Record(Box<RecordArgs>),
-    /// Run Klip's engine without a window (ADR 0014): watches for games, buffers while
+    /// Run Scout's engine without a window (ADR 0014): watches for games, buffers while
     /// one runs, binds the hotkeys from the settings, serves the control channel, and
     /// prints every event as a JSON line. Stops with Ctrl+C or `klip-cli stop`.
     Daemon {
-        /// Settings file (default: the app's, `<config dir>/Klip/settings.json`).
+        /// Settings file (default: the app's, `<config dir>/Scout/settings.json`).
         #[arg(long, value_name = "FILE")]
         settings: Option<PathBuf>,
         /// How often to look for games.
@@ -162,13 +162,13 @@ struct RecordArgs {
     /// Use this encoder element instead of probing (must be on the allowlist).
     #[arg(long)]
     encoder: Option<String>,
-    /// Folder for clips (default: Videos/Klip).
+    /// Folder for clips (default: Videos/Scout).
     #[arg(long)]
     out: Option<PathBuf>,
     #[arg(long)]
     no_cursor: bool,
-    /// Video capture implementation: Klip's own WGC capture (falls back to GStreamer's
-    /// when it can't start), only Klip's, GStreamer's WGC source, or GStreamer's DXGI
+    /// Video capture implementation: Scout's own WGC capture (falls back to GStreamer's
+    /// when it can't start), only Scout's, GStreamer's WGC source, or GStreamer's DXGI
     /// Desktop Duplication (monitors only).
     #[arg(long, value_enum, default_value_t = CaptureApiArg::Auto)]
     capture_api: CaptureApiArg,
@@ -207,7 +207,7 @@ struct RecordArgs {
     #[arg(long, value_enum, conflicts_with_all = ["window_title", "window_handle", "monitor"])]
     portal: Option<PortalArg>,
     /// File that keeps the portal's restore token, so the dialog is shown only once
-    /// (default: the Klip folder in the XDG state dir).
+    /// (default: the Scout folder in the XDG state dir).
     #[arg(long, value_name = "FILE")]
     portal_token: Option<PathBuf>,
     /// Save a clip with a system-wide shortcut (Windows: RegisterHotKey, the keys as
@@ -283,7 +283,7 @@ fn connect(cli: &Cli, timeout: Duration) -> Result<Client> {
     match Client::connect(&path, timeout) {
         Ok(c) => Ok(c),
         Err(ClientError::NotRunning) => {
-            bail!("the Klip recorder is not running (start it with `klip-cli record`)")
+            bail!("the Scout recorder is not running (start it with `klip-cli record`)")
         }
         Err(e) => Err(e.into()),
     }
@@ -569,7 +569,7 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
     if let Ok(mut c) = Client::connect(&discovery, Duration::from_millis(500))
         && c.call(commands::PING, json!(null)).is_ok()
     {
-        bail!("a Klip recorder is already running");
+        bail!("a Scout recorder is already running");
     }
     klip_probe::init()?;
     let codec =
@@ -599,7 +599,7 @@ fn record(cli: &Cli, args: &RecordArgs) -> Result<()> {
         None => dirs::video_dir()
             .or_else(dirs::home_dir)
             .ok_or_else(|| anyhow!("no Videos folder; pass --out"))?
-            .join("Klip"),
+            .join(klip_engine::migrate::NAME),
     };
     let session_dir = args.session_dir.clone().unwrap_or_else(|| clip_dir.clone());
     // Recordings a killed recorder left unfinished: finalise them now.
@@ -737,7 +737,19 @@ fn daemon(cli: &Cli, settings: Option<PathBuf>, poll: Nanos) -> Result<()> {
     if let Ok(mut c) = Client::connect(&discovery, Duration::from_millis(500))
         && c.call(commands::PING, json!(null)).is_ok()
     {
-        bail!("a Klip recorder is already running");
+        bail!("a Scout recorder is already running");
+    }
+    if settings.is_none()
+        && let Some(places) = klip_engine::migrate::Places::for_user()
+    {
+        // Klip is now Scout (ADR 0020): the user's data moves over once.
+        let r = klip_engine::migrate::migrate(&places);
+        if r.settings {
+            eprintln!(
+                "moved over from Klip: clips {:?}, {} theme files",
+                r.clips, r.theme_files
+            );
+        }
     }
     let path = settings
         .or_else(klip_engine::default_settings_path)

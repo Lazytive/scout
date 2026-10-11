@@ -332,7 +332,7 @@ fn every_key_round_trips_with_every_modifier_set() {
 #[test]
 fn files_load_save_and_keep_bad_copies() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("Klip").join("settings.json");
+    let path = dir.path().join("Scout").join("settings.json");
     let l = load(&path);
     assert_eq!(l.status, LoadStatus::Missing);
     assert_eq!(l.settings, Settings::default());

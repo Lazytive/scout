@@ -1,6 +1,6 @@
 [package]
 name = "klip-app"
-description = "Klip desktop app: tray, windows, overlay (a Tauri 2 shell over klip-engine)"
+description = "Scout desktop app: tray, windows, overlay (a Tauri 2 shell over klip-engine)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,6 +11,8 @@ publish.workspace = true
 tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
+# The same version tauri-plugin-autostart uses: moving Klip's entry over (ADR 0020).
+auto-launch = "0.6"
 cpal.workspace = true
 klip-control.workspace = true
 klip-engine.workspace = true

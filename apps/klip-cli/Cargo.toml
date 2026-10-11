@@ -1,6 +1,6 @@
 [package]
 name = "klip-cli"
-description = "Klip recorder CLI: replay buffer, clip saves, status"
+description = "Scout recorder CLI: replay buffer, clip saves, status"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

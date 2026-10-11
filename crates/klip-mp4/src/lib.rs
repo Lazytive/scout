@@ -50,7 +50,7 @@ pub enum Mp4Error {
     Internal(&'static str),
     #[error("{0} already exists")]
     AlreadyExists(PathBuf),
-    #[error("not a fragmented Klip recording: {0}")]
+    #[error("not a fragmented Scout recording: {0}")]
     NotFragmented(&'static str),
     #[error("malformed file: {0}")]
     Malformed(String),

@@ -1,5 +1,5 @@
 //! The few functions of GStreamer's D3D11 library (`gstd3d11-1.0`, LGPL, linked
-//! dynamically like the rest of GStreamer) that Klip needs to hand its own D3D11
+//! dynamically like the rest of GStreamer) that Scout needs to hand its own D3D11
 //! textures to a pipeline: wrap our `ID3D11Device` as a `GstD3D11Device`, share it with
 //! the pipeline's elements through a `GstContext`, allocate frames from a D3D11 buffer
 //! pool, and serialise use of the immediate context with the device lock.

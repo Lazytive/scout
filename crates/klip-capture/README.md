@@ -6,7 +6,7 @@ measurements of the timing: ADR 0008.
 
 ## Video (Windows, ADR 0002, 0010)
 
-Default (`CaptureApi::Auto` / `Klip`), built element by element:
+Default (`CaptureApi::Auto` / `Scout`), built element by element:
 
 ```
 klip_platform::GpuCapture (own WGC, D3D11 device on the encoder's GPU, shared via GstContext)

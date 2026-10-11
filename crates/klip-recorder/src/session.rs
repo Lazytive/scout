@@ -304,7 +304,7 @@ impl Session {
             overflow: AtomicBool::new(false),
             finished: AtomicBool::new(false),
             state: Mutex::new(State {
-                next_path: unique_path(&cfg.dir, "Klip_Recording")?,
+                next_path: unique_path(&cfg.dir, "Scout_Recording")?,
                 ..State::default()
             }),
         });
@@ -544,7 +544,7 @@ impl Writer {
                 "track description changed; starting a new recording file"
             );
             self.finish_file();
-            let next = unique_path(&self.cfg.dir, "Klip_Recording")
+            let next = unique_path(&self.cfg.dir, "Scout_Recording")
                 .map_err(|e| WriteError::Stop(e.to_string()))?;
             self.shared.state().next_path = next;
         } else if had {

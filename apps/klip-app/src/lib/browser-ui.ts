@@ -1,7 +1,7 @@
 // No browser UI in the app (M9.8.1): the WebView's own context menu (Print, Save as,
 // Inspect…) and its accelerators (Ctrl+P print, Ctrl+S save as, Ctrl+F find, F5 reload…)
-// belong to a web browser, not to Klip. Their default actions are cancelled in the page;
-// Klip's own handlers still see the keys (Ctrl+Z, Ctrl+K…), and text fields keep their
+// belong to a web browser, not to Scout. Their default actions are cancelled in the page;
+// Scout's own handlers still see the keys (Ctrl+Z, Ctrl+K…), and text fields keep their
 // context menu (copy / paste).
 
 export interface KeyLike {

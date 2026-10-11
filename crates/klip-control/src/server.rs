@@ -31,7 +31,7 @@ pub enum ServerError {
 /// Client errors.
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
-    #[error("Klip recorder is not running")]
+    #[error("Scout recorder is not running")]
     NotRunning,
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),

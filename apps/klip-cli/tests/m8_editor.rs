@@ -70,7 +70,7 @@ fn editor_project_and_discord_export_over_a_real_clip() {
             "games": {
                 "buffer": "games",
                 "detect_stores": false,
-                "user_games": [{"exe": "klip-testgame.exe", "name": "Klip Test Game"}],
+                "user_games": [{"exe": "klip-testgame.exe", "name": "Scout Test Game"}],
             },
         }))
         .unwrap(),
@@ -239,11 +239,11 @@ fn editor_project_and_discord_export_over_a_real_clip() {
     let list = call(&discovery, "library.list", Value::Null);
     assert_eq!(list["total"], 2, "{list}");
     let key = format!(
-        "Klip Test Game/{}",
+        "Scout Test Game/{}",
         out.file_name().unwrap().to_string_lossy()
     );
     let c = clip_of(&list, &key);
-    assert_eq!(c["game"], "Klip Test Game");
+    assert_eq!(c["game"], "Scout Test Game");
     let ms = c["info"]["duration_ms"].as_u64().unwrap();
     assert!((6_400..=6_600).contains(&ms), "{ms} ms");
     assert_eq!(c["info"]["codec"], "H.264");
@@ -273,7 +273,7 @@ fn editor_project_and_discord_export_over_a_real_clip() {
         !clips
             .join(".klip")
             .join("projects")
-            .join("Klip Test Game%2FEdited.mp4.json")
+            .join("Scout Test Game%2FEdited.mp4.json")
             .exists()
     );
 }

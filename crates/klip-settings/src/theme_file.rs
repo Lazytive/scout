@@ -3,7 +3,7 @@
 //!
 //! A theme is a built-in `base` plus the colours it overrides, a corner radius, a font
 //! family and an optional background picture. Two forms of the same JSON:
-//! - **export** (`*.klip-theme`, what people share): the picture is embedded as a
+//! - **export** (`*.scout-theme`, what people share): the picture is embedded as a
 //!   `data:image/…;base64,` URI in `background.image`;
 //! - **stored** (`themes/<id>.json`): the picture sits beside it as `<id>.<ext>`, named in
 //!   `background.file`.
@@ -21,6 +21,10 @@ use crate::Issue;
 
 /// The format version this build writes and reads.
 pub const FORMAT_VERSION: u64 = 1;
+/// The key holding it.
+pub const FORMAT_KEY: &str = "scout_theme";
+/// The key before the rename to Scout (ADR 0020); still read.
+pub const LEGACY_FORMAT_KEY: &str = "klip_theme";
 /// Largest export file (picture included).
 pub const MAX_EXPORT_BYTES: usize = 12 << 20;
 /// Largest stored theme JSON (no picture).
@@ -79,11 +83,11 @@ pub const BASES: [&str; 4] = ["dark", "graphite", "light", "oled"];
 pub enum ThemeError {
     #[error("the file is larger than {0} MB")]
     TooLarge(usize),
-    #[error("not a Klip theme file (it isn't JSON)")]
+    #[error("not a Scout theme file (it isn't JSON)")]
     NotJson,
-    #[error("not a Klip theme file (no \"klip_theme\" version)")]
+    #[error("not a Scout theme file (no \"scout_theme\" version)")]
     NotTheme,
-    #[error("the theme was made by a newer Klip (format {0})")]
+    #[error("the theme was made by a newer Scout (format {0})")]
     Newer(u64),
     #[error("the picture isn't a PNG, JPEG or WebP file")]
     NotPicture,
@@ -202,7 +206,7 @@ pub struct Stored {
     pub issues: Vec<Issue>,
 }
 
-/// Parse a shared `*.klip-theme` file.
+/// Parse a shared `*.scout-theme` file (or a `*.klip-theme` from before the rename).
 pub fn parse_export(bytes: &[u8]) -> Result<Imported, ThemeError> {
     let (obj, mut issues) = parse_object(bytes, MAX_EXPORT_BYTES)?;
     let mut theme = fields(&obj, &mut issues);
@@ -251,7 +255,7 @@ pub fn parse_stored(bytes: &[u8]) -> Result<Stored, ThemeError> {
 }
 
 /// Repair a theme the UI sends (the editor): same rules as a file, minus the picture.
-/// `value` is the theme object without `klip_theme` and `background.image`/`file`.
+/// `value` is the theme object without `scout_theme` and `background.image`/`file`.
 pub fn from_value(value: &Value) -> (CustomTheme, Vec<Issue>) {
     let mut issues = Vec::new();
     let empty = Map::new();
@@ -271,7 +275,7 @@ impl CustomTheme {
     /// The JSON both forms share (without `background`).
     fn base_json(&self) -> Map<String, Value> {
         let mut m = Map::new();
-        m.insert("klip_theme".into(), json!(FORMAT_VERSION));
+        m.insert(FORMAT_KEY.into(), json!(FORMAT_VERSION));
         m.insert("name".into(), json!(self.name));
         m.insert("base".into(), json!(self.base));
         m.insert("colors".into(), json!(self.colors));
@@ -309,7 +313,7 @@ impl CustomTheme {
     /// What the UI gets (`theme.list`): the stored form's fields, the picture as a path.
     pub fn to_ui(&self, id: &str, picture_path: Option<&str>) -> Value {
         let mut m = self.base_json();
-        m.remove("klip_theme");
+        m.remove(FORMAT_KEY);
         m.insert("id".into(), json!(id));
         m.insert(
             "background".into(),
@@ -393,7 +397,8 @@ fn parse_object(bytes: &[u8], max: usize) -> Result<(Map<String, Value>, Vec<Iss
     let Value::Object(obj) = v else {
         return Err(ThemeError::NotTheme);
     };
-    match obj.get("klip_theme").and_then(Value::as_u64) {
+    let version = obj.get(FORMAT_KEY).or_else(|| obj.get(LEGACY_FORMAT_KEY));
+    match version.and_then(Value::as_u64) {
         None | Some(0) => Err(ThemeError::NotTheme),
         Some(v) if v > FORMAT_VERSION => Err(ThemeError::Newer(v)),
         Some(_) => Ok((obj, Vec::new())),

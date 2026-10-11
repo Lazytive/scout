@@ -40,7 +40,7 @@ enum Source {
     #[cfg(not(target_os = "linux"))]
     Cpal { _stream: cpal::Stream },
     /// Linux: ALSA (cpal) can't capture an output, and its clock starts at the stream,
-    /// so the default sink's monitor comes from Klip's PipeWire capture instead, stamped
+    /// so the default sink's monitor comes from Scout's PipeWire capture instead, stamped
     /// on CLOCK_MONOTONIC.
     #[cfg(target_os = "linux")]
     PipeWire {

@@ -1,6 +1,6 @@
 [package]
 name = "klip-testgame"
-description = "Test game for Klip: barcoded frame counter, motion, flash every second"
+description = "Test game for Scout: barcoded frame counter, motion, flash every second"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
