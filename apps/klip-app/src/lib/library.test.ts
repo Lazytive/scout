@@ -12,10 +12,13 @@ import {
   moveKey,
   pruneSelection,
   qualityLabel,
+  RECENT_COUNT,
+  recentArgs,
   scrubTile,
   sinceFor,
   stripPosition,
   tileTime,
+  withThumbs,
   type LibClip,
 } from './library';
 
@@ -189,5 +192,23 @@ describe('selection', () => {
 
   it('drops selected clips that are gone', () => {
     expect(pruneSelection(['a', 'x'], [clip('a', now)])).toEqual(['a']);
+  });
+});
+
+describe('recent clips (M11.1)', () => {
+  it('asks for the newest few, whatever the Library is filtered by', () => {
+    expect(recentArgs()).toEqual({ sort: 'newest', limit: RECENT_COUNT });
+    expect(RECENT_COUNT).toBe(8);
+  });
+
+  it('puts ready thumbnails on the one clip, keeps the others', () => {
+    const a = clip('a.mp4', now);
+    const b = clip('b.mp4', now);
+    const out = withThumbs([a, b], 'b.mp4', 3, 4, false);
+    expect(out[0]).toBe(a);
+    expect(out[1]?.thumbs).toEqual({ poster: 3, strip: 4 });
+    expect(out[1]?.error).toBeNull();
+    expect(withThumbs([a], 'a.mp4', null, null, true)[0]?.error).toBe("Couldn't make a thumbnail");
+    expect(withThumbs([a], 'gone.mp4', 1, 1, false)).toEqual([a]);
   });
 });

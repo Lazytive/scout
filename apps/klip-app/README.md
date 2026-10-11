@@ -135,7 +135,13 @@ app sizes its window).
 - Plugins: `tauri-plugin-dialog` (folder picker), `tauri-plugin-autostart` (applied only
   when `app.autostart` changes, so the OS's own startup-apps choice isn't overridden at
   every start).
-- `src/Home.svelte` (Monitor, Info/Storage, Activity/Hotkeys panels),
+- `src/Home.svelte` (Monitor, Recent clips, Info/Storage, Activity/Hotkeys panels).
+  Recent clips (M11.1): the 8 newest clips (`library.list` with `sort: newest, limit: 8`,
+  `src/lib/recent.svelte.ts`), apart from the Library page's query; listed when Home
+  opens and again on library events while it is shown. The Library's `ClipCard`
+  (hover-scrub, star); a click opens the editor, which loads the library listing when
+  the Library page never did. No clips: the first clip hotkey and the Save button. No
+  live capture preview (it would cost the game frames).
   `src/lib/Panel.svelte` (panel with a tab strip), `src/App.svelte` (header, status bar).
 - Icons: `src-tauri/icons/app-icon.svg` (made for Scout), sizes generated with
   `npx tauri icon src-tauri/icons/app-icon.svg -o src-tauri/icons` (desktop sizes kept).
@@ -180,6 +186,16 @@ bottom row Project / Markers · Timeline · L/R meters. Four splitters, kept in
   (`arrangeMain`, M9.8.9): the cut becomes clips of the main track (`Track.main`), a
   normal track row from then on (A1 mirrors it); `useSimpleCut` goes back. Locked V1
   clips carry `data-locked` and act as empty space.
+  Track locks (M9.8.10): every other track header has a lock too (`Track.locked`, saved
+  with the project, an undoable edit). `trackLocked(t, ed.mainLocked)` says whether a
+  track is locked; `selectClips` drops a locked track's clips (so Delete, `[`/`]`, S,
+  Ctrl+K on a selection and the effect panels can't reach them), `unlockedClipIds` feeds
+  Ctrl+A, Ctrl+K on every track and the Shift razor; a locked track takes no drops,
+  moves, placements (`addClip`, `append_clips`) or transition edits, its lane is hatched,
+  and an undo that locks a track again lets go of its clips. Its eye and M are greyed
+  while locked. V1/A1 (M9.8.11) get V1's eye and A1's M (`setMainSwitches`: the main
+  track's own `hidden`/`muted` when arranged, else `advanced.main_hidden`/`main_muted`;
+  they move across `arrangeMain` / `useSimpleCut`), greyed while V1 is locked.
   Geometry and gesture rules: `src/lib/timeline-view.ts`.
 - `EffectControls.svelte` + `HotValue.svelte`: Motion (zoom and position share keys),
   Opacity, Volume, Speed with a stopwatch each (on: keys the value at the playhead; off:

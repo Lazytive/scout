@@ -63,6 +63,12 @@ export interface Track {
   hidden: boolean;
   /** V1 arranged on the Advanced timeline: the main clip's pieces, replacing Normal mode's cut. */
   main: boolean;
+  /**
+   * Locked on the timeline (M9.8.10): its clips can't be selected or changed and its
+   * switches stay as they are. Saved with the project; not used on V1, whose lock is
+   * the editor's own (`ed.mainLocked`, closed on every open).
+   */
+  locked: boolean;
   clips: PlacedClip[];
 }
 
@@ -96,12 +102,16 @@ export interface Advanced {
   colour: Colour;
   markers: Marker[];
   ducking: Ducking;
+  /** Main's sound off (A1's M) while V1 is Normal mode's cut (M9.8.11); an arranged V1 uses its track's `muted`. */
+  main_muted: boolean;
+  /** Main's picture off (V1's eye) while V1 is Normal mode's cut; an arranged V1 uses its track's `hidden`. */
+  main_hidden: boolean;
 }
 
 export const DEFAULT_DUCKING: Ducking = { enabled: true, duck_db: -12, attack_ms: 100, release_ms: 600 };
 
 export function emptyAdvanced(): Advanced {
-  return { tracks: [], transitions: [], colour: { ...IDENTITY_COLOUR }, markers: [], ducking: { ...DEFAULT_DUCKING } };
+  return { tracks: [], transitions: [], colour: { ...IDENTITY_COLOUR }, markers: [], ducking: { ...DEFAULT_DUCKING }, main_muted: false, main_hidden: false };
 }
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -115,8 +125,10 @@ export function readAdvanced(p: Project): Advanced {
   if (!isObj(raw)) return a;
   if (Array.isArray(raw.tracks)) a.tracks = raw.tracks.filter(isObj) as unknown as Track[];
   for (const t of a.tracks) if (!Array.isArray(t.clips)) t.clips = [];
+  for (const t of a.tracks) if (typeof t.muted !== 'boolean') t.muted = false;
   for (const t of a.tracks) if (typeof t.hidden !== 'boolean') t.hidden = false;
   for (const t of a.tracks) if (typeof t.main !== 'boolean') t.main = false;
+  for (const t of a.tracks) if (typeof t.locked !== 'boolean') t.locked = false;
   for (const t of a.tracks)
     for (const c of t.clips) {
       for (const k of ['transform', 'opacity', 'volume', 'speed'] as const) if (!Array.isArray(c[k])) c[k] = [];
@@ -126,6 +138,8 @@ export function readAdvanced(p: Project): Advanced {
   if (isObj(raw.colour)) a.colour = { ...a.colour, ...(raw.colour as Partial<Colour>) };
   if (Array.isArray(raw.markers)) a.markers = raw.markers.filter(isObj) as unknown as Marker[];
   if (isObj(raw.ducking)) a.ducking = { ...a.ducking, ...(raw.ducking as Partial<Ducking>) };
+  a.main_muted = raw.main_muted === true;
+  a.main_hidden = raw.main_hidden === true;
   return a;
 }
 
@@ -141,6 +155,8 @@ export function isAdvancedEmpty(a: Advanced): boolean {
   const c = a.colour;
   return (
     a.tracks.every((t) => t.clips.length === 0 && !t.main) &&
+    !a.main_muted &&
+    !a.main_hidden &&
     a.transitions.length === 0 &&
     c.brightness === 0 &&
     c.contrast === 1 &&
@@ -254,7 +270,7 @@ const TRACK_NAMES: Record<TrackKind, string> = { video: 'Video', text: 'Text', a
 function newTrack(a: Advanced, kind: TrackKind, base = TRACK_NAMES[kind]): Track {
   if (a.tracks.length >= MAX_TRACKS) throw new EditError('too_many_pieces', `A project has at most ${MAX_TRACKS} tracks`);
   const n = a.tracks.filter((t) => t.name.startsWith(base)).length + 1;
-  const track: Track = { id: nextTrackId(a), kind, name: n === 1 ? base : `${base} ${n}`, muted: false, hidden: false, main: false, clips: [] };
+  const track: Track = { id: nextTrackId(a), kind, name: n === 1 ? base : `${base} ${n}`, muted: false, hidden: false, main: false, locked: false, clips: [] };
   a.tracks.push(track);
   return track;
 }
@@ -280,11 +296,11 @@ export function addClip(p: Project, kind: TrackKind, source: Source, inMs: numbe
   const at = ms(atMs);
   const len = end - start;
   let track = trackId === undefined ? undefined : a.tracks.find((t) => t.id === trackId);
-  if (track && (track.kind !== kind || !fitsOn(source, track) || overlaps(track, at, at + len, null))) track = undefined;
+  if (track && (track.kind !== kind || track.locked || !fitsOn(source, track) || overlaps(track, at, at + len, null))) track = undefined;
   // Pictures go on picture tracks (over the video), videos on video tracks.
   const picture = source.kind === 'image';
   const sameSort = (t: Track) => t.clips.length > 0 && t.clips.every((c) => (c.source.kind === 'image') === picture);
-  track ??= a.tracks.find((t) => t.kind === kind && !t.main && sameSort(t) && !overlaps(t, at, at + len, null)) ?? newTrack(a, kind, picture ? 'Stickers' : undefined);
+  track ??= a.tracks.find((t) => t.kind === kind && !t.main && !t.locked && sameSort(t) && !overlaps(t, at, at + len, null)) ?? newTrack(a, kind, picture ? 'Stickers' : undefined);
   if (track.clips.length >= MAX_CLIPS) throw new EditError('too_many_pieces', `A track holds at most ${MAX_CLIPS} clips`);
   const id = nextClipId(a);
   track.clips.push({ id, source, in_ms: start, out_ms: end, at_ms: at, transform: [], opacity: [], volume: [], speed: [] });
@@ -827,12 +843,43 @@ export function setDucking(p: Project, patch: Partial<Ducking>): void {
   };
 }
 
-export function setTrack(p: Project, trackId: number, patch: Partial<Pick<Track, 'name' | 'muted' | 'hidden'>>): void {
+export function setTrack(p: Project, trackId: number, patch: Partial<Pick<Track, 'name' | 'muted' | 'hidden' | 'locked'>>): void {
   const t = advancedOf(p).tracks.find((x) => x.id === trackId);
   if (!t) return;
   if (patch.name !== undefined) t.name = cleanTitle(patch.name);
   if (patch.muted !== undefined) t.muted = patch.muted;
   if (patch.hidden !== undefined) t.hidden = patch.hidden;
+  // V1's lock is the editor's own.
+  if (patch.locked !== undefined && !t.main) t.locked = patch.locked;
+}
+
+/** Whether a track's clips are locked (M9.8.10): V1 by the editor's lock, the others by their own. */
+export function trackLocked(t: Track, mainLocked: boolean): boolean {
+  return t.main ? mainLocked : t.locked;
+}
+
+/** The clips that may be selected and changed: none of a locked track's. */
+export function unlockedClipIds(a: Advanced, mainLocked: boolean): number[] {
+  return a.tracks.flatMap((t) => (trackLocked(t, mainLocked) ? [] : t.clips.map((c) => c.id)));
+}
+
+/** Main's picture and sound switches (V1's eye, A1's M; M9.8.11). */
+export function mainSwitches(a: Advanced): { muted: boolean; hidden: boolean } {
+  const mt = mainTrackOf(a);
+  return mt ? { muted: mt.muted, hidden: mt.hidden } : { muted: a.main_muted, hidden: a.main_hidden };
+}
+
+/** Turn Main's picture or sound off or on: on the main track while V1 is arranged, else on the simple cut. */
+export function setMainSwitches(p: Project, patch: { muted?: boolean; hidden?: boolean }): void {
+  const a = advancedOf(p);
+  const target = mainTrackOf(a);
+  if (target) {
+    if (patch.muted !== undefined) target.muted = patch.muted;
+    if (patch.hidden !== undefined) target.hidden = patch.hidden;
+    return;
+  }
+  if (patch.muted !== undefined) a.main_muted = patch.muted;
+  if (patch.hidden !== undefined) a.main_hidden = patch.hidden;
 }
 
 /** Move a track up (towards the bottom of the picture: draw order follows the list). */
@@ -891,7 +938,10 @@ export function arrangeMain(p: Project): number[] {
     volume: [],
     speed: s.speed === 1 ? [] : [{ at_ms: 0, rate_pct: s.speed === 0.5 ? 50 : 200 }],
   }));
-  a.tracks.unshift({ id: nextTrackId(a), kind: 'video', name: 'Main', muted: false, hidden: false, main: true, clips });
+  // Main's switches go with it (back again in `useSimpleCut`).
+  a.tracks.unshift({ id: nextTrackId(a), kind: 'video', name: 'Main', muted: a.main_muted, hidden: a.main_hidden, main: true, locked: false, clips });
+  a.main_muted = false;
+  a.main_hidden = false;
   return clips.map((c) => c.id);
 }
 
@@ -900,6 +950,8 @@ export function useSimpleCut(p: Project): void {
   const a = advancedOf(p);
   const mt = mainTrackOf(a);
   if (!mt) return;
+  a.main_muted = mt.muted;
+  a.main_hidden = mt.hidden;
   a.tracks = a.tracks.filter((t) => !t.main);
   a.transitions = a.transitions.filter((t) => t.track !== mt.id);
 }

@@ -325,8 +325,8 @@ pub fn compose_with(
             at_ms: seg.out_start_ms,
             end_ms: seg.out_end_ms,
             z: 0,
-            muted: false,
-            hidden: false,
+            muted: p.advanced.main_muted,
+            hidden: p.advanced.main_hidden,
             transform: Vec::new(),
             opacity: Vec::new(),
             volume: Vec::new(),
@@ -1306,6 +1306,7 @@ mod tests {
             muted: false,
             hidden: false,
             main: false,
+            locked: false,
             clips: vec![clip(1, 8_000), clip(2, 10_000)],
         }];
         p.advanced.markers = vec![Marker {
@@ -1379,6 +1380,7 @@ mod tests {
             muted: false,
             hidden: false,
             main: false,
+            locked: false,
             clips: vec![
                 PlacedClip {
                     id: 1,
@@ -1445,6 +1447,24 @@ mod tests {
     }
 
     #[test]
+    fn hide_and_mute_on_the_simple_cut_turn_main_off() {
+        // M9.8.11: V1's eye and A1's M while V1 is Normal mode's cut.
+        let mut p = Project::new(10_000);
+        let c = compose(&p, &source());
+        assert!(!c.visible_at(1_000).is_empty() && !c.audible_at(1_000).is_empty());
+        p.advanced.main_hidden = true;
+        let c = compose(&p, &source());
+        assert!(c.visible_at(1_000).is_empty(), "no picture");
+        assert!(!c.audible_at(1_000).is_empty(), "the sound still plays");
+        assert_eq!(c.duration_ms, 10_000, "the edit keeps its length");
+        p.advanced.main_hidden = false;
+        p.advanced.main_muted = true;
+        let c = compose(&p, &source());
+        assert!(!c.visible_at(1_000).is_empty());
+        assert!(c.audible_at(1_000).is_empty(), "no sound");
+    }
+
+    #[test]
     fn an_arranged_main_track_replaces_the_normal_cut() {
         // Normal mode cut 0–10 s; V1 arranged: the clip's 6–8 s at 1 s, then its 0–2 s
         // at 5 s (reordered, with gaps).
@@ -1503,6 +1523,7 @@ mod tests {
             muted: false,
             hidden: true,
             main: false,
+            locked: false,
             clips: vec![PlacedClip {
                 id: 1,
                 source: Source::Main,
@@ -1540,6 +1561,7 @@ mod tests {
             muted: false,
             hidden: false,
             main: false,
+            locked: false,
             clips: vec![
                 PlacedClip {
                     id: 1,
@@ -1622,6 +1644,7 @@ mod tests {
             muted: false,
             hidden: false,
             main: false,
+            locked: false,
             clips: vec![clip(1, 10_000), clip(2, 12_000)],
         }];
         p.advanced.transitions = vec![Transition {
@@ -1655,6 +1678,7 @@ mod tests {
             muted: true,
             hidden: false,
             main: false,
+            locked: false,
             clips: vec![PlacedClip {
                 id: 1,
                 source: Source::File {

@@ -21,6 +21,7 @@
     mainTrackOf,
     overlapOf,
     readAdvanced,
+    unlockedClipIds,
     removeClip,
     removeClips,
     rippleDelete,
@@ -341,7 +342,7 @@
     }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a') {
       e.preventDefault();
-      selectClips(readAdvanced(project).tracks.flatMap((t) => (t.main && ed.mainLocked ? [] : t.clips.map((c) => c.id))), ed.clipId);
+      selectClips(unlockedClipIds(readAdvanced(project), ed.mainLocked), ed.clipId);
       return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -453,9 +454,9 @@
       edit((p) => void splitClipsAt(p, ids, t), 'Split at the playhead');
       return;
     }
-    // Every track, but not V1 while it is locked.
+    // Every track, but not a locked one (V1 included).
     const mt = mainTrackOf(adv);
-    const all = adv.tracks.flatMap((x) => (x.main && ed.mainLocked ? [] : x.clips.map((c) => c.id)));
+    const all = unlockedClipIds(adv, ed.mainLocked);
     const clips = cutsAt(adv, all, t).length;
     const inMain = mt ? cutsAt(adv, mt.clips.map((c) => c.id), t).length > 0 : segments(project).some((s) => t > s.out_start_ms && t < s.out_end_ms);
     const main = !mt && inMain && !ed.mainLocked;

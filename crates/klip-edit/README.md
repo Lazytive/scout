@@ -77,7 +77,11 @@ and writing the project file.
   V1 arranged (M9.8.9): a track with `main: true` (one, `Source::Main` clips only)
   replaces Normal mode's segments as the bottom layers (z 0); the main clip's chapters
   then come from its layers. `Track.hidden` (M9.8.7) keeps a track's pictures out of
-  `visible_at` (its sound still plays).
+  `visible_at` (its sound still plays). `Advanced.main_hidden` / `main_muted` (M9.8.11)
+  do the same for Normal mode's cut (V1's eye, A1's M); an arranged V1 uses its own
+  track's switches. `Track.locked` (M9.8.10) is the timeline's lock, saved with the
+  project; compose ignores it (a locked track plays), `append_clips` skips locked tracks
+  and V1.
   Transitions: a crossfade pulls the next clip under the one before (opacity ramp); a
   dip on a picture track adds a `LayerKind::Black` layer over the join (0 → 1 at the
   cut, held across a gap, → 0; M9.8.5), on a sound track it fades both clips.

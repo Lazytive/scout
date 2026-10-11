@@ -1,10 +1,15 @@
-<!-- The Home workspace: a monitor of the replay buffer, an info panel and the activity /
-     hotkey panel, docked like Photocraft / FilmCraft panels. -->
+<!-- The Home workspace: a monitor of the replay buffer, the recent clips (M11.1), an info
+     panel and the activity / hotkey panel, docked like Photocraft / FilmCraft panels. -->
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
+  import { call } from './lib/api';
+  import { openEditor } from './lib/editor.svelte';
   import { actionLabel, formatBytes, formatDuration, formatTimecode } from './lib/format';
+  import type { LibClip } from './lib/library';
   import Panel from './lib/Panel.svelte';
+  import { recent, refreshRecent } from './lib/recent.svelte';
   import { app, run } from './lib/store.svelte';
+  import ClipCard from './library/ClipCard.svelte';
 
   const st = $derived(app.status);
   const rec = $derived(st?.recorder ?? null);
@@ -66,6 +71,32 @@
     const secs = [...new Set(clipKeys.map((h) => h.secs ?? 30))].sort((a, b) => a - b);
     return secs.length > 0 ? secs : [30];
   });
+
+  // The first working clip hotkey, for the "save your first clip" hint.
+  const firstKey = $derived(clipKeys.find((h) => !h.error && h.keys) ?? null);
+
+  onMount(() => {
+    recent.active = true;
+    void refreshRecent();
+    return () => (recent.active = false);
+  });
+
+  async function star(c: LibClip) {
+    try {
+      await call('clip.star', { path: c.path, starred: !c.starred });
+    } catch (e) {
+      app.error = e instanceof Error ? e.message : String(e);
+    }
+    await refreshRecent();
+  }
+
+  // A plain wheel scrolls the row sideways.
+  function wheel(e: WheelEvent) {
+    const el = e.currentTarget as HTMLElement;
+    if (el.scrollWidth <= el.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+    el.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }
 
   const source = $derived.by(() => {
     const s = st?.game?.source;
@@ -134,6 +165,47 @@
             </button>
           {/each}
         </div>
+    </Panel>
+  </div>
+
+  <div class="recent">
+    <Panel tabs={['Recent clips']} flush>
+      {#snippet actions()}
+        <button class="flat more" onclick={() => (app.page = 'library')}>Library</button>
+      {/snippet}
+      {#if recent.clips.length > 0}
+        <div class="row" role="listbox" aria-label="Recent clips" tabindex="-1" onwheel={wheel}>
+          {#each recent.clips as c (c.key)}
+            <ClipCard
+              clip={c}
+              tiles={recent.tiles}
+              selected={false}
+              focused={false}
+              showDay
+              onpick={() => openEditor(c, recent.tiles)}
+              onopen={() => undefined}
+              onmenu={(e) => e.preventDefault()}
+              onstar={() => star(c)}
+            />
+          {/each}
+        </div>
+      {:else if recent.error}
+        <p class="note bad first">Couldn't list the clips: {recent.error}</p>
+      {:else if recent.loaded}
+        <div class="first">
+          <p class="lead">No clips yet</p>
+          <p class="muted">
+            {#if firstKey}
+              Press
+              <span class="combo">{#each (firstKey.keys ?? '').split('+') as k, i (i)}<kbd>{k}</kbd>{/each}</span>
+              in a game to save the last {formatDuration((firstKey.secs ?? 30) * 1000)}, or use
+            {:else}
+              Use
+            {/if}
+            <b>Save last {formatDuration((clipLengths[0] ?? 30) * 1000)}</b> above. Your clips show up here, newest first.
+          </p>
+        </div>
+      {/if}
     </Panel>
   </div>
 
@@ -210,12 +282,13 @@
 <style>
   .workspace {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
-    grid-template-rows: minmax(0, 1fr) 230px;
+    grid-template-columns: minmax(0, 1fr) 270px;
+    grid-template-rows: minmax(190px, 1fr) auto 160px;
     gap: 2px;
     height: 100%;
   }
   .monitor,
+  .recent,
   .bottom,
   .side {
     display: flex;
@@ -223,24 +296,58 @@
     min-width: 0;
   }
   .monitor > :global(*),
+  .recent > :global(*),
   .bottom > :global(*),
   .side > :global(*) {
     flex: 1;
   }
   .side {
-    grid-row: 1 / span 2;
+    grid-row: 1 / span 3;
     grid-column: 2;
+  }
+  .row {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 200px;
+    gap: 2px;
+    padding: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .first {
+    min-height: 150px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    text-align: center;
+  }
+  .first .lead {
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+  .first b {
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+  .first .combo {
+    margin: 0 2px;
+  }
+  .more {
+    font-size: var(--text-sm);
   }
   .viewer {
     background: var(--viewer);
     height: calc(100% - 44px);
-    min-height: 180px;
+    min-height: 140px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: var(--space-3);
-    padding: var(--space-5);
+    padding: var(--space-4);
   }
   .state {
     display: flex;

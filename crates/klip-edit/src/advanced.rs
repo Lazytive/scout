@@ -147,6 +147,11 @@ pub struct Track {
     /// project has one, it replaces Normal mode's cut (`pieces`) as track 0: its clips
     /// are the main clip's (`Source::Main`), drawn under every other track.
     pub main: bool,
+    /// Locked on the timeline (the lock in the track header, M9.8.10): its clips can't be
+    /// selected or changed, and the track's switches stay as they are. Saved with the
+    /// project. Not used on the main track: V1's lock is the editor's own and closes on
+    /// every open (the user's choice in M9.8.8).
+    pub locked: bool,
     pub clips: Vec<PlacedClip>,
 }
 
@@ -281,6 +286,12 @@ pub struct Advanced {
     pub colour: Colour,
     pub markers: Vec<Marker>,
     pub ducking: Ducking,
+    /// No sound from the main clip (A1's M button) while V1 is Normal mode's cut (M9.8.11).
+    /// An arranged V1 uses its track's own `muted`.
+    pub main_muted: bool,
+    /// No picture from the main clip (V1's eye) while V1 is Normal mode's cut. An arranged
+    /// V1 uses its track's own `hidden`.
+    pub main_hidden: bool,
 }
 
 fn finite(v: f32, default: f32) -> f32 {
@@ -321,6 +332,8 @@ impl Advanced {
     /// Nothing an Advanced-mode user did.
     pub fn is_empty(&self) -> bool {
         self.tracks.iter().all(|t| t.clips.is_empty() && !t.main)
+            && !self.main_muted
+            && !self.main_hidden
             && self.transitions.is_empty()
             && self.colour == Colour::default()
             && self.markers.iter().all(|m| m.kind != MarkerKind::User)
@@ -350,6 +363,12 @@ impl Advanced {
         }
         if let Some(v) = map.remove("ducking") {
             a.ducking = field(v, "advanced.ducking", issues);
+        }
+        if let Some(v) = map.remove("main_muted") {
+            a.main_muted = field(v, "advanced.main_muted", issues);
+        }
+        if let Some(v) = map.remove("main_hidden") {
+            a.main_hidden = field(v, "advanced.main_hidden", issues);
         }
         a
     }
@@ -557,7 +576,12 @@ impl Advanced {
         {
             return Err("a clip has no usable length".into());
         }
-        let ti = match self.tracks.iter().position(|t| t.kind == TrackKind::Video) {
+        // Not onto V1 (main clip only) or a locked track (M9.8.10).
+        let ti = match self
+            .tracks
+            .iter()
+            .position(|t| t.kind == TrackKind::Video && !t.main && !t.locked)
+        {
             Some(i) => i,
             None => {
                 if self.tracks.len() >= MAX_TRACKS {
@@ -576,6 +600,7 @@ impl Advanced {
                     muted: false,
                     hidden: false,
                     main: false,
+                    locked: false,
                     clips: Vec::new(),
                 });
                 self.tracks.len().saturating_sub(1)
@@ -639,6 +664,9 @@ fn track_from_value(v: Value, i: usize, issues: &mut Vec<Issue>) -> Track {
     }
     if let Some(v) = map.remove("main") {
         t.main = field(v, &format!("{path}.main"), issues);
+    }
+    if let Some(v) = map.remove("locked") {
+        t.locked = field(v, &format!("{path}.locked"), issues);
     }
     if let Some(v) = map.remove("clips") {
         t.clips = list(v, &format!("{path}.clips"), MAX_CLIPS, issues);
@@ -968,6 +996,69 @@ mod tests {
             3,
             "a refused append changes nothing"
         );
+    }
+
+    #[test]
+    fn append_clips_skips_main_and_locked_tracks() {
+        let lib = |k: &str| Source::Library { key: k.into() };
+        let mut a = Advanced::default();
+        a.tracks.push(Track {
+            id: 1,
+            kind: TrackKind::Video,
+            main: true,
+            ..Track::default()
+        });
+        a.tracks.push(Track {
+            id: 2,
+            kind: TrackKind::Video,
+            locked: true,
+            ..Track::default()
+        });
+        let id = a.append_clips(&[(lib("G/b.mp4"), 3_000)], 0).unwrap();
+        assert_eq!(id, 3, "a new track: V1 and the locked one stay as they are");
+        assert!(a.tracks[0].clips.is_empty() && a.tracks[1].clips.is_empty());
+        assert_eq!(a.tracks[2].clips.len(), 1);
+    }
+
+    #[test]
+    fn track_locks_and_main_switches_are_read_and_kept() {
+        let v: Value = serde_json::json!({
+            "tracks": [
+                {"id": 1, "kind": "video", "locked": true},
+                {"id": 2, "kind": "audio", "locked": "yes"}
+            ],
+            "main_muted": true,
+            "main_hidden": 1
+        });
+        let mut issues = Vec::new();
+        let a = Advanced::from_value(v, &mut issues);
+        assert!(a.tracks[0].locked);
+        assert!(!a.tracks[1].locked, "a bad lock is off");
+        assert!(a.main_muted);
+        assert!(!a.main_hidden, "a bad switch is off");
+        let paths: Vec<&str> = issues.iter().map(|i| i.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec!["advanced.tracks[1].locked", "advanced.main_hidden"]
+        );
+        // Saved and read back as they are.
+        let back = serde_json::to_value(&a).unwrap();
+        assert_eq!(back["tracks"][0]["locked"], true);
+        assert_eq!(back["main_muted"], true);
+        let mut again = Vec::new();
+        assert_eq!(Advanced::from_value(back, &mut again), a);
+        assert!(again.is_empty(), "{again:?}");
+        // Main's switches are an Advanced edit (the badge in Normal mode); a lock alone isn't.
+        let muted = Advanced {
+            main_muted: true,
+            ..Advanced::default()
+        };
+        assert!(!muted.is_empty());
+        let hidden = Advanced {
+            main_hidden: true,
+            ..Advanced::default()
+        };
+        assert!(!hidden.is_empty());
     }
 
     #[test]

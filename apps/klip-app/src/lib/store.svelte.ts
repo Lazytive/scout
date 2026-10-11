@@ -25,6 +25,7 @@ import { describeEvent, type Tone } from './format';
 import { patchFor, splitError, type Settings } from './settings';
 import { editorEvent } from './editor.svelte';
 import { libraryEvent } from './library.svelte';
+import { recentEvent } from './recent.svelte';
 import type { ThemeSetting } from './themes';
 import type { KlipEvent, Status, StorageStatus } from './types';
 
@@ -334,6 +335,7 @@ export async function connect(): Promise<() => void> {
       return;
     }
     libraryEvent(e);
+    recentEvent(e);
     editorEvent(e);
     if (e.event === 'thumbs_ready' || e.event === 'library_changed' || e.event === 'export_progress') return;
     log(e);

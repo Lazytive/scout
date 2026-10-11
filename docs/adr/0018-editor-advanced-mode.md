@@ -114,6 +114,21 @@ in text yet (M8.2), the in-memory muxing cap (IMPROVEMENTS G1).
   replaces Normal mode's cut in `compose` (z 0; gaps are black and silent). Normal mode
   can't show it, so it is off while a project has one ("Back to the simple cut" removes
   it). Both fields default to false, so older projects read as before.
+  **Amended (M9.8.10–11, 2026-10-11):** every track gets a lock (`Track.locked`) like
+  Premiere's track lock: its clips can't be selected, moved, trimmed, cut, deleted or
+  keyed, it takes no drops or placements, the razor / Ctrl+K / Ctrl+A / marquee skip
+  it; it still plays and exports. Calls made without asking (the user said "decide"):
+  the lock is **saved with the project** (a track you locked stays locked), while V1's
+  stays the editor's own and closes on every open (the user's M9.8.8 choice); locking is
+  an undoable edit like Hide/Mute; a locked track's eye and M are greyed (the lock
+  freezes the whole track; unlock to change them); **no per-clip locks or per-clip
+  Hide/Mute** (Premiere has neither as a lock; a clip that must stay put goes on its own
+  track). V1/A1 get Hide (V1's eye) and Mute (A1's M), usable while V1 is unlocked:
+  `advanced.main_hidden` / `main_muted` for the simple cut, the main track's own fields
+  once V1 is arranged; they move across arranging and "Back to the simple cut". Normal
+  mode's preview ignores them like every Advanced edit (its "advanced edits" badge
+  shows); the export and the Advanced preview honour them. All new fields default to
+  false.
 - **Accepted at the M9 wrap-up (M9.6, 2026-10-10)** on the e2e `m9_montage.rs`: two
   clips the daemon recorded of the test game, a montage through the engine's commands
   (Normal trim, `editor.montage`, a split with a 500 ms crossfade, a 2x zoom), a Custom

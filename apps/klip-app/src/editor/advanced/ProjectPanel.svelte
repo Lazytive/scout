@@ -50,7 +50,8 @@
     const lane = document.elementFromPoint(x, y)?.closest('.lane[data-track]') as HTMLElement | null;
     const raw = lane?.dataset.track;
     const pps = Number(lane?.dataset.pps);
-    if (!lane || !raw || !(pps > 0) || lane.dataset.kind !== 'video') return null;
+    // Not onto a locked track (M9.8.10).
+    if (!lane || !raw || !(pps > 0) || lane.dataset.kind !== 'video' || lane.dataset.locked) return null;
     const at = ((x - lane.getBoundingClientRect().left) / pps) * 1000;
     return { track: raw === 'new-video' ? 'new' : Number(raw), at };
   }

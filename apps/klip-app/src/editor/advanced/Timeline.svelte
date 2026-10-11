@@ -37,7 +37,11 @@
     FROM_BELOW,
     fromBelow,
     setFromBelow,
+    setMainSwitches,
     setTrack,
+    mainSwitches,
+    trackLocked,
+    unlockedClipIds,
     setTransitionAt,
     sourceLabel,
     splitClipsAt,
@@ -45,7 +49,7 @@
     trimClipStart,
   } from '../../lib/advanced';
   import type { Composition } from '../../lib/compose';
-  import { MAIN_LOCKED, beginGesture, ed, edit, endGesture, gesture, seek, selectClips, selectedClips } from '../../lib/editor.svelte';
+  import { MAIN_LOCKED, TRACK_LOCKED, beginGesture, ed, edit, endGesture, gesture, seek, selectClips, selectedClips } from '../../lib/editor.svelte';
   import { formatTimecode } from '../../lib/format';
   import type { Project } from '../../lib/timeline';
   import { segments, split } from '../../lib/timeline';
@@ -91,7 +95,7 @@
     audio: (s: Source) => string[];
   } = $props();
 
-  const HEADER_W = 168;
+  const HEADER_W = 188;
   const TOP_H = 52;
   const DIVIDER_H = 5;
   const SNAP_PX = 9;
@@ -136,9 +140,13 @@
   const lastVideo = $derived(rows.findIndex((r) => r.kind === 'main' || (r.kind === 'track' && r.track.main)));
   const videoCount = $derived(adv.tracks.filter((t) => (t.kind === 'video' || t.kind === 'text') && !t.main).length);
   const soundCount = $derived(adv.tracks.filter((t) => t.kind === 'audio' || t.kind === 'music').length);
-  /** V1 arranged (M9.8.9), and whether a track is V1 while locked (it acts as empty space). */
+  /** V1 arranged (M9.8.9), and whether a track is locked (V1 by its lock, the others by
+      theirs, M9.8.10): its clips act as empty space. */
   const mt = $derived(mainTrackOf(adv));
-  const lockedMain = (t: Track) => t.main && ed.mainLocked;
+  const locked = (t: Track) => trackLocked(t, ed.mainLocked);
+  const lockedId = (id: number) => adv.tracks.some((t) => t.id === id && locked(t));
+  /** Main's picture and sound switches (V1's eye, A1's M; M9.8.11). */
+  const mainSw = $derived(mainSwitches(adv));
   const bar01 = $derived(thumb(scrollX, viewW, contentW));
 
   function loadHeights(): { video: number; sound: number } {
@@ -313,8 +321,12 @@
   }
 
   function clipDown(e: PointerEvent, track: Track, clip: PlacedClip) {
-    // Locked V1: the lane takes the press (marquee, playhead, the razor's message).
-    if (e.button !== 0 || lockedMain(track)) return;
+    // A locked track: the lane takes the press (marquee, playhead, the razor's message).
+    if (e.button !== 0) return;
+    if (locked(track)) {
+      if (ed.tool === 'razor' && !track.main && !e.shiftKey) ed.error = TRACK_LOCKED;
+      return;
+    }
     e.stopPropagation();
     const el = e.currentTarget as HTMLElement;
     if (ed.tool === 'razor') {
@@ -373,7 +385,7 @@
     }
     const id = Number(raw);
     const t = adv.tracks.find((x) => x.id === id);
-    return t && fitsOn(clip.source, t) && !lockedMain(t) ? id : null;
+    return t && fitsOn(clip.source, t) && !locked(t) ? id : null;
   }
 
   function clipMove(e: PointerEvent) {
@@ -484,8 +496,8 @@
       return;
     }
     const mainIds = mt?.clips.map((c) => c.id) ?? [];
-    const free = (ids: number[]) => (ed.mainLocked ? ids.filter((id) => !mainIds.includes(id)) : ids);
-    const ids = what === 'all' ? free(adv.tracks.flatMap((x) => x.clips.map((c) => c.id))) : what === 'main' ? mainIds : [what];
+    // Every track but the locked ones.
+    const ids = what === 'all' ? unlockedClipIds(adv, ed.mainLocked) : what === 'main' ? mainIds : [what];
     const clips = cutsAt(adv, ids, t);
     // Normal mode's cut, while V1 isn't arranged.
     const main = !mt && !ed.mainLocked && (what === 'main' || what === 'all') && segs.some((s) => t > s.out_start_ms && t < s.out_end_ms);
@@ -565,7 +577,7 @@
   const isSel = (b: TransitionBox) => ed.transitionSel?.track === b.track && ed.transitionSel.after === b.after;
 
   function transDown(e: PointerEvent, b: TransitionBox, edge: 'start' | 'end' | 'middle') {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || lockedId(b.track)) return;
     e.stopPropagation();
     selectTransition(b);
     // The middle of a transition from below has no cut to roll.
@@ -605,6 +617,7 @@
   function transMenu(e: MouseEvent, b: TransitionBox) {
     e.preventDefault();
     e.stopPropagation();
+    if (lockedId(b.track)) return;
     selectTransition(b);
     menu = { x: e.clientX, y: e.clientY, box: b };
   }
@@ -622,7 +635,22 @@
     }
   }
 
-  // ---- track headers: hide, mute, rename, height ----
+  // ---- track headers: lock, hide, mute, rename, height ----
+  function lock(t: Track) {
+    edit((p) => setTrack(p, t.id, { locked: !t.locked }), t.locked ? 'Unlock a track' : 'Lock a track');
+    if (t.locked) return;
+    // Locking lets go of the track's clips and transitions.
+    const ids = new Set(t.clips.map((c) => c.id));
+    const sel = selectedClips();
+    if (sel.some((id) => ids.has(id))) selectClips(sel.filter((id) => !ids.has(id)));
+    if (ed.transitionSel?.track === t.id) ed.transitionSel = null;
+  }
+  function mainMute() {
+    edit((p) => setMainSwitches(p, { muted: !mainSw.muted }), mainSw.muted ? 'Unmute Main' : 'Mute Main');
+  }
+  function mainHide() {
+    edit((p) => setMainSwitches(p, { hidden: !mainSw.hidden }), mainSw.hidden ? 'Show Main' : 'Hide Main');
+  }
   function mute(t: Track) {
     edit((p) => setTrack(p, t.id, { muted: !t.muted }), t.muted ? 'Unmute a track' : 'Mute a track');
   }
@@ -789,6 +817,20 @@
         {/if}
       {/snippet}
 
+      {#snippet lockButton(on: boolean, title: string, onclick: () => void)}
+        <button class="icon lock" class:open={!on} aria-pressed={on} {title} {onclick}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1" />{#if on}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />{:else}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0" />{/if}</svg>
+        </button>
+      {/snippet}
+      {#snippet eyeButton(hidden: boolean, frozen: boolean, onclick: () => void, what = 'the track')}
+        <button class="icon" class:off={hidden} aria-pressed={hidden} disabled={frozen} title={frozen ? `Unlock ${what} to ${hidden ? 'show' : 'hide'} it` : hidden ? `Show ${what}` : `Hide ${what} (its picture)`} {onclick}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle class="fill" cx="8" cy="8" r="2" />{#if hidden}<path d="M2.5 13.5l11-11" />{/if}</svg>
+        </button>
+      {/snippet}
+      {#snippet muteButton(muted: boolean, frozen: boolean, onclick: () => void, what = 'the track')}
+        <button class="icon" class:off={muted} aria-pressed={muted} disabled={frozen} title={frozen ? `Unlock ${what} to ${muted ? 'unmute' : 'mute'} it` : muted ? `Unmute ${what}` : `Mute ${what} (its sound)`} {onclick}>M</button>
+      {/snippet}
+
       {#snippet clipBlock(t: Track, c: PlacedClip)}
         {@const under = overlapOf(adv, t, c)}
         <div
@@ -796,7 +838,7 @@
           class:sel={selection.has(c.id)}
           class:primary={ed.clipId === c.id}
           data-clip={c.id}
-          data-locked={lockedMain(t) || undefined}
+          data-locked={locked(t) || undefined}
           class:off={t.kind === 'audio' || t.kind === 'music' ? t.muted : t.hidden}
           style:left="{px(c.at_ms - under)}px"
           style:width="{Math.max(6, px(clipLength(c)))}px"
@@ -804,7 +846,7 @@
           tabindex="0"
           aria-label={sourceLabel(c.source, mainName, names)}
           onpointerdown={(e) => clipDown(e, t, c)}
-          onpointermove={(e) => !lockedMain(t) && clipHover(e)}
+          onpointermove={(e) => !locked(t) && clipHover(e)}
           onclick={(e) => e.stopPropagation()}
           onkeydown={(e) => {
             if (e.key === 'Enter') select(c.id);
@@ -848,12 +890,11 @@
             <span class="chip" class:main={r.kind !== 'track' || r.track.main}>{r.label}</span>
             {#if r.kind === 'track' && !r.track.main}
               {@const t = r.track}
+              {@render lockButton(t.locked, t.locked ? 'The track is locked: click to unlock it' : 'Lock the track: its clips can’t be selected, moved, trimmed, cut or deleted', () => lock(t))}
               {#if r.group === 'video'}
-                <button class="icon" class:off={t.hidden} aria-pressed={t.hidden} title={t.hidden ? 'Show the track' : 'Hide the track (its picture)'} onclick={() => hide(t)}>
-                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle class="fill" cx="8" cy="8" r="2" />{#if t.hidden}<path d="M2.5 13.5l11-11" />{/if}</svg>
-                </button>
+                {@render eyeButton(t.hidden, t.locked, () => hide(t))}
               {/if}
-              <button class="icon" class:off={t.muted} aria-pressed={t.muted} title={t.muted ? 'Unmute the track' : 'Mute the track (its sound)'} onclick={() => mute(t)}>M</button>
+              {@render muteButton(t.muted, t.locked, () => mute(t))}
               {#if renaming === t.id}
                 <input
                   class="rename"
@@ -870,15 +911,12 @@
                 <span class="name" role="presentation" title="{t.name || 'Track'} (double-click to rename)" ondblclick={() => (renaming = t.id)}>{t.name || 'Track'}</span>
               {/if}
             {:else}
-              <button
-                class="icon lock"
-                class:open={!ed.mainLocked}
-                aria-pressed={ed.mainLocked}
-                title={ed.mainLocked ? 'Main is locked: click to unlock it and move, trim, cut or delete its pieces like any clip' : 'Main is unlocked: click to lock it again'}
-                onclick={toggleLock}
-              >
-                <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1" />{#if ed.mainLocked}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />{:else}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0" />{/if}</svg>
-              </button>
+              {@render lockButton(ed.mainLocked, ed.mainLocked ? 'Main is locked: click to unlock it and move, trim, cut, delete, hide or mute it' : 'Main is unlocked: click to lock it again', toggleLock)}
+              {#if r.kind === 'main-sound'}
+                {@render muteButton(mainSw.muted, ed.mainLocked, mainMute, 'Main')}
+              {:else}
+                {@render eyeButton(mainSw.hidden, ed.mainLocked, mainHide, 'Main')}
+              {/if}
               <span class="name" title={mainName}>{r.kind === 'main-sound' ? 'Main sound' : mainName}</span>
             {/if}
             <span
@@ -894,7 +932,7 @@
           </div>
           {#if r.kind === 'track'}
             {@const t = r.track}
-            <div class="lane" class:drop={dropTrack === t.id} data-track={t.id} data-kind={r.group} data-pps={pps} style:width="{contentW}px" role="presentation" onpointerdown={(e) => laneDown(e, t.main)} onpointermove={(e) => razorMove(e, rowKey(r))} onpointerleave={() => (razorHover = null)}>
+            <div class="lane" class:drop={dropTrack === t.id} class:locked={!t.main && t.locked} data-locked={(!t.main && t.locked) || undefined} data-track={t.id} data-kind={r.group} data-pps={pps} style:width="{contentW}px" role="presentation" onpointerdown={(e) => laneDown(e, t.main)} onpointermove={(e) => razorMove(e, rowKey(r))} onpointerleave={() => (razorHover = null)}>
               {@render razorLine(rowKey(r))}
               {#each t.clips as c (c.id)}
                 {@render clipBlock(t, c)}
@@ -920,7 +958,7 @@
                   {/if}
                 </div>
               {/each}
-              {#each touching.filter((j) => j.track === t.id) as j (j.after)}
+              {#each locked(t) ? [] : touching.filter((j) => j.track === t.id) as j (j.after)}
                 <button class="join" style:left="{px(j.at)}px" title={j.after === FROM_BELOW ? 'Crossfade in from what is below' : 'Add a crossfade here'} onpointerdown={(e) => e.stopPropagation()} onclick={(e) => {
                   e.stopPropagation();
                   addCrossfade(j);
@@ -940,12 +978,12 @@
                   class:sel={selection.has(c.id)}
                   class:off={t.muted}
                   data-clip={c.id}
-                  data-locked={lockedMain(t) || undefined}
+                  data-locked={locked(t) || undefined}
                   role="presentation"
                   style:left="{left}px"
                   style:width="{w}px"
                   onpointerdown={(e) => clipDown(e, t, c)}
-                  onpointermove={(e) => !lockedMain(t) && clipHover(e)}
+                  onpointermove={(e) => !locked(t) && clipHover(e)}
                 >
                   {@render body('sound', c.source, left, w, h, c.in_ms, c.out_ms)}
                   <span class="name">{mainName}</span>
@@ -959,6 +997,7 @@
                 <div
                   class="clip main {r.kind === 'main' ? 'video' : 'audio'}"
                   class:sel={!ed.mainLocked && ed.mainSel === i}
+                  class:off={r.kind === 'main' ? mainSw.hidden : mainSw.muted}
                   role="presentation"
                   onpointerdown={(e) => mainDown(e, i)}
                   onpointermove={(e) => !ed.mainLocked && clipHover(e)}
@@ -1219,7 +1258,7 @@
     flex: none;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     padding: 0 6px;
     background: var(--panel);
     border-right: 1px solid var(--border);
@@ -1261,6 +1300,16 @@
   }
   .icon.off {
     color: var(--warn);
+  }
+  .icon:disabled {
+    opacity: 0.45;
+  }
+  /* A locked track (M9.8.10): hatched; its clips act as empty space. */
+  .lane.locked {
+    background-image: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--text-muted) 14%, transparent) 7px 8px);
+  }
+  .lane.locked > .clip {
+    opacity: 0.8;
   }
   .icon.lock {
     color: var(--text-muted);

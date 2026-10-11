@@ -247,3 +247,18 @@ export function pruneSelection(selected: string[], clips: LibClip[]): string[] {
   const keys = new Set(clips.map((c) => c.key));
   return selected.filter((k) => keys.has(k));
 }
+
+/** Home's recent clips (M11.1): this many, newest first, whatever the Library's filters. */
+export const RECENT_COUNT = 8;
+
+/** `library.list` arguments for Home's recent clips. */
+export function recentArgs(): Record<string, unknown> {
+  return { sort: 'newest', limit: RECENT_COUNT };
+}
+
+/** A clip's thumbnails are ready: the clips with that one updated (others kept as they are). */
+export function withThumbs(clips: LibClip[], key: string, poster: number | null, strip: number | null, failed: boolean): LibClip[] {
+  return clips.map((c) =>
+    c.key !== key ? c : { ...c, thumbs: { poster, strip }, error: failed ? (c.error ?? "Couldn't make a thumbnail") : c.error },
+  );
+}

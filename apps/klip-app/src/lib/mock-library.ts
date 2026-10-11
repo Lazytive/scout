@@ -118,6 +118,7 @@ interface Args {
   tag?: string;
   since_ms?: number;
   sort?: string;
+  limit?: number;
   keys?: string[];
   path?: string;
   paths?: string[];
@@ -171,7 +172,7 @@ export function mockLibrary(emit: (e: KlipEvent) => void) {
     }
     return {
       folder: 'C:\\Users\\you\\Videos\\Scout',
-      clips: structuredClone(out),
+      clips: structuredClone(a.limit !== undefined ? out.slice(0, a.limit) : out),
       matched: out.length,
       total: clips.length,
       total_bytes: clips.reduce((s, c) => s + c.bytes, 0),

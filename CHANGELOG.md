@@ -5,6 +5,26 @@ reason)`.
 
 ## Unreleased
 
+- M11.1 — Home: **Recent clips** under a shorter Monitor (`src/lib/recent.svelte.ts`):
+  the 8 newest clips (`library.list` with `limit`), the Library's cards (hover-scrub,
+  star), a click opens the editor, a plain wheel scrolls the row; listed when Home opens
+  and on library events while it is shown; with no clips, the first clip hotkey and the
+  Save button. Info/Storage and Activity narrower and shorter. Fix found on the way: an
+  editor opened without the Library page loaded the Project panel empty; `openEditor`
+  now loads the listing. Mock `library.list` honours `limit`. Tests: recent args,
+  thumbnails on one clip. (Claude Opus 5.5: the user's list, "1 2 and 3")
+- M9.8.10–M9.8.11 — Track locks: a lock on every track header (`Track.locked`, saved
+  with the project, undoable); a locked track's clips can't be selected, moved, trimmed,
+  cut, deleted or keyed, it takes no drops or placements and its transitions stay put,
+  the razor / Ctrl+K / Ctrl+A / marquee skip it, its lane is hatched and its eye and M
+  are greyed; it still plays. V1/A1 get Hide (V1's eye) and Mute (A1's M) while V1 is
+  unlocked (`advanced.main_hidden` / `main_muted` for the simple cut, the main track's
+  own switches once arranged). `append_clips` no longer puts a montage onto V1 or a
+  locked track. The TS reader now defaults a missing `muted` like Rust (found by the new
+  shared compose fixture). My calls, recorded in ADR 0018: lock saved per project, V1's
+  still closes on open, no per-clip locks or Hide/Mute. Tests: Rust parse/round trip,
+  `append_clips`, compose; TS lock/switch model; a compose fixture case shared by both.
+  (Claude Opus 5.5: the user's list, "1 2 and 3")
 - Rename — Klip is now **Scout** (ADR 0020): every user-visible name (windows, tray,
   overlay, setup, settings, notifications, CLI help, docs, Tauri `productName`), app id
   `io.github.lazytive.Scout` (was `dev.klip.Klip`; the old hidden Linux desktop entry is

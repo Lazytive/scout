@@ -408,7 +408,27 @@ user's Scout running beside them.
 | Accent swatches (unit) | all 8 keep AA (text on accent, pressed shade, accent text on panels/viewer/raised) on all 4 built-in themes |
 | Release build (off-screen) | starts, imports and applies a theme with Large + Compact, picture loads |
 
+### Track locks, Hide/Mute on V1/A1 (M9.8.10–11) and Home's recent clips (M11.1)
+
+Measured 2026-10-11. Mock = the UI against the mock engine (Vite dev server) in the
+desktop app's browser pane at 1280×760, input through the DOM; tests = `cargo test -p
+klip-edit` and `vitest`.
+
+| Check | Result |
+|---|---|
+| Lock a track (mock, V2 holding 2 montage clips) | selection 0 afterwards, its eye and M greyed, lane hatched; a click on its clip selects nothing (unlocked: 1); the razor on it says "The track is locked"; Ctrl+A with V1 and V2 locked selects 0 (V2 unlocked: 2); Ctrl+Z / Ctrl+Y unlock and lock it again |
+| V1's eye and A1's M (mock) | greyed while V1 is locked; unlocked, the eye dims every Main piece on V1 and M every piece on A1; locked again they stay greyed and pressed |
+| Track headers (mock) | at 188 px a montage track keeps 67 px for its name next to the lock, eye and M |
+| Main hidden / muted (compose fixture shared by Rust and TS, unit tests both sides) | Main's layers `hidden` / `muted`, the edit keeps its length, a locked track above still plays; the switches move onto the main track when V1 is arranged and back with "Back to the simple cut"; `append_clips` and `addClip` skip locked tracks and V1 |
+| Home: recent clips (mock, 61 clips) | 8 cards, newest first (21:22 down to 22:55 the day before); the star toggles; a click opens the editor; a rename through the engine shows on Home from the `library_changed` event alone; every clip deleted → "No clips yet" with the Alt+F10 hint |
+| Editor opened from Home (mock) | the Project panel lists the 61 clips (it listed none before the fix: the editor read the Library page's listing, which Home never loaded) |
+
 ## Approximate / not done yet
+
+- **Track locks and Home's recent clips (M9.8.10–11, M11.1)**: driven against the mock
+  only; the real app and the human checklist below are owed. Normal mode's preview
+  ignores Main's Hide/Mute like every Advanced edit (the export honours them). Home's
+  cards have no Copy / Discord buttons yet (they come with M11's sharing).
 
 - **Themes (M10)**: fonts are referenced by name only (not bundled or carried in theme
   files); the picture-aware contrast check samples the picture at 48×48 and blends one
@@ -878,6 +898,28 @@ Appearance** (or click the sun at the top right → **Appearance settings…**).
 9. **Restart Scout**: it opens straight in your theme (no flash of the dark theme first).
 10. **Overlay.** With your theme in use, save a clip in a game: the "Clip saved" pop-up
     uses your theme's colours and corners.
+
+## Manual checks for the human (M9.8.10–11 and M11.1, locks and Home)
+
+Restart Scout with `Start Scout.cmd` first.
+
+1. **Recent clips on Home.** Home now has a **Recent clips** row under the Monitor: your
+   newest clips, newest first. Move the mouse over one: it scrubs through the clip.
+   Scroll the mouse wheel over the row: it slides sideways.
+2. **A new clip shows up.** Save a clip in a game (Alt+F10): within a second or two it
+   is the first card on Home.
+3. **Open from Home.** Click a card: the editor opens on that clip. Go to **Advanced**:
+   the **Project** panel on the left lists your other clips.
+4. **Lock a track.** Add another clip to the montage (tick it in Project → **Add**). On
+   its track (V2) click the new lock: the lane gets thin stripes, and clicking, dragging
+   or cutting its clip does nothing (the razor says the track is locked). Ctrl+A skips
+   it. The eye and M on that track are greyed until you unlock it.
+5. **The lock is kept.** Close the editor and open the clip again: V2 is still locked
+   (V1 is locked again as always). Click the lock to unlock it.
+6. **Hide and mute Main.** Unlock V1. Click the eye on V1: your clip's picture goes black
+   in the preview but you still hear it. Click **M** on A1: the sound goes too. Export
+   it: the exported video is black and silent where Main was, like the preview. Click
+   both again to bring Main back.
 
 ## Known bugs
 

@@ -1139,6 +1139,7 @@ fn track(id: u32, kind: TrackKind, clips: Vec<PlacedClip>) -> Track {
         muted: false,
         hidden: false,
         main: false,
+        locked: false,
         clips,
     }
 }

@@ -174,9 +174,10 @@ export function mockEditor(emit: (e: KlipEvent) => void, allClips: () => LibClip
         const end = compose(project, sourceOf(clip), infos(project)).duration_ms;
         const next = asProject(JSON.parse(JSON.stringify(project)));
         const adv = readAdvanced(next);
-        let track = adv.tracks.find((t) => t.kind === 'video');
+        // Like `append_clips`: not onto V1 or a locked track.
+        let track = adv.tracks.find((t) => t.kind === 'video' && !t.main && !t.locked);
         if (!track) {
-          track = { id: adv.tracks.reduce((m, t) => Math.max(m, t.id), 0) + 1, kind: 'video', name: 'Montage', muted: false, hidden: false, main: false, clips: [] };
+          track = { id: adv.tracks.reduce((m, t) => Math.max(m, t.id), 0) + 1, kind: 'video', name: 'Montage', muted: false, hidden: false, main: false, locked: false, clips: [] };
           adv.tracks.push(track);
         }
         let id = adv.tracks.reduce((m, t) => t.clips.reduce((n, c) => Math.max(n, c.id), m), 0) + 1;

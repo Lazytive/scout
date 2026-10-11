@@ -16,7 +16,7 @@ import { lib, refreshLibrary, refreshSoon } from './library.svelte';
 import { app } from './store.svelte';
 import type { Cue } from '../editor/advanced/player';
 import { compose } from './compose';
-import { moveClip, readAdvanced } from './advanced';
+import { moveClip, readAdvanced, unlockedClipIds } from './advanced';
 import type { Project, Speed, TextLayer } from './timeline';
 import { EditError, asProject, cloneProject, cut, outputDurationMs, outputTime, setSpeed, split, trim } from './timeline';
 import type { KlipEvent } from './types';
@@ -170,7 +170,8 @@ export function placedInfos(): [string, SourceInfo][] {
 }
 
 /** Open the editor on a clip. */
-export function openEditor(clip: LibClip): void {
+/** `tiles`: frames in the clip's hover-scrub strip, when the caller's listing isn't the Library's. */
+export function openEditor(clip: LibClip, tiles?: number): void {
   if (ed.clip?.key !== clip.key) {
     ed.project = null;
     ed.source = null;
@@ -196,7 +197,12 @@ export function openEditor(clip: LibClip): void {
   // Main is locked again on every open (the user's choice), even the same clip.
   ed.mainLocked = true;
   ed.mainSel = null;
-  ed.tiles = lib.listing?.strip.tiles ?? 16;
+  ed.tiles = tiles ?? lib.listing?.strip.tiles ?? 16;
+  // Opened from Home (M11.1): the Project panel and the montage strips need the library.
+  if (!lib.listing) {
+    lib.active = true;
+    void refreshLibrary();
+  }
   ed.error = null;
   ed.playing = false;
   app.page = 'editor';
@@ -379,6 +385,7 @@ export function undo(steps = 1): void {
     ed.undoLabels = ed.undoLabels.slice(0, -1);
     ed.project = prev;
   }
+  dropLockedSelection();
   scheduleSave();
 }
 
@@ -393,11 +400,24 @@ export function redo(steps = 1): void {
     ed.redoLabels = ed.redoLabels.slice(0, -1);
     ed.project = next;
   }
+  dropLockedSelection();
   scheduleSave();
+}
+
+/** An undo or redo may lock a track again: let go of its clips (M9.8.10). */
+function dropLockedSelection(): void {
+  if (!ed.project || (ed.clipId === null && ed.selected.length === 0)) return;
+  const free = new Set(unlockedClipIds(readAdvanced(ed.project), ed.mainLocked));
+  if (ed.selected.every((id) => free.has(id)) && (ed.clipId === null || free.has(ed.clipId))) return;
+  ed.selected = ed.selected.filter((id) => free.has(id));
+  ed.clipId = ed.clipId !== null && free.has(ed.clipId) ? ed.clipId : (ed.selected.at(-1) ?? null);
 }
 
 /** What a timeline edit of locked Main says. */
 export const MAIN_LOCKED = 'Main is locked: click the lock on V1 to edit it here';
+
+/** What a timeline edit of a locked track says. */
+export const TRACK_LOCKED = 'The track is locked: click its lock to edit it';
 
 /**
  * The selected Advanced clips: `ed.selected` while it holds the primary `ed.clipId`, else
@@ -410,7 +430,9 @@ export function selectedClips(): number[] {
 
 /** Select `ids`; `primary` (default: the last) is the one the panels show. */
 export function selectClips(ids: number[], primary: number | null = ids.at(-1) ?? null): void {
-  const list = ids.filter((id, i) => ids.indexOf(id) === i);
+  // A locked track's clips can't be selected (M9.8.10), so nothing acts on them.
+  const free = ed.project ? unlockedClipIds(readAdvanced(ed.project), ed.mainLocked) : null;
+  const list = ids.filter((id, i) => ids.indexOf(id) === i && (!free || free.includes(id)));
   ed.clipId = primary !== null && list.includes(primary) ? primary : (list.at(-1) ?? null);
   ed.selected = list;
   ed.mainSel = null;

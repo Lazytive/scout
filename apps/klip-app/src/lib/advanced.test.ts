@@ -4,6 +4,15 @@ import {
   addClip,
   addKey,
   addMarker,
+  arrangeMain,
+  isAdvancedEmpty,
+  mainSwitches,
+  mainTrackOf,
+  setMainSwitches,
+  setTrack,
+  trackLocked,
+  unlockedClipIds,
+  useSimpleCut,
   clipEnd,
   cutsAt,
   findClip,
@@ -248,5 +257,78 @@ describe('selections, razor and rolling (M9.8)', () => {
     rollCut(p, a, 5000, 3200);
     expect([at(p, a).out_ms, clipEnd(at(p, a)), at(p, b).at_ms]).toEqual([3200, 2200, 2200]);
     expect(readAdvanced(p).transitions).toEqual([{ track: findClip(readAdvanced(p), a)!.track.id, after_clip: a, kind: 'dip', ms: 400 }]);
+  });
+});
+
+describe('track locks and Main\'s switches (M9.8.10–11)', () => {
+  it('reads a lock and the switches, off when missing or not a boolean', () => {
+    const p = project();
+    p.advanced = { tracks: [{ id: 1, kind: 'video', name: 'V', locked: true, clips: [] }, { id: 2, kind: 'audio', name: 'A', locked: 'yes', clips: [] }], main_muted: true, main_hidden: 1 };
+    const a = readAdvanced(p);
+    expect(a.tracks.map((t) => t.locked)).toEqual([true, false]);
+    expect([a.main_muted, a.main_hidden]).toEqual([true, false]);
+    expect(readAdvanced(project()).main_muted).toBe(false);
+  });
+
+  it('locks a track (not V1, whose lock is the editor\'s) and keeps its clips out of reach', () => {
+    const p = project();
+    const a1 = addClip(p, 'video', lib('a'), 0, 4000, 0);
+    const b1 = addClip(p, 'audio', { kind: 'file', path: 'x.mp3' }, 0, 4000, 0);
+    const [video, audio] = readAdvanced(p).tracks;
+    setTrack(p, video!.id, { locked: true });
+    let a = readAdvanced(p);
+    expect(trackLocked(a.tracks[0]!, false)).toBe(true);
+    expect(unlockedClipIds(a, false)).toEqual([b1]);
+    setTrack(p, video!.id, { locked: false });
+    expect(unlockedClipIds(readAdvanced(p), false)).toEqual([a1, b1]);
+    // V1 follows the editor's lock, never its own.
+    const ids = arrangeMain(p);
+    const main = mainTrackOf(readAdvanced(p))!;
+    setTrack(p, main.id, { locked: true });
+    a = readAdvanced(p);
+    expect(mainTrackOf(a)!.locked).toBe(false);
+    expect(unlockedClipIds(a, true)).toEqual([a1, b1]);
+    expect(unlockedClipIds(a, false)).toEqual([...ids, a1, b1]);
+    expect(audio!.locked).toBe(false);
+  });
+
+  it('places nothing on a locked track', () => {
+    const p = project();
+    addClip(p, 'video', lib('a'), 0, 2000, 0);
+    const locked = readAdvanced(p).tracks[0]!.id;
+    setTrack(p, locked, { locked: true });
+    // Room after its clip, but locked: a new track, asked for or not.
+    const b = addClip(p, 'video', lib('b'), 0, 2000, 5_000);
+    const c = addClip(p, 'video', lib('c'), 0, 2000, 8_000, locked);
+    const a = readAdvanced(p);
+    expect(a.tracks[0]!.clips).toHaveLength(1);
+    expect(findClip(a, b)!.track.id).not.toBe(locked);
+    expect(findClip(a, c)!.track.id).not.toBe(locked);
+  });
+
+  it('turns Main off on the simple cut and keeps the switches when V1 is arranged and back', () => {
+    const p = project();
+    expect(mainSwitches(readAdvanced(p))).toEqual({ muted: false, hidden: false });
+    setMainSwitches(p, { hidden: true });
+    expect(isAdvancedEmpty(readAdvanced(p))).toBe(false);
+    expect(hasAdvancedEdits(p)).toBe(true);
+    let c = compose(p, SOURCE);
+    expect(c.layers.filter((l) => l.track === 0).every((l) => l.hidden && !l.muted)).toBe(true);
+    // Arranged: the main track takes the switches.
+    arrangeMain(p);
+    let a = readAdvanced(p);
+    expect(mainTrackOf(a)!.hidden).toBe(true);
+    expect([a.main_muted, a.main_hidden]).toEqual([false, false]);
+    setMainSwitches(p, { muted: true });
+    expect(mainSwitches(readAdvanced(p))).toEqual({ muted: true, hidden: true });
+    c = compose(p, SOURCE);
+    expect(c.layers.filter((l) => l.source.kind === 'main').every((l) => l.hidden && l.muted)).toBe(true);
+    // Back to the simple cut: they come along.
+    useSimpleCut(p);
+    a = readAdvanced(p);
+    expect(mainTrackOf(a)).toBeUndefined();
+    expect(mainSwitches(a)).toEqual({ muted: true, hidden: true });
+    setMainSwitches(p, { muted: false, hidden: false });
+    expect(isAdvancedEmpty(readAdvanced(p))).toBe(true);
   });
 });
