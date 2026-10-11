@@ -123,6 +123,16 @@ pub mod commands {
     pub const EXPORT_CANCEL: &str = "export.cancel";
     /// → `{active, last}`.
     pub const EXPORT_STATUS: &str = "export.status";
+    /// Custom themes (M10, ADR 0019): `{dir, themes, issues}`.
+    pub const THEME_LIST: &str = "theme.list";
+    /// Create or replace a custom theme from the editor (`{id?, theme, picture?}`).
+    pub const THEME_SAVE: &str = "theme.save";
+    /// Delete a custom theme (`{id}`); the theme in use falls back to Follow system.
+    pub const THEME_DELETE: &str = "theme.delete";
+    /// Import a `*.klip-theme` file (`{path}`) → `{id, theme, issues}`.
+    pub const THEME_IMPORT: &str = "theme.import";
+    /// Export a custom theme to one file (`{id, path}`).
+    pub const THEME_EXPORT: &str = "theme.export";
 }
 
 /// Longest accepted line (bytes, including the newline).

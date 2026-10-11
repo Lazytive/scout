@@ -31,6 +31,7 @@ mod library;
 mod overlay;
 mod setup;
 mod storage;
+mod themes;
 
 pub use host::Isolation;
 use host::RecorderHandle;
@@ -74,6 +75,8 @@ impl EngineOptions {
         }
     }
 }
+
+pub use themes::themes_dir;
 
 /// `<config dir>/Klip/settings.json`.
 pub fn default_settings_path() -> Option<PathBuf> {
@@ -882,6 +885,11 @@ impl Handler for Inner {
             commands::EXPORT_START => self.export_start(args),
             commands::EXPORT_CANCEL => self.export_cancel(args),
             commands::EXPORT_STATUS => self.export_status(args),
+            commands::THEME_LIST => self.theme_list(),
+            commands::THEME_SAVE => self.theme_save(args),
+            commands::THEME_DELETE => self.theme_delete(args),
+            commands::THEME_IMPORT => self.theme_import(args),
+            commands::THEME_EXPORT => self.theme_export(args),
             commands::OVERLAY_PREVIEW => self.overlay_preview(),
             commands::OVERLAY_MENU => {
                 self.emit(&Event::QuickMenu);

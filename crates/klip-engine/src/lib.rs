@@ -11,7 +11,9 @@ pub mod games;
 pub mod media_worker;
 mod worker;
 
-pub use engine::{Engine, EngineOptions, Isolation, POLL, RETRY, default_settings_path};
+pub use engine::{
+    Engine, EngineOptions, Isolation, POLL, RETRY, default_settings_path, themes_dir,
+};
 pub use events::Event;
 pub use worker::{RECORDER_FLAG, worker_main};
 

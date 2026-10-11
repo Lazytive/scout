@@ -87,6 +87,10 @@ pub enum Event {
     SettingsChanged {
         settings: Value,
     },
+    /// A custom theme was saved, imported or deleted (M10).
+    ThemesChanged {
+        id: String,
+    },
     /// A saved clip's thumbnail (JPEG, 320 px wide), also cached for the library.
     Thumbnail {
         clip: String,

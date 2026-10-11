@@ -205,6 +205,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 engine: Mutex::new(Some(engine)),
                 media: Mutex::new(std::collections::VecDeque::new()),
             });
+            // Custom theme pictures (ADR 0019) are shown through the asset protocol:
+            // the themes folder only, not recursively.
+            let themes = klip_engine::themes_dir(&settings_path);
+            if let Err(e) = std::fs::create_dir_all(&themes)
+                .map_err(|e| e.to_string())
+                .and_then(|()| {
+                    app.asset_protocol_scope()
+                        .allow_directory(&themes, false)
+                        .map_err(|e| e.to_string())
+                })
+            {
+                tracing::warn!(error = %e, "theme pictures");
+            }
 
             let prefs = handler
                 .handle(commands::SETTINGS_GET, &Value::Null)
