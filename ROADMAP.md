@@ -783,28 +783,28 @@ Use the release app: quit Klip and start it again with `target\release\Start Kli
 so the new version runs. Open a clip, switch to **Advanced**, add two or three clips from
 **Project** so they sit next to each other on a track.
 
-1. **The zoom stays.** Zoom the timeline in (Ctrl+wheel). Move or delete a clip: the
+1. ✅ (2026-10-11) **The zoom stays.** Zoom the timeline in (Ctrl+wheel). Move or delete a clip: the
    zoom must not jump. Press **\\** (or the ↔ button): the whole edit fits again.
-2. **Select several.** Click a clip, then Shift-click another: both get a white outline.
+2. ✅ (2026-10-11) **Select several.** Click a clip, then Shift-click another: both get a white outline.
    Drag one: both move. Click empty space and drag a box over clips: they get selected.
    Press **Delete**: they go (Ctrl+Z brings them back).
-3. **Ripple delete.** Select a clip in the middle and press **Shift+Delete**: it goes and
+3. ✅ (2026-10-11) **Ripple delete.** Select a clip in the middle and press **Shift+Delete**: it goes and
    the clips after it slide left to close the gap.
-4. **Razor.** Press **C** (or the blade button top-left of the timeline): the pointer is a
+4. ✅ (2026-10-11) **Razor.** Press **C** (or the blade button top-left of the timeline): the pointer is a
    blade and a dashed line shows where it would cut. Click a clip: it is cut there. Hold
    Shift and click: every track is cut there, your original clip too. Press **V** to get
    the arrow back.
-5. **Ctrl+K.** Put the playhead inside a clip and press **Ctrl+K**: everything under the
+5. ✅ (2026-10-11) **Ctrl+K.** Put the playhead inside a clip and press **Ctrl+K**: everything under the
    playhead is cut (only the selected clips, if you selected some).
-6. **Move a cut under a transition.** Put a **Dip to black** or a crossfade between two
+6. ✅ (2026-10-11) **Move a cut under a transition.** Put a **Dip to black** or a crossfade between two
    touching clips (right-click the striped block). Drag the middle of the striped block
    sideways: the cut moves with it, one clip gets longer and the other shorter.
-7. **Dip to black is black.** With a Dip to black on a montage track above your clip,
+7. ✅ (2026-10-11) **Dip to black is black.** With a Dip to black on a montage track above your clip,
    play across it: the picture must go fully black in the middle (not show your clip
    underneath), then come back. Export it: same.
 8. ✅ (2026-10-11; Klip's own menus on Library cards and transitions checked still open) **No browser stuff.** Right-click anywhere outside a text box: no menu. Press Ctrl+P,
    Ctrl+S, Ctrl+F, F5: nothing happens (no Print, no Save as, no reload).
-9. **Quiet waveforms.** Open your quiet PAYDAY 3 clip (11-39-03) in Advanced mode: its
+9. ✅ (2026-10-11) **Quiet waveforms.** Open your quiet PAYDAY 3 clip (11-39-03) in Advanced mode: its
    waveform should now be visible.
 
 ## Known bugs
