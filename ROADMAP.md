@@ -812,13 +812,13 @@ so the new version runs. Open a clip, switch to **Advanced**, add two or three c
 
 Restart Klip with `Start Klip.cmd` first.
 
-1. **Hide and Mute.** On a montage (video) track there are now two buttons: the eye and
+1. ✅ (2026-10-11) **Hide and Mute.** On a montage (video) track there are now two buttons: the eye and
    **M**. Click the eye: the track's picture disappears but you still hear it. Click
    **M**: its sound goes too. Sound and music tracks only have **M**.
-2. **V1 is locked.** Open a clip in Advanced mode: the lock next to V1 is closed and
+2. ✅ (2026-10-11) **V1 is locked.** Open a clip in Advanced mode: the lock next to V1 is closed and
    dragging or clicking your clip on V1 does nothing (the razor says it is locked). Close
    the editor and open it again later: V1 is locked again.
-3. **Unlocked V1 moves like any clip.** Click the lock (it opens, blue). Cut your clip
+3. ✅ (2026-10-11) **Unlocked V1 moves like any clip.** Click the lock (it opens, blue). Cut your clip
    with the razor (C), press V, then drag a piece sideways: it moves and leaves a gap
    (black and silent when played). Drag another piece before it, trim an end, delete one.
    Play and export: it plays in the new order. **Normal** is greyed out now; the **Main
