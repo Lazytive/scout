@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::advanced::keyframes::{transform_at, value_at};
 use crate::advanced::{
-    Colour, Ducking, Ease, Keyframe, Marker, MarkerKind, Source, SpeedPoint, TrackKind, Transform,
-    TransformKey, TransitionKind, ramp,
+    Colour, Ducking, Ease, FROM_BELOW, Keyframe, Marker, MarkerKind, Source, SpeedPoint, TrackKind,
+    Transform, TransformKey, TransitionKind, ramp,
 };
 use crate::format::Rect;
 use crate::plan::{MAX_MARKERS, SourceInfo};
@@ -297,14 +297,15 @@ pub fn compose_with(
             let mut at = clip.at_ms.min(MAX_SOURCE_MS);
             let mut opacity = clip.opacity.clone();
             // A transition after the previous clip of this track: overlap by its
-            // length (crossfade) or fade both at the join (dip).
-            let transition = previous.and_then(|(_, prev_id)| {
-                p.advanced
-                    .transitions
-                    .iter()
-                    .find(|t| t.track == track.id && t.after_clip == prev_id)
-            });
-            if let (Some((prev_i, _)), Some(tr)) = (previous, transition) {
+            // length (crossfade) or fade both at the join (dip). The first clip may
+            // crossfade in from whatever is below it (`FROM_BELOW`).
+            let after = previous.map_or(FROM_BELOW, |(_, prev_id)| prev_id);
+            let transition = p
+                .advanced
+                .transitions
+                .iter()
+                .find(|t| t.track == track.id && t.after_clip == after);
+            if let Some(tr) = transition {
                 let ms = tr.ms.min(src_len);
                 match tr.kind {
                     TransitionKind::Cut => {}
@@ -315,14 +316,16 @@ pub fn compose_with(
                         }
                     }
                     TransitionKind::Dip => {
-                        if let Some(prev) = layers.get_mut(prev_i)
-                            && prev.opacity.is_empty()
-                        {
-                            let len = prev.end_ms.saturating_sub(prev.at_ms);
-                            prev.opacity = fade(len.saturating_sub(ms), len, 1.0, 0.0);
-                        }
-                        if opacity.is_empty() {
-                            opacity = fade(0, ms, 0.0, 1.0);
+                        if let Some((prev_i, _)) = previous {
+                            if let Some(prev) = layers.get_mut(prev_i)
+                                && prev.opacity.is_empty()
+                            {
+                                let len = prev.end_ms.saturating_sub(prev.at_ms);
+                                prev.opacity = fade(len.saturating_sub(ms), len, 1.0, 0.0);
+                            }
+                            if opacity.is_empty() {
+                                opacity = fade(0, ms, 0.0, 1.0);
+                            }
                         }
                     }
                 }
@@ -1376,6 +1379,46 @@ mod tests {
         assert_eq!(a.opacity_at(1_800), 0.5);
         assert_eq!(b.opacity_at(2_000), 0.0);
         assert_eq!(b.opacity_at(2_400), 1.0);
+    }
+
+    #[test]
+    fn a_first_clip_crossfades_in_from_below() {
+        // Main 0–10 s; a track's first clip at 10 s fades in over Main's last 500 ms.
+        let mut p = Project::new(10_000);
+        let clip = |id, at_ms| PlacedClip {
+            id,
+            source: Source::Main,
+            in_ms: 0,
+            out_ms: 2_000,
+            at_ms,
+            ..PlacedClip::default()
+        };
+        p.advanced.tracks = vec![Track {
+            id: 1,
+            kind: TrackKind::Video,
+            name: String::new(),
+            muted: false,
+            clips: vec![clip(1, 10_000), clip(2, 12_000)],
+        }];
+        p.advanced.transitions = vec![Transition {
+            track: 1,
+            after_clip: FROM_BELOW,
+            kind: TransitionKind::Crossfade,
+            ms: 500,
+        }];
+        let c = compose(&p, &source());
+        let first = &c.layers[1];
+        assert_eq!(
+            (first.at_ms, first.end_ms),
+            (9_500, 11_500),
+            "pulled under Main"
+        );
+        assert_eq!(first.opacity_at(9_500), 0.0);
+        assert_eq!(first.opacity_at(9_750), 0.5);
+        assert_eq!(first.opacity_at(10_000), 1.0);
+        let second = &c.layers[2];
+        assert_eq!(second.at_ms, 12_000, "only the first clip comes from below");
+        assert!(second.opacity.is_empty());
     }
 
     #[test]

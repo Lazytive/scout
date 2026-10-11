@@ -25,6 +25,9 @@ pub const RATE_PCT: std::ops::RangeInclusive<u32> = 25..=400;
 pub const ZOOM: std::ops::RangeInclusive<f32> = 0.1..=8.0;
 /// Longest a transition may take, ms.
 pub const MAX_TRANSITION_MS: u64 = 10_000;
+/// `Transition::after_clip` for a crossfade into a track's FIRST clip from whatever is
+/// below it (Main or a lower track). Clip ids start at 1, so it names no clip.
+pub const FROM_BELOW: u32 = 0;
 
 /// How a keyframe reaches the next one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,7 +153,9 @@ pub enum TransitionKind {
     Dip,
 }
 
-/// Between clip `after_clip` of `track` and the next one on that track.
+/// Between clip `after_clip` of `track` and the next one on that track, or (with
+/// `after_clip` = [`FROM_BELOW`], crossfades only) into the track's first clip from what
+/// is below it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Transition {
@@ -371,9 +376,9 @@ impl Advanced {
                     note(cp, "empty or out-of-range clip; dropped");
                     continue;
                 }
-                if !seen_clips.insert(c.id) {
+                if c.id == FROM_BELOW || !seen_clips.insert(c.id) {
                     c.id = (ci as u32).saturating_add(1_000);
-                    note(format!("{cp}.id"), "duplicate id; renumbered");
+                    note(format!("{cp}.id"), "duplicate or zero id; renumbered");
                 }
                 match &mut c.source {
                     Source::Library { key } => *key = cut_text(key, MAX_PATH_CHARS),
@@ -430,6 +435,15 @@ impl Advanced {
             note(
                 "advanced.transitions".into(),
                 "over-long transitions dropped",
+            );
+        }
+        let n = self.transitions.len();
+        self.transitions
+            .retain(|t| t.after_clip != FROM_BELOW || t.kind != TransitionKind::Dip);
+        if self.transitions.len() != n {
+            note(
+                "advanced.transitions".into(),
+                "only a crossfade can come from below; dips dropped",
             );
         }
         self.transitions.truncate(MAX_TRANSITIONS);
@@ -792,6 +806,29 @@ mod tests {
             ),
             251
         );
+    }
+
+    #[test]
+    fn repair_keeps_from_below_unambiguous() {
+        let v: Value = serde_json::json!({
+            "tracks": [{"id": 1, "kind": "video", "clips": [
+                {"id": 0, "source": {"kind": "main"}, "in_ms": 0, "out_ms": 1000, "at_ms": 0}
+            ]}],
+            "transitions": [
+                {"track": 1, "after_clip": 0, "kind": "crossfade", "ms": 500},
+                {"track": 1, "after_clip": 0, "kind": "dip", "ms": 500}
+            ]
+        });
+        let mut issues = Vec::new();
+        let mut a = Advanced::from_value(v, &mut issues);
+        let fixed = a.repair();
+        assert_ne!(
+            a.tracks[0].clips[0].id, FROM_BELOW,
+            "a zero id is renumbered"
+        );
+        assert_eq!(a.transitions.len(), 1, "only the crossfade stays");
+        assert_eq!(a.transitions[0].kind, TransitionKind::Crossfade);
+        assert_eq!(fixed.len(), 2, "{fixed:?}");
     }
 
     #[test]

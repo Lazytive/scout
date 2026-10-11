@@ -2,7 +2,7 @@
 // so they can be tested: row order and labels, the drag threshold, clip hit zones, the
 // zoom bar, and where transitions sit (the same placement `compose` uses).
 import type { Advanced, Track, TransitionKind } from './advanced';
-import { MAX_TRANSITION_MS, clipLength, overlapOf } from './advanced';
+import { FROM_BELOW, MAX_TRANSITION_MS, clipLength, overlapOf } from './advanced';
 
 /** How far (px) the pointer must travel before a press on a clip moves or trims it. */
 export const DRAG_PX = 4;
@@ -110,6 +110,15 @@ export function transitionBoxes(a: Advanced): TransitionBox[] {
     if (tr.kind === 'cut') continue;
     const track = a.tracks.find((t) => t.id === tr.track);
     if (!track) continue;
+    if (tr.after_clip === FROM_BELOW) {
+      // Into the first clip, over whatever is below it.
+      const first = track.clips[0];
+      if (!first || tr.kind !== 'crossfade') continue;
+      const srcLen = Math.max(0, first.out_ms - first.in_ms);
+      const start = first.at_ms - overlapOf(a, track, first);
+      out.push({ track: track.id, after: FROM_BELOW, next: first.id, kind: tr.kind, ms: tr.ms, start, end: start + Math.min(tr.ms, srcLen), max: Math.min(MAX_TRANSITION_MS, srcLen) });
+      continue;
+    }
     const i = track.clips.findIndex((c) => c.id === tr.after_clip);
     const prev = track.clips[i];
     const next = track.clips[i + 1];

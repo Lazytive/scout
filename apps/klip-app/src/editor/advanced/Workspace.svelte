@@ -10,7 +10,7 @@
   import { onDestroy, onMount } from 'svelte';
 
   import type { Source } from '../../lib/advanced';
-  import { addMarker, clipLength, findClip, laneValue, overlapOf, readAdvanced, removeClip, setLane, setTransition, splitClip, trimClipEnd, trimClipStart } from '../../lib/advanced';
+  import { addMarker, clipLength, findClip, laneValue, overlapOf, readAdvanced, removeClip, setLane, setTransitionAt, splitClip, trimClipEnd, trimClipStart } from '../../lib/advanced';
   import { call, thumbUrl } from '../../lib/api';
   import { compose, layerActive } from '../../lib/compose';
   import type { Layer } from '../../lib/compose';
@@ -335,8 +335,8 @@
       case 'Delete':
       case 'Backspace':
         if (ed.transitionSel) {
-          const after = ed.transitionSel.after;
-          edit((p) => setTransition(p, after, 'cut', 0), 'Remove a transition');
+          const { track, after } = ed.transitionSel;
+          edit((p) => setTransitionAt(p, track, after, 'cut', 0), 'Remove a transition');
           ed.transitionSel = null;
         } else if (f) {
           edit((p) => removeClip(p, f.clip.id), 'Remove clip');

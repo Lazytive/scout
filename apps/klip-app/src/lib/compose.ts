@@ -7,7 +7,7 @@
  */
 
 import type { Ducking, Marker, MarkerKind, Source, TrackKind } from './advanced';
-import { MAX_MARKERS, MAX_SOURCE_MS, readAdvanced } from './advanced';
+import { FROM_BELOW, MAX_MARKERS, MAX_SOURCE_MS, readAdvanced } from './advanced';
 import type { Rect, SourceInfo } from './editor';
 import { cropRect } from './editor';
 import type { Colour, Keyframe, PictureKind, SpeedPoint, Transform, TransformKey } from './keyframes';
@@ -206,14 +206,15 @@ export function compose(project: Project, source: SourceInfo, clips: [string, So
       const srcLen = Math.max(0, clip.out_ms - clip.in_ms);
       let at = Math.min(clip.at_ms, MAX_SOURCE_MS);
       let opacity = clip.opacity.map((k) => ({ ...k }));
-      const prevId: number | null = previous ? previous[1] : null;
-      const transition = prevId === null ? undefined : adv.transitions.find((t) => t.track === track.id && t.after_clip === prevId);
-      if (previous && transition) {
+      // The first clip may crossfade in from whatever is below it (`FROM_BELOW`).
+      const after: number = previous ? previous[1] : FROM_BELOW;
+      const transition = adv.transitions.find((t) => t.track === track.id && t.after_clip === after);
+      if (transition) {
         const len = Math.min(transition.ms, srcLen);
         if (transition.kind === 'crossfade') {
           at = Math.max(0, at - len);
           if (opacity.length === 0) opacity = fade(0, len, 0, 1);
-        } else if (transition.kind === 'dip') {
+        } else if (transition.kind === 'dip' && previous) {
           const prev = layers[previous[0]];
           if (prev && prev.opacity.length === 0) {
             const plen = prev.end_ms - prev.at_ms;

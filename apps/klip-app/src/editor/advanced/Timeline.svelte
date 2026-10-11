@@ -24,8 +24,11 @@
     moveClip,
     overlapOf,
     readAdvanced,
+    FROM_BELOW,
+    fromBelow,
+    setFromBelow,
     setTrack,
-    setTransition,
+    setTransitionAt,
     sourceLabel,
     trimClipEnd,
     trimClipStart,
@@ -108,7 +111,13 @@
   const segs = $derived(segments(project));
   const rows = $derived(rowsOf(adv));
   const boxes = $derived(transitionBoxes(adv));
-  const touching = $derived(joins(adv, Math.max(1, (2 / pps) * 1000)));
+  const touching = $derived([
+    ...joins(adv, Math.max(1, (2 / pps) * 1000)),
+    // A video track's first clip can crossfade in from whatever is below it.
+    ...adv.tracks
+      .filter((t) => (t.kind === 'video' || t.kind === 'text') && t.clips[0] && t.clips[0].at_ms > 0 && !fromBelow(adv, t.id))
+      .map((t) => ({ track: t.id, after: FROM_BELOW, next: t.clips[0]!.id, at: t.clips[0]!.at_ms })),
+  ]);
   const lastVideo = $derived(rows.findIndex((r) => r.kind === 'main'));
   const videoCount = $derived(adv.tracks.filter((t) => t.kind === 'video' || t.kind === 'text').length);
   const soundCount = $derived(adv.tracks.length - videoCount);
@@ -365,7 +374,7 @@
     // The dragged end follows the pointer (a dip grows on both sides of the cut).
     const dms = ((e.clientX - t.x) / pps) * 1000;
     const ms = transitionLength(t.box.ms, t.edge, dms, t.box.max);
-    gesture((p) => setTransition(p, t.box.after, t.box.kind, ms));
+    gesture((p) => setTransitionAt(p, t.box.track, t.box.after, t.box.kind, ms));
   }
   function transUp() {
     const t = tpress;
@@ -383,11 +392,13 @@
   }
   function setKind(b: TransitionBox, kind: TransitionKind) {
     menu = null;
-    edit((p) => setTransition(p, b.after, kind, b.ms), kind === 'cut' ? 'Remove a transition' : KIND_LABEL[kind]);
+    edit((p) => setTransitionAt(p, b.track, b.after, kind, b.ms), kind === 'cut' ? 'Remove a transition' : KIND_LABEL[kind]);
     if (kind === 'cut') ed.transitionSel = null;
   }
-  function addCrossfade(j: { track: number; after: number }) {
-    if (edit((p) => setTransition(p, j.after, 'crossfade', DEFAULT_TRANSITION_MS), 'Add a crossfade')) {
+  function addCrossfade(j: { track: number; after: number; next: number }) {
+    const change = (p: Project) =>
+      j.after === FROM_BELOW ? setFromBelow(p, j.next, DEFAULT_TRANSITION_MS) : setTransitionAt(p, j.track, j.after, 'crossfade', DEFAULT_TRANSITION_MS);
+    if (edit(change, j.after === FROM_BELOW ? 'Crossfade in from below' : 'Add a crossfade')) {
       ed.clipId = null;
       ed.transitionSel = { track: j.track, after: j.after };
     }
@@ -684,7 +695,7 @@
                 </div>
               {/each}
               {#each touching.filter((j) => j.track === t.id) as j (j.after)}
-                <button class="join" style:left="{px(j.at)}px" title="Add a crossfade here" onclick={(e) => {
+                <button class="join" style:left="{px(j.at)}px" title={j.after === FROM_BELOW ? 'Crossfade in from what is below' : 'Add a crossfade here'} onclick={(e) => {
                   e.stopPropagation();
                   addCrossfade(j);
                 }}>+</button>
@@ -751,7 +762,9 @@
     onkeydown={(e) => e.key === 'Escape' && (menu = null)}
   >
     <button class="flat item" class:on={b.kind === 'crossfade'} role="menuitemradio" aria-checked={b.kind === 'crossfade'} onclick={() => setKind(b, 'crossfade')}>Crossfade</button>
-    <button class="flat item" class:on={b.kind === 'dip'} role="menuitemradio" aria-checked={b.kind === 'dip'} onclick={() => setKind(b, 'dip')}>Dip to black</button>
+    {#if b.after !== FROM_BELOW}
+      <button class="flat item" class:on={b.kind === 'dip'} role="menuitemradio" aria-checked={b.kind === 'dip'} onclick={() => setKind(b, 'dip')}>Dip to black</button>
+    {/if}
     <hr />
     <button class="flat item bad" role="menuitem" onclick={() => setKind(b, 'cut')}>Remove transition<kbd>Del</kbd></button>
   </div>

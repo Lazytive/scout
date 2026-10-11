@@ -24,6 +24,11 @@ export const RATE_MAX = 400;
 export const ZOOM_MIN = 0.1;
 export const ZOOM_MAX = 8;
 export const MAX_TRANSITION_MS = 10_000;
+/**
+ * `Transition.after_clip` for a crossfade into a track's FIRST clip from whatever is
+ * below it (Main or a lower track). Clip ids start at 1, so it names no clip.
+ */
+export const FROM_BELOW = 0;
 export const MAX_SOURCE_MS = 24 * 60 * 60 * 1000;
 /** How long a new picture (sticker) stays on screen. */
 export const STICKER_MS = 3_000;
@@ -210,9 +215,9 @@ export function clipEnd(c: PlacedClip): number {
  */
 export function overlapOf(a: Advanced, track: Track, clip: PlacedClip): number {
   const i = track.clips.findIndex((c) => c.id === clip.id);
-  const prev = i > 0 ? track.clips[i - 1] : undefined;
-  if (!prev) return 0;
-  const tr = a.transitions.find((t) => t.track === track.id && t.after_clip === prev.id);
+  if (i < 0) return 0;
+  const after = i > 0 ? track.clips[i - 1]!.id : FROM_BELOW;
+  const tr = a.transitions.find((t) => t.track === track.id && t.after_clip === after);
   if (!tr || tr.kind !== 'crossfade') return 0;
   return Math.min(tr.ms, Math.max(0, clip.out_ms - clip.in_ms), clip.at_ms);
 }
@@ -639,6 +644,34 @@ export function setTransition(p: Project, clipId: number, kind: TransitionKind, 
   if (!nextOnTrack(a, clipId)) throw new EditError('bad_range', 'A transition needs a clip after this one on the track');
   if (a.transitions.length >= MAX_TRANSITIONS) throw new EditError('too_many_pieces', 'Too many transitions');
   a.transitions.push({ track: trackId, after_clip: clipId, kind, ms: Math.round(clamp(msLen, 1, MAX_TRANSITION_MS)) });
+}
+
+/** Set or remove ('cut') the transition after `after` on `trackId` (FROM_BELOW: into its first clip). */
+export function setTransitionAt(p: Project, trackId: number, after: number, kind: TransitionKind, msLen: number): void {
+  if (after !== FROM_BELOW) {
+    setTransition(p, after, kind, msLen);
+    return;
+  }
+  const first = advancedOf(p).tracks.find((t) => t.id === trackId)?.clips[0];
+  if (first) setFromBelow(p, first.id, kind === 'cut' ? null : msLen);
+}
+
+/** The crossfade into the track's first clip from below, if any. */
+export function fromBelow(a: Advanced, trackId: number): Transition | null {
+  return a.transitions.find((t) => t.track === trackId && t.after_clip === FROM_BELOW && t.kind === 'crossfade') ?? null;
+}
+
+/** Crossfade into `clipId` (the first clip of its track) from what is below it; `msLen` null removes it. */
+export function setFromBelow(p: Project, clipId: number, msLen: number | null): void {
+  const a = advancedOf(p);
+  const found = findClip(a, clipId);
+  if (!found) return;
+  const trackId = found.track.id;
+  a.transitions = a.transitions.filter((t) => !(t.track === trackId && t.after_clip === FROM_BELOW));
+  if (msLen === null) return;
+  if (found.index !== 0) throw new EditError('bad_range', 'Only the first clip of a track can fade in from below');
+  if (a.transitions.length >= MAX_TRANSITIONS) throw new EditError('too_many_pieces', 'Too many transitions');
+  a.transitions.push({ track: trackId, after_clip: FROM_BELOW, kind: 'crossfade', ms: Math.round(clamp(msLen, 1, MAX_TRANSITION_MS)) });
 }
 
 export function addMarker(p: Project, atMs: number, title: string): void {

@@ -1294,6 +1294,73 @@ fn montage_crossfade_maps_every_frame() {
 
 #[test]
 #[ignore = "hardware: a GPU encoder and ffmpeg"]
+fn crossfade_from_below_maps_every_frame() {
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.mp4");
+    let b = dir.path().join("b.mp4");
+    make_clip(&enc, &a, &ClipSpec::hd(4, 8_000));
+    make_clip(
+        &enc,
+        &b,
+        &ClipSpec {
+            counter_base: B_BASE,
+            ..ClipSpec::hd(4, 8_000)
+        },
+    );
+    // Main 0–4 s; above it b's 0–1.5 s placed at 2.5 s, crossfading in from Main over
+    // 500 ms (it starts at 2 s), then Main again from 3.5 s.
+    let mut p = Project::new(4_000);
+    p.advanced.tracks = vec![track(
+        1,
+        TrackKind::Video,
+        vec![placed(1, library("b.mp4"), 0, 1_500, 2_500)],
+    )];
+    p.advanced.transitions = vec![Transition {
+        track: 1,
+        after_clip: klip_edit::advanced::FROM_BELOW,
+        kind: TransitionKind::Crossfade,
+        ms: 500,
+    }];
+    let comp = compose(&p, &source_info(&a));
+    let media = vec![(library("b.mp4"), b.clone())];
+    let out = dir.path().join("from-below.mp4");
+    let encoders = encoders(&enc);
+    run(&montage_request(
+        Preset::Original,
+        &a,
+        &comp,
+        &media,
+        &out,
+        &encoders,
+    ));
+    let counters = oracle::decode_counters(&out, 640, 360).unwrap();
+    assert_eq!(counters.len() as u64, comp.frame_count(FPS));
+    let (mut blended, mut bad) = (0, Vec::new());
+    for (i, got) in counters.iter().enumerate() {
+        match composed_counter(&comp, i as u64, FPS, 4 * FPS) {
+            Some(want) if *got != Some(want) => bad.push((i, *got, want)),
+            Some(_) => {}
+            None => blended += 1,
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "frames off the plan: {:?}",
+        &bad[..bad.len().min(10)]
+    );
+    assert_eq!(blended, 30, "500 ms of crossfade at 60 fps");
+    assert_eq!(counters[119], Some(119), "Main before the fade");
+    assert_eq!(
+        counters[150],
+        Some(B_BASE + 30),
+        "b from 2 s, full at 2.5 s"
+    );
+    assert_eq!(counters[210], Some(210), "Main again at 3.5 s");
+}
+
+#[test]
+#[ignore = "hardware: a GPU encoder and ffmpeg"]
 fn zoom_shows_the_centre_and_colour_grades() {
     let Some(enc) = setup() else { return };
     let dir = tempfile::tempdir().unwrap();
