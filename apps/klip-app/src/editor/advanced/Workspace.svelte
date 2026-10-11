@@ -38,7 +38,8 @@
   import EffectsPanel from './EffectsPanel.svelte';
   import HistoryPanel from './HistoryPanel.svelte';
   import EffectControls from './EffectControls.svelte';
-  import MediaPanel from './MediaPanel.svelte';
+  import Meters from './Meters.svelte';
+  import ProjectPanel from './ProjectPanel.svelte';
   import Properties from './Properties.svelte';
   import type { Player, SourceMedia } from './player';
   import Timeline from './Timeline.svelte';
@@ -52,22 +53,26 @@
   const frameMs = $derived(source.fps ? Math.max(1, Math.round(1000 / source.fps)) : 17);
   let player = $state<Player | null>(null);
 
-  // ---- layout, kept per viewer ----
+  // ---- layout (FilmCraft's Editing workspace), kept per viewer ----
   interface Layout {
-    left: number;
-    right: number;
-    timeline: number;
-    swapped: boolean;
+    topLeft: number;
+    topRight: number;
+    bottomLeft: number;
+    bottom: number;
   }
-  const LAYOUT_KEY = 'klip.editor.layout';
+  type Split = keyof Layout;
+  const LAYOUT_KEY = 'klip.editor.layout.v2';
+  const LIMITS: Record<Split, [number, number]> = { topLeft: [240, 680], topRight: [220, 560], bottomLeft: [200, 560], bottom: [160, 720] };
   function loadLayout(): Layout {
-    const d: Layout = { left: 260, right: 290, timeline: 260, swapped: false };
+    const d: Layout = { topLeft: 440, topRight: 290, bottomLeft: 300, bottom: 300 };
     try {
       const raw = JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? 'null') as Partial<Layout> | null;
-      if (raw && typeof raw === 'object') {
-        for (const k of ['left', 'right', 'timeline'] as const) if (typeof raw[k] === 'number' && Number.isFinite(raw[k])) d[k] = raw[k];
-        d.swapped = raw.swapped === true;
-      }
+      // The timeline height carries over from the old layout.
+      const old = JSON.parse(localStorage.getItem('klip.editor.layout') ?? 'null') as { timeline?: unknown } | null;
+      if (old && typeof old.timeline === 'number' && Number.isFinite(old.timeline)) d.bottom = old.timeline + 40;
+      if (raw && typeof raw === 'object')
+        for (const k of Object.keys(LIMITS) as Split[]) if (typeof raw[k] === 'number' && Number.isFinite(raw[k])) d[k] = raw[k];
+      for (const k of Object.keys(LIMITS) as Split[]) d[k] = Math.min(LIMITS[k][1], Math.max(LIMITS[k][0], d[k]));
     } catch {
       // Defaults.
     }
@@ -82,20 +87,17 @@
       // Not kept; fine.
     }
   });
-  let split: { which: 'left' | 'right' | 'timeline'; start: number; from: number } | null = null;
-  function splitDown(e: PointerEvent, which: 'left' | 'right' | 'timeline') {
-    split = { which, start: which === 'timeline' ? e.clientY : e.clientX, from: layout[which] };
+  let split: { which: Split; start: number; from: number } | null = null;
+  function splitDown(e: PointerEvent, which: Split) {
+    split = { which, start: which === 'bottom' ? e.clientY : e.clientX, from: layout[which] };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
   function splitMove(e: PointerEvent) {
     const s = split;
     if (!s) return;
-    if (s.which === 'timeline') layout.timeline = Math.min(640, Math.max(140, s.from - (e.clientY - s.start)));
-    else {
-      const d = e.clientX - s.start;
-      const leftSide = (s.which === 'left') !== layout.swapped;
-      layout[s.which] = Math.min(520, Math.max(200, s.from + (leftSide ? d : -d)));
-    }
+    const d = (s.which === 'bottom' ? e.clientY : e.clientX) - s.start;
+    const v = s.which === 'bottom' || s.which === 'topRight' ? s.from - d : s.from + d;
+    layout[s.which] = Math.min(LIMITS[s.which][1], Math.max(LIMITS[s.which][0], v));
   }
   function splitUp() {
     split = null;
@@ -132,6 +134,12 @@
       case 'image':
         return { url: null, tracks: [], image: ed.sources[`image:${s.path}`]?.image ?? null, width: 0, height: 0, strip: null };
     }
+  }
+
+  /** A source's sound file for the timeline's waveform (its first track, else the file). */
+  function soundOf(s: Source): string | null {
+    const m = resolve(s);
+    return m ? (m.tracks[0]?.url ?? m.url) : null;
   }
 
   /** A source's length (ms) to bound a trim; 0 when unknown (no bound). */
@@ -371,117 +379,128 @@
 
 <svelte:window onkeydown={keydown} />
 
-{#snippet sideA()}
-  <Panel tabs={['Media', 'Effects', 'Main clip']}>
-    {#snippet children(tab)}
-      {#if tab === 'Media'}
-        <MediaPanel />
-      {:else if tab === 'Effects'}
-        <EffectsPanel {project} {comp} />
-      {:else}
-        <NormalTools {project} advanced />
-      {/if}
-    {/snippet}
-  </Panel>
-{/snippet}
-
-{#snippet sideB()}
-  <Panel tabs={['Effect Controls', 'Properties', 'History', 'Export']}>
-    {#snippet children(tab)}
-      {#if tab === 'Effect Controls'}
-        <EffectControls {project} mainName={clip.name} {names} />
-      {:else if tab === 'Properties'}
-        <Properties {project} mainName={clip.name} {names} />
-      {:else if tab === 'History'}
-        <HistoryPanel />
-      {:else}
-        {@render exportFacts()}
-      {/if}
-    {/snippet}
-  </Panel>
-{/snippet}
-
-<div
-  class="ws"
-  style:grid-template-columns="{layout.swapped ? layout.right : layout.left}px 4px minmax(0, 1fr) 4px {layout.swapped ? layout.left : layout.right}px"
-  style:grid-template-rows="minmax(0, 1fr) 4px {layout.timeline}px"
->
-  <div class="side">{@render (layout.swapped ? sideB : sideA)()}</div>
+{#snippet splitter(which: Split, dir: 'v' | 'h')}
   <div
-    class="splitter v"
+    class="splitter {dir}"
     role="separator"
-    aria-orientation="vertical"
-    onpointerdown={(e) => splitDown(e, layout.swapped ? 'right' : 'left')}
+    aria-orientation={dir === 'v' ? 'vertical' : 'horizontal'}
+    onpointerdown={(e) => splitDown(e, which)}
     onpointermove={splitMove}
     onpointerup={splitUp}
     onpointercancel={splitUp}
   ></div>
-  <div class="center">
-    <Panel tabs={[clip.name]}>
-      {#snippet actions()}
-        <div class="mode" role="group" aria-label="Mode">
-          <button class="flat" onclick={() => onmode('normal')}>Normal</button>
-          <button class="flat on" aria-pressed="true">Advanced</button>
-        </div>
-        <button class="flat" title="Swap the side panels" onclick={() => (layout.swapped = !layout.swapped)}>⇄</button>
-        <button class="flat" onclick={closeEditor}>← Library</button>
-      {/snippet}
-        <div class="stage">
-          <Canvas
-            {comp}
-            {resolve}
-            playhead={ed.playhead}
-            playing={ed.playing}
-            cues={ed.cues}
-            selected={selectedLayer}
-            mediaVersion={ed.mediaVersion}
-            onplayhead={(ms) => (ed.playhead = ms)}
-            onended={() => {
-              ed.playing = false;
-              shuttle = 0;
-            }}
-            {onmove}
-            {onzoom}
-            bind:player
-          />
-          <div class="transport">
-            <button class="flat" title="Play backwards (J; again: faster)" onclick={() => setShuttle(shuttle >= 0 ? -1 : Math.max(-4, shuttle * 2))}>◀◀</button>
-            <button class="primary" onclick={togglePlay} title="Play / pause (Space)">{ed.playing ? 'Pause' : 'Play'}</button>
-            <button class="flat" title="Play faster (L again)" onclick={() => setShuttle(shuttle <= 0 ? 1 : Math.min(4, shuttle * 2))}>▶▶</button>
-            {#if shuttle !== 0 && shuttle !== 1}<span class="shuttle mono">{shuttle}x</span>{/if}
-            <span class="timecode mono">{formatTimecode(ed.playhead)}</span>
-            <span class="muted mono">/ {formatTimecode(comp.duration_ms)}</span>
-            <span class="grow"></span>
-            {#if ed.media.status === 'making'}<span class="muted">Making a preview…</span>{/if}
-            {#if ed.saving}<span class="muted">Saving…</span>{:else if ed.dirty}<span class="muted">Edited</span>{/if}
-            <button class="flat" disabled={ed.undo.length === 0} onclick={() => undo()} title="Undo {ed.undoLabels.at(-1) ?? ''} (Ctrl+Z)">Undo</button>
-            <button class="flat" disabled={ed.redo.length === 0} onclick={() => redo()} title="Redo (Ctrl+Y)">Redo</button>
+{/snippet}
+
+<div class="ws" style:grid-template-rows="minmax(0, 1fr) 4px {layout.bottom}px">
+  <div class="row3" style:grid-template-columns="{layout.topLeft}px 4px minmax(0, 1fr) 4px {layout.topRight}px">
+    <div class="cell">
+      <Panel tabs={['Effect Controls', 'Effects', 'History']}>
+        {#snippet children(tab)}
+          {#if tab === 'Effect Controls'}
+            <EffectControls {project} mainName={clip.name} {names} />
+          {:else if tab === 'Effects'}
+            <EffectsPanel {project} {comp} part="effects" />
+          {:else}
+            <HistoryPanel />
+          {/if}
+        {/snippet}
+      </Panel>
+    </div>
+    {@render splitter('topLeft', 'v')}
+    <div class="cell">
+      <Panel tabs={['Program']} flush>
+        {#snippet actions()}
+          <span class="clipname" title={clip.name}>{clip.name}</span>
+          <div class="mode" role="group" aria-label="Mode">
+            <button class="flat" onclick={() => onmode('normal')}>Normal</button>
+            <button class="flat on" aria-pressed="true">Advanced</button>
           </div>
-          {#if ed.error}<p class="error" role="alert">{ed.error}</p>{/if}
-        </div>
-    </Panel>
+          <button class="flat" onclick={closeEditor}>← Library</button>
+        {/snippet}
+          <div class="stage">
+            <Canvas
+              {comp}
+              {resolve}
+              playhead={ed.playhead}
+              playing={ed.playing}
+              cues={ed.cues}
+              selected={selectedLayer}
+              mediaVersion={ed.mediaVersion}
+              onplayhead={(ms) => (ed.playhead = ms)}
+              onended={() => {
+                ed.playing = false;
+                shuttle = 0;
+              }}
+              {onmove}
+              {onzoom}
+              bind:player
+            />
+            <div class="monitor-bar">
+              <span class="tc mono" title="Playhead">{formatTimecode(ed.playhead)}</span>
+              {#if shuttle !== 0 && shuttle !== 1}<span class="shuttle mono">{shuttle}x</span>{/if}
+              <span class="grow"></span>
+              {#if ed.media.status === 'making'}<span class="muted">Making a preview…</span>{/if}
+              {#if ed.saving}<span class="muted">Saving…</span>{:else if ed.dirty}<span class="muted">Edited</span>{/if}
+              <span class="dur mono" title="Length of the edit">{formatTimecode(comp.duration_ms)}</span>
+            </div>
+            <div class="transport">
+              <span class="side"></span>
+              <div class="buttons">
+                <button class="icon" title="Go to the start" onclick={() => seek(0)}>⏮</button>
+                <button class="icon" title="Back one frame (←)" onclick={() => seek(ed.playhead - frameMs)}>◀|</button>
+                <button class="icon" title="Play backwards (J; again: faster)" onclick={() => setShuttle(shuttle >= 0 ? -1 : Math.max(-4, shuttle * 2))}>◀◀</button>
+                <button class="icon play" onclick={togglePlay} title="Play / pause (Space)" aria-label={ed.playing ? 'Pause' : 'Play'}>{ed.playing ? '❚❚' : '▶'}</button>
+                <button class="icon" title="Play faster (L; again: faster)" onclick={() => setShuttle(shuttle <= 0 ? 1 : Math.min(4, shuttle * 2))}>▶▶</button>
+                <button class="icon" title="Forward one frame (→)" onclick={() => seek(ed.playhead + frameMs)}>|▶</button>
+                <button class="icon" title="Go to the end" onclick={() => seek(Math.max(0, comp.duration_ms - 1))}>⏭</button>
+              </div>
+              <span class="side end">
+                <button class="icon" disabled={ed.undo.length === 0} onclick={() => undo()} title="Undo {ed.undoLabels.at(-1) ?? ''} (Ctrl+Z)">↶</button>
+                <button class="icon" disabled={ed.redo.length === 0} onclick={() => redo()} title="Redo (Ctrl+Y)">↷</button>
+              </span>
+            </div>
+            {#if ed.error}<p class="error" role="alert">{ed.error}</p>{/if}
+          </div>
+      </Panel>
+    </div>
+    {@render splitter('topRight', 'v')}
+    <div class="cell">
+      <Panel tabs={['Properties', 'Main clip', 'Export']}>
+        {#snippet children(tab)}
+          {#if tab === 'Properties'}
+            <Properties {project} mainName={clip.name} {names} />
+          {:else if tab === 'Main clip'}
+            <NormalTools {project} advanced />
+          {:else}
+            {@render exportFacts()}
+          {/if}
+        {/snippet}
+      </Panel>
+    </div>
   </div>
-  <div
-    class="splitter v"
-    role="separator"
-    aria-orientation="vertical"
-    onpointerdown={(e) => splitDown(e, layout.swapped ? 'left' : 'right')}
-    onpointermove={splitMove}
-    onpointerup={splitUp}
-    onpointercancel={splitUp}
-  ></div>
-  <div class="side">{@render (layout.swapped ? sideA : sideB)()}</div>
-  <div
-    class="splitter h"
-    role="separator"
-    aria-orientation="horizontal"
-    onpointerdown={(e) => splitDown(e, 'timeline')}
-    onpointermove={splitMove}
-    onpointerup={splitUp}
-    onpointercancel={splitUp}
-  ></div>
-  <div class="bottom">
-    <Timeline {comp} {project} mainName={clip.name} {names} {sourceMs} />
+  {@render splitter('bottom', 'h')}
+  <div class="row3" style:grid-template-columns="{layout.bottomLeft}px 4px minmax(0, 1fr) 4px 78px">
+    <div class="cell">
+      <Panel tabs={['Project', 'Markers']} flush>
+        {#snippet children(tab)}
+          {#if tab === 'Project'}
+            <ProjectPanel />
+          {:else}
+            <div class="pad"><EffectsPanel {project} {comp} part="markers" /></div>
+          {/if}
+        {/snippet}
+      </Panel>
+    </div>
+    {@render splitter('bottomLeft', 'v')}
+    <div class="cell">
+      <Panel tabs={['Timeline']} flush>
+          <Timeline {comp} {project} mainName={clip.name} {names} {sourceMs} thumbs={(s) => resolve(s)?.strip ?? null} audio={soundOf} />
+      </Panel>
+    </div>
+    <div class="gap"></div>
+    <div class="cell meters-cell">
+      <Meters {player} />
+    </div>
   </div>
 </div>
 
@@ -490,21 +509,23 @@
     display: grid;
     height: 100%;
     min-height: 0;
+    background: var(--gutter);
   }
-  .side,
-  .center,
-  .bottom {
+  .row3 {
+    display: grid;
+    min-height: 0;
+    min-width: 0;
+  }
+  .cell {
     display: flex;
     min-height: 0;
     min-width: 0;
   }
-  .side > :global(*),
-  .center > :global(*),
-  .bottom > :global(*) {
+  .cell > :global(*) {
     flex: 1;
   }
-  .bottom {
-    grid-column: 1 / -1;
+  .gap {
+    background: var(--gutter);
   }
   .splitter {
     background: var(--gutter);
@@ -514,7 +535,6 @@
     cursor: col-resize;
   }
   .splitter.h {
-    grid-column: 1 / -1;
     cursor: row-resize;
   }
   .splitter:hover {
@@ -523,17 +543,76 @@
   .stage {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
     height: 100%;
+    min-height: 0;
+    background: var(--panel);
   }
-  .transport {
+  .stage > :global(:first-child) {
+    flex: 1;
+    min-height: 0;
+  }
+  .monitor-bar {
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    padding: 4px 10px 0;
+    font-size: var(--text-sm);
   }
-  .timecode {
-    font-size: var(--text-timecode);
+  .tc {
     color: var(--accent-text);
+    font-size: 15px;
+  }
+  .dur {
+    color: var(--text);
+    font-size: 15px;
+  }
+  .transport {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 2px 10px 6px;
+  }
+  .transport .buttons {
+    display: flex;
+    gap: 2px;
+  }
+  .transport .side.end {
+    display: flex;
+    justify-content: flex-end;
+    gap: 2px;
+  }
+  .icon {
+    min-width: 30px;
+    height: 26px;
+    padding: 0 6px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 12px;
+  }
+  .icon:hover:not(:disabled) {
+    color: var(--text-strong);
+    background: var(--hover);
+  }
+  .icon.play {
+    font-size: 15px;
+    color: var(--text-strong);
+  }
+  .clipname {
+    align-self: center;
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+  .pad {
+    padding: var(--space-2) var(--space-3);
+    overflow: auto;
+  }
+  .meters-cell {
+    background: var(--panel);
   }
   .shuttle {
     color: var(--warn);

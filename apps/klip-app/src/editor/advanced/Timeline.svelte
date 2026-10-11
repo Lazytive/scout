@@ -15,7 +15,7 @@
 -->
 <script lang="ts">
   import { tick } from 'svelte';
-  import type { PlacedClip, Track, TransitionKind } from '../../lib/advanced';
+  import type { PlacedClip, Source, Track, TransitionKind } from '../../lib/advanced';
   import {
     addMarker,
     clipEnd,
@@ -35,6 +35,8 @@
   import { formatTimecode } from '../../lib/format';
   import type { Project } from '../../lib/timeline';
   import { segments } from '../../lib/timeline';
+  import { stripPosition } from '../../lib/library';
+  import Waveform from './Waveform.svelte';
   import type { TimelineRow, TransitionBox } from '../../lib/timeline-view';
   import {
     DEFAULT_TRANSITION_MS,
@@ -57,6 +59,8 @@
     mainName,
     names,
     sourceMs,
+    thumbs,
+    audio,
   }: {
     comp: Composition;
     project: Project;
@@ -65,6 +69,10 @@
     names: Map<string, string>;
     /** A source's length in ms (to bound trims), or 0 when unknown. */
     sourceMs: (c: PlacedClip) => number;
+    /** A source's sprite strip for thumbnails, if the library has one. */
+    thumbs: (s: Source) => { url: string; tiles: number; duration_ms: number } | null;
+    /** A source's sound file for its waveform, if any. */
+    audio: (s: Source) => string | null;
   } = $props();
 
   const HEADER_W = 168;
@@ -470,6 +478,21 @@
     if (x < el.scrollLeft || x > el.scrollLeft + viewW - 40) el.scrollLeft = Math.max(0, x - 80);
   });
 
+  /** Thumbnails along a clip `w` × `h` px showing source `from`…`to` (ms), FilmCraft-style. */
+  function slots(w: number, h: number, from: number, to: number, strip: { tiles: number; duration_ms: number }): { x: number; w: number; pos: string }[] {
+    const th = h - 18;
+    if (th < 14 || strip.tiles < 1 || !(strip.duration_ms > 0)) return [];
+    const tw = Math.max(16, Math.round((th * 16) / 9));
+    const step = Math.max(tw, w / 40);
+    const out: { x: number; w: number; pos: string }[] = [];
+    for (let x = 0; x < w - 2; x += step) {
+      const t = from + ((x + tw / 2) / Math.max(1, w)) * (to - from);
+      const tile = Math.min(strip.tiles - 1, Math.max(0, Math.floor((t / strip.duration_ms) * strip.tiles)));
+      out.push({ x, w: Math.min(tw, w - x), pos: stripPosition(tile, strip.tiles) });
+    }
+    return out;
+  }
+
   const rowKey = (r: TimelineRow) => (r.kind === 'track' ? `t${r.track.id}` : r.kind);
   const pressGroup = $derived(press?.started && press.zone === 'move' ? (press.track.kind === 'audio' || press.track.kind === 'music' ? 'sound' : 'video') : null);
 </script>
@@ -526,6 +549,8 @@
             class="lane new"
             class:drop={dropTrack === 'new' && pressGroup === group}
             data-track={group === 'video' ? 'new-video' : 'new-sound'}
+            data-kind={group}
+            data-pps={pps}
             style:width="{contentW}px"
             role="presentation"
             onclick={laneClick}
@@ -551,9 +576,25 @@
             if (e.key === 'Enter') select(c.id);
           }}
         >
+          {@render body(t.kind === 'audio' || t.kind === 'music' ? 'sound' : 'video', c.source, Math.max(6, px(clipLength(c))), t.kind === 'audio' || t.kind === 'music' ? heights.sound : heights.video, c.in_ms, c.out_ms)}
           <span class="name">{sourceLabel(c.source, mainName, names)}</span>
           {#if c.speed.length > 1}<span class="badge">ramp</span>{/if}
         </div>
+      {/snippet}
+
+      {#snippet body(kind: 'video' | 'sound', src: Source, w: number, h: number, from: number, to: number)}
+        {#if kind === 'video'}
+          {@const strip = thumbs(src)}
+          {#if strip}
+            <span class="thumbs">
+              {#each slots(w, h, from, to, strip) as sl (sl.x)}
+                <span class="thumb" style:left="{sl.x}px" style:width="{sl.w}px" style:background-image="url('{strip.url}')" style:background-size="{Math.round(((h - 18) * 16) / 9)}px {strip.tiles * 100}%" style:background-position-y={sl.pos}></span>
+              {/each}
+            </span>
+          {/if}
+        {:else}
+          <span class="wavebox"><Waveform url={audio(src)} {from} {to} buckets={w / 2} /></span>
+        {/if}
       {/snippet}
 
       {@render newRow('video')}
@@ -617,7 +658,7 @@
           </div>
           {#if r.kind === 'track'}
             {@const t = r.track}
-            <div class="lane" class:drop={dropTrack === t.id} data-track={t.id} style:width="{contentW}px" role="presentation" onclick={laneClick}>
+            <div class="lane" class:drop={dropTrack === t.id} data-track={t.id} data-kind={r.group} data-pps={pps} style:width="{contentW}px" role="presentation" onclick={laneClick}>
               {#each t.clips as c (c.id)}
                 {@render clipBlock(t, c)}
               {/each}
@@ -658,6 +699,7 @@
                   style:width="{Math.max(4, px(s.out_end_ms - s.out_start_ms))}px"
                   title="{mainName} · {formatTimecode(s.src_start_ms)}–{formatTimecode(s.src_end_ms)}"
                 >
+                  {@render body(r.kind === 'main' ? 'video' : 'sound', { kind: 'main' }, Math.max(4, px(s.out_end_ms - s.out_start_ms)), h, s.src_start_ms, s.src_end_ms)}
                   <span class="name">{mainName}</span>
                   {#if s.speed !== 1}<span class="badge">{s.speed}x</span>{/if}
                 </div>
@@ -995,7 +1037,25 @@
   .clip.off {
     opacity: 0.45;
   }
+  .thumbs,
+  .wavebox {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 17px;
+    bottom: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .thumb {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background-repeat: no-repeat;
+    border-right: 1px solid rgb(0 0 0 / 50%);
+  }
   .clip .name {
+    position: relative;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1003,6 +1063,7 @@
     line-height: 15px;
   }
   .badge {
+    position: relative;
     flex: none;
     font-size: 10px;
     line-height: 14px;

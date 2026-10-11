@@ -16,6 +16,7 @@ import { lib, refreshLibrary, refreshSoon } from './library.svelte';
 import { app } from './store.svelte';
 import type { Cue } from '../editor/advanced/player';
 import { compose } from './compose';
+import { moveClip, readAdvanced } from './advanced';
 import type { Project, Speed, TextLayer } from './timeline';
 import { EditError, asProject, cloneProject, cut, outputDurationMs, outputTime, setSpeed, split, trim } from './timeline';
 import type { KlipEvent } from './types';
@@ -617,6 +618,40 @@ export async function addToMontage(paths: string[]): Promise<void> {
     if (ed.clip?.key !== clip.key) return;
     if (before) pushUndo(before, paths.length === 1 ? 'Add a clip' : `Add ${paths.length} clips`);
     take(r);
+    await loadSources();
+  } catch (e) {
+    ed.error = describe(e);
+  }
+}
+
+/**
+ * Add one library clip where it was dropped on the timeline: the engine appends it (and
+ * learns its source), then it moves to `atMs` on `track` (an existing video track, or
+ * 'new'), all one undo step. A refused move leaves it at the end of the edit.
+ */
+export async function addToMontageAt(path: string, atMs: number, track: number | 'new'): Promise<void> {
+  const clip = ed.clip;
+  if (!clip) return;
+  await flushSave();
+  const before = ed.project ? cloneProject(ed.project) : null;
+  const known = before ? readAdvanced(before).tracks.flatMap((t) => t.clips.map((c) => c.id)) : [];
+  try {
+    const r = await call<ProjectReply>('editor.montage', { path: clip.path, add: [path] });
+    if (ed.clip?.key !== clip.key) return;
+    if (before) pushUndo(before, 'Add a clip');
+    take(r);
+    const added = ed.project ? readAdvanced(ed.project).tracks.flatMap((t) => t.clips).find((c) => !known.includes(c.id)) : undefined;
+    if (added && ed.project) {
+      const next = cloneProject(ed.project);
+      try {
+        moveClip(next, added.id, Math.max(0, Math.round(atMs)), track);
+        settle(next);
+        ed.clipId = added.id;
+        scheduleSave();
+      } catch {
+        // Doesn't fit there: it stays where the engine put it.
+      }
+    }
     await loadSources();
   } catch (e) {
     ed.error = describe(e);

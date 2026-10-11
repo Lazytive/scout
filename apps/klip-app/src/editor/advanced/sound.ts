@@ -67,6 +67,9 @@ export class SoundGraph {
   private analyser: AnalyserNode | null = null;
   /** What leaves the graph (both buses), for the diagnostic's level. */
   private meter: AnalyserNode | null = null;
+  /** The output's left and right channels, for the level meters. */
+  private sides: [AnalyserNode, AnalyserNode] | null = null;
+  private sideBuf: Float32Array<ArrayBuffer> | null = null;
   private block: Float32Array<ArrayBuffer> | null = null;
   private strands = new Map<HTMLMediaElement, Strand>();
   private ducking: Ducking = { enabled: false, duck_db: -12, attack_ms: 100, release_ms: 600 };
@@ -112,6 +115,19 @@ export class SoundGraph {
     };
   }
 
+  /** The output's peak level now, left and right (0…1; 0 before any sound). */
+  levels(): [number, number] {
+    const buf = this.sideBuf;
+    if (!this.sides || !buf) return [0, 0];
+    const peak = (a: AnalyserNode) => {
+      a.getFloatTimeDomainData(buf);
+      let p = 0;
+      for (const v of buf) p = Math.max(p, Math.abs(v));
+      return p;
+    };
+    return [peak(this.sides[0]), peak(this.sides[1])];
+  }
+
   /** The context, made on first use (after a user gesture: Play). */
   private context(): AudioContext | null {
     if (this.ctx) return this.ctx;
@@ -134,6 +150,25 @@ export class SoundGraph {
       duck.connect(meter);
       meter.connect(sink);
       this.meter = meter;
+      // Mono sources count on both sides.
+      const both = ctx.createGain();
+      both.channelCount = 2;
+      both.channelCountMode = 'explicit';
+      both.channelInterpretation = 'speakers';
+      mainBus.connect(both);
+      duck.connect(both);
+      const split = ctx.createChannelSplitter(2);
+      both.connect(split);
+      const left = ctx.createAnalyser();
+      const right = ctx.createAnalyser();
+      left.fftSize = 1024;
+      right.fftSize = 1024;
+      split.connect(left, 0);
+      split.connect(right, 1);
+      left.connect(sink);
+      right.connect(sink);
+      this.sides = [left, right];
+      this.sideBuf = new Float32Array(left.fftSize);
       this.ctx = ctx;
       this.mainBus = mainBus;
       this.musicBus = musicBus;
@@ -249,6 +284,7 @@ export class SoundGraph {
     this.mainBus = this.musicBus = this.duck = this.voiceBus = null;
     this.analyser = null;
     this.meter = null;
+    this.sides = null;
   }
 }
 

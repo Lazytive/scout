@@ -6,12 +6,15 @@
     tabs,
     children,
     actions,
+    flush = false,
   }: {
     tabs: string[];
     /** Renders the active tab's content. */
     children: Snippet<[string]>;
     /** Extra controls at the right end of the tab strip. */
     actions?: Snippet;
+    /** No padding around the content (a timeline, a key lane). */
+    flush?: boolean;
   } = $props();
 
   let picked = $state('');
@@ -34,7 +37,7 @@
     <span class="grow"></span>
     {@render actions?.()}
   </header>
-  <div class="body" role="tabpanel">
+  <div class="body" class:flush role="tabpanel">
     {@render children(current)}
   </div>
 </section>
@@ -85,5 +88,14 @@
     min-height: 0;
     overflow: auto;
     padding: var(--space-2) var(--space-3) var(--space-3);
+  }
+  .body.flush {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .body.flush > :global(*) {
+    flex: 1;
+    min-height: 0;
   }
 </style>

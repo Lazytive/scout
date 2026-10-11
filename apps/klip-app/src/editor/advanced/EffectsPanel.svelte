@@ -12,7 +12,7 @@
   import { formatTimecode } from '../../lib/format';
   import type { Project } from '../../lib/timeline';
 
-  let { project, comp }: { project: Project; comp: Composition } = $props();
+  let { project, comp, part }: { project: Project; comp: Composition; part: 'effects' | 'markers' } = $props();
 
   const adv = $derived(readAdvanced(project));
   const pct = (v: number) => `${Math.round(v * 100)} %`;
@@ -20,6 +20,7 @@
   const others = $derived(comp.markers.filter((m) => m.kind !== 'user'));
 </script>
 
+{#if part === 'effects'}
 <section>
   <h3>Colour</h3>
   <Slider label="Brightness" value={adv.colour.brightness} min={-1} max={1} step={0.01} format={signed} onchange={(v) => liveEdit((p) => setColour(p, { brightness: v }), 'Brightness')} />
@@ -35,7 +36,7 @@
   <Slider label="Attack" value={adv.ducking.attack_ms} min={0} max={1000} step={10} format={(v) => `${Math.round(v)} ms`} disabled={!adv.ducking.enabled} onchange={(v) => liveEdit((p) => setDucking(p, { attack_ms: v }), 'Ducking')} />
   <Slider label="Release" value={adv.ducking.release_ms} min={0} max={3000} step={50} format={(v) => `${Math.round(v)} ms`} disabled={!adv.ducking.enabled} onchange={(v) => liveEdit((p) => setDucking(p, { release_ms: v }), 'Ducking')} />
 </section>
-
+{:else}
 <section>
   <h3>Markers</h3>
   {#if adv.markers.length === 0 && others.length === 0}
@@ -69,6 +70,7 @@
     {/each}
   </ul>
 </section>
+{/if}
 
 <style>
   section {
