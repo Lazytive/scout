@@ -5,6 +5,7 @@
   import { openEditor } from '../lib/editor.svelte';
   import { formatBytes, formatDuration, formatTimecode } from '../lib/format';
   import ListEditor from '../lib/forms/ListEditor.svelte';
+  import { app } from '../lib/store.svelte';
   import { displayName, qualityLabel } from '../lib/library';
   import {
     askDelete,
@@ -161,7 +162,17 @@
         <dt>Thumbnails to make</dt>
         <dd class="mono">{lib.listing.thumbs_pending}</dd>
       {/if}
+      {#if app.storage}
+        <!-- Storage (M11.2, from the old Home). -->
+        <dt>Cap</dt>
+        <dd class="mono">{app.storage.cap_bytes ? formatBytes(app.storage.cap_bytes) : 'None'}</dd>
+        <dt>Over the cap</dt>
+        <dd>{app.storage.over_cap === 'trash' ? `Oldest to the ${trashName}` : 'Oldest deleted'}</dd>
+        <dt>Free on drive</dt>
+        <dd class="mono">{app.storage.free_bytes !== null ? formatBytes(app.storage.free_bytes) : '–'}</dd>
+      {/if}
     </dl>
+    {#if app.storage?.low_disk}<p class="warn">The clip drive is low on space.</p>{/if}
     <p class="path" title={lib.listing.folder}>{lib.listing.folder}</p>
     <p class="muted hint">Select a clip to rename, tag or edit it. Double-click opens it in the editor.</p>
   {/if}
@@ -272,6 +283,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .warn {
+    color: var(--warn);
+    font-size: var(--text-sm);
   }
   .path {
     margin-top: var(--space-2);

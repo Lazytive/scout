@@ -422,14 +422,16 @@ klip-edit` and `vitest`.
 | Main hidden / muted (compose fixture shared by Rust and TS, unit tests both sides) | Main's layers `hidden` / `muted`, the edit keeps its length, a locked track above still plays; the switches move onto the main track when V1 is arranged and back with "Back to the simple cut"; `append_clips` and `addClip` skip locked tracks and V1 |
 | Home: recent clips (mock, 61 clips) | 8 cards, newest first (21:22 down to 22:55 the day before); the star toggles; a click opens the editor; a rename through the engine shows on Home from the `library_changed` event alone; every clip deleted → "No clips yet" with the Alt+F10 hint |
 | Editor opened from Home (mock) | the Project panel lists the 61 clips (it listed none before the fix: the editor read the Library page's listing, which Home never loaded) |
+| The Library as the start page (M11.2, mock) | tabs Library · Settings (Editor once a clip is open), Library first; the recorder bar is 40 px high and never overflows: 1549 px shows state, game, meter, the problem badge and all 4 buttons; 1000 px drops Bookmark and the second Save; 820 px (the window's minimum) drops the meter too; the ⓘ pop-up lists the recorder, the broken hotkey (link to Settings → Hotkeys) and the activity, closes on Escape and outside clicks; Details with nothing selected adds Cap, Over the cap, Free on drive; with no clips the grid says how to save the first one (Alt+F10) |
 | Real app (release build, off-screen, own settings, 2 test-game clips) | Home: 2 cards with real posters; a click opens the editor, Project lists the other clip; V2 locked + Main hidden and muted → the engine's saved project has `locked: true`, `main_hidden: true`, `main_muted: true`; after opening another clip and back: V2 still locked, V1 locked again, eye and M pressed and greyed; at 1 s the preview canvas is black (mean 0) and identical to `editor.frame` |
 
 ## Approximate / not done yet
 
-- **Track locks and Home's recent clips (M9.8.10–11, M11.1)**: the real app was driven
-  off-screen on test clips only; the human checklist below is owed. Normal mode's preview
-  ignores Main's Hide/Mute like every Advanced edit (the export honours them). Home's
-  cards have no Copy / Discord buttons yet (they come with M11's sharing).
+- **Track locks (M9.8.10–11) and the Library as the start page (M11.2)**: the real app
+  was driven off-screen on test clips only (the locks; M11.2 in the mock); the human
+  checklist below is owed. Normal mode's preview ignores Main's Hide/Mute like every
+  Advanced edit (the export honours them). M11.1's Home strip was folded into the Library
+  the same day (the user's choice).
 
 - **Themes (M10)**: fonts are referenced by name only (not bundled or carried in theme
   files); the picture-aware contrast check samples the picture at 48×48 and blends one
@@ -702,7 +704,7 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    Full mode: the dot while recording; the quick-menu hotkey (set one) opens the menu,
    Esc closes it and the game gets the focus back. Settings → Overlay → "Show me".
 4. Game detection: start a few games from Steam / Epic / Xbox app / Battle.net (no
-   anti-cheat titles without asking): Home shows the right name and starts buffering;
+   anti-cheat titles without asking): the recorder bar shows the right name and starts buffering;
    launchers and store clients don't count. Battle.net games have no common library
    folder: add them under Settings → Games.
 5. Settings: "Start Scout with Windows" adds Scout to Task Manager's startup apps and
@@ -739,7 +741,7 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    cut a middle piece, 2x a selection, add a Caption, drag the 9:16 window, then
    Export → YouTube. Play the file in your player: the cuts, the speed and the caption
    must match what the preview showed. Tell me how long the export took for how long a
-   clip (shown in the dialog's summary and in the Home activity).
+   clip (shown in the dialog's summary and in the activity log: the ⓘ on the recorder bar).
 2. **An HEVC clip** (record with the HEVC codec in Settings → Recording, or any HEVC
    file dropped in the clip folder): opening it in the editor shows "Making a preview…"
    first (the H.264 proxy); after that the video plays. Report how long it took.
@@ -880,7 +882,7 @@ Appearance** (or click the sun at the top right → **Appearance settings…**).
 2. **Accent colour.** Click the pink dot: buttons, the selected tab and highlights turn
    pink. Try the yellow one: text on yellow buttons turns black so it stays readable.
    Click **Theme's own** to go back.
-3. **Text size.** Pick **Larger**: all text grows. Look at Home, Library and the editor
+3. **Text size.** Pick **Larger**: all text grows. Look at the Library and the editor
    (Normal and Advanced): nothing should be cut off or overlap. Back to **Default**.
 4. **Density.** Pick **Compact**: less space, smaller bars and buttons. Back to
    **Comfortable**.
@@ -900,17 +902,20 @@ Appearance** (or click the sun at the top right → **Appearance settings…**).
 10. **Overlay.** With your theme in use, save a clip in a game: the "Clip saved" pop-up
     uses your theme's colours and corners.
 
-## Manual checks for the human (M9.8.10–11 and M11.1, locks and Home)
+## Manual checks for the human (M9.8.10–11 and M11.2, locks and the Library start page)
 
 Restart Scout with `Start Scout.cmd` first.
 
-1. **Recent clips on Home.** Home now has a **Recent clips** row under the Monitor: your
-   newest clips, newest first. Move the mouse over one: it scrubs through the clip.
-   Scroll the mouse wheel over the row: it slides sideways.
-2. **A new clip shows up.** Save a clip in a game (Alt+F10): within a second or two it
-   is the first card on Home.
-3. **Open from Home.** Click a card: the editor opens on that clip. Go to **Advanced**:
-   the **Project** panel on the left lists your other clips.
+1. **No more Home.** Scout opens on the **Library**. A bar on top shows what Home did:
+   Buffering / Waiting for a game, the game, how full the replay buffer is, and Record,
+   Bookmark and Save last 30 s. Start a game: the bar says Buffering and the time counts
+   up smoothly.
+2. **A new clip shows up.** Press Alt+F10 in the game: within a second or two the clip
+   is the first card under Today. The **Save last 30 s** button on the bar does the same.
+3. **Details.** Click the ⓘ at the right end of the bar: the recorder's details
+   (encoder, resolution, frame rate) and the activity log. Click anywhere else and it
+   closes. With no clip selected, the right panel shows your storage (cap, free space).
+   Make the window narrow: the bar drops buttons instead of overflowing.
 4. **Lock a track.** Add another clip to the montage (tick it in Project → **Add**). On
    its track (V2) click the new lock: the lane gets thin stripes, and clicking, dragging
    or cutting its clip does nothing (the razor says the track is locked). Ctrl+A skips

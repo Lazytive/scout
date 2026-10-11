@@ -170,8 +170,7 @@ export function placedInfos(): [string, SourceInfo][] {
 }
 
 /** Open the editor on a clip. */
-/** `tiles`: frames in the clip's hover-scrub strip, when the caller's listing isn't the Library's. */
-export function openEditor(clip: LibClip, tiles?: number): void {
+export function openEditor(clip: LibClip): void {
   if (ed.clip?.key !== clip.key) {
     ed.project = null;
     ed.source = null;
@@ -197,8 +196,9 @@ export function openEditor(clip: LibClip, tiles?: number): void {
   // Main is locked again on every open (the user's choice), even the same clip.
   ed.mainLocked = true;
   ed.mainSel = null;
-  ed.tiles = tiles ?? lib.listing?.strip.tiles ?? 16;
-  // Opened from Home (M11.1): the Project panel and the montage strips need the library.
+  ed.tiles = lib.listing?.strip.tiles ?? 16;
+  // Opened before the Library listed (KLIP_START_PAGE): the Project panel and the
+  // montage strips need the library.
   if (!lib.listing) {
     lib.active = true;
     void refreshLibrary();

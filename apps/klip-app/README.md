@@ -135,14 +135,14 @@ app sizes its window).
 - Plugins: `tauri-plugin-dialog` (folder picker), `tauri-plugin-autostart` (applied only
   when `app.autostart` changes, so the OS's own startup-apps choice isn't overridden at
   every start).
-- `src/Home.svelte` (Monitor, Recent clips, Info/Storage, Activity/Hotkeys panels).
-  Recent clips (M11.1): the 8 newest clips (`library.list` with `sort: newest, limit: 8`,
-  `src/lib/recent.svelte.ts`), apart from the Library page's query; listed when Home
-  opens and again on library events while it is shown. The Library's `ClipCard`
-  (hover-scrub, star); a click opens the editor, which loads the library listing when
-  the Library page never did. No clips: the first clip hotkey and the Save button. No
-  live capture preview (it would cost the game frames).
-  `src/lib/Panel.svelte` (panel with a tab strip), `src/App.svelte` (header, status bar).
+- The Library is the start page (M11.2; Home was folded into it, the user's choice):
+  `src/library/RecorderBar.svelte` on top (state, game, buffer meter counting between
+  the 2 s polls, problem badge, Record / Bookmark / Save; narrow windows drop Bookmark,
+  the second Save and then the meter; the ⓘ pop-up has the recorder's details, problems
+  with a link to Settings → Hotkeys, and the activity log). Storage sits in the Details
+  panel when nothing is selected; the empty grid names the first clip hotkey. No live
+  capture preview (it would cost the game frames).
+- `src/lib/Panel.svelte` (panel with a tab strip), `src/App.svelte` (header, status bar).
 - Icons: `src-tauri/icons/app-icon.svg` (made for Scout), sizes generated with
   `npx tauri icon src-tauri/icons/app-icon.svg -o src-tauri/icons` (desktop sizes kept).
 - CSP: scripts and styles from the app only, no remote URLs. `connect-src` allows the
@@ -248,7 +248,7 @@ feature the app loads the dev server at `devUrl` instead of the embedded `dist/`
 and audits npm licences from `package-lock.json` (shipped packages: permissive only).
 
 Development and test overrides (environment): `KLIP_SETTINGS` (settings file),
-`KLIP_DISCOVERY` (control-channel discovery file), `KLIP_START_PAGE=home|library|settings`
+`KLIP_DISCOVERY` (control-channel discovery file), `KLIP_START_PAGE=library|editor|settings`
 (the page the window opens on; a Scout on its own `KLIP_SETTINGS` skips the
 single-instance hand-over, so it runs beside the user's Scout instead of showing it; give
 it its own `WEBVIEW2_USER_DATA_FOLDER` too), `KLIP_WINDOW_POS=x,y` (create the

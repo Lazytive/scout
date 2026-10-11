@@ -3,7 +3,6 @@
 
   import Editor from './Editor.svelte';
   import FirstRun from './FirstRun.svelte';
-  import Home from './Home.svelte';
   import Library from './Library.svelte';
   import { ed, openEditorByPath } from './lib/editor.svelte';
   import { formatDuration } from './lib/format';
@@ -14,10 +13,9 @@
   // KLIP_START_PAGE / KLIP_START_CLIP (tests): the app injects the page (and clip) to open on.
   const start = (globalThis as { __KLIP_START_PAGE__?: string; __KLIP_START_CLIP__?: string }).__KLIP_START_PAGE__;
   const startClip = (globalThis as { __KLIP_START_CLIP__?: string }).__KLIP_START_CLIP__;
-  if (start === 'library' || start === 'settings') app.page = start;
+  if (start === 'settings') app.page = start;
 
   const workspaces = $derived<{ id: Page; label: string; soon?: boolean }[]>([
-    { id: 'home', label: 'Home' },
     { id: 'library', label: 'Library' },
     ...(ed.clip ? [{ id: 'editor' as const, label: 'Editor' }] : []),
     { id: 'settings', label: 'Settings' },
@@ -78,9 +76,7 @@
   </header>
 
   <main>
-    {#if app.page === 'home'}
-      <Home />
-    {:else if app.page === 'library'}
+    {#if app.page === 'library'}
       <Library />
     {:else if app.page === 'editor'}
       <Editor />

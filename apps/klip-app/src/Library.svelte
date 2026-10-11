@@ -1,14 +1,16 @@
-<!-- The Library workspace: filters on the left, the clip grid (search, sort, card size,
-     day headings, hover-scrub, multi-select, keyboard, context menu) and the details of
-     the selection on the right, docked like the Photocraft / FilmCraft panels. -->
+<!-- The Library workspace, Scout's start page: the recorder bar on top (M11.2, the old
+     Home), filters on the left, the clip grid (search, sort, card size, day headings,
+     hover-scrub, multi-select, keyboard, context menu) and the details of the selection
+     on the right, docked like the Photocraft / FilmCraft panels. -->
 <script lang="ts">
   import { onMount } from 'svelte';
 
   import ClipCard from './library/ClipCard.svelte';
   import Details from './library/Details.svelte';
   import Filters from './library/Filters.svelte';
+  import RecorderBar from './library/RecorderBar.svelte';
   import { openEditor } from './lib/editor.svelte';
-  import { formatBytes } from './lib/format';
+  import { formatBytes, formatDuration } from './lib/format';
   import Select from './lib/forms/Select.svelte';
   import { clickSelect, filtered, groupClips, moveKey, type LibClip, type Sort } from './lib/library';
   import {
@@ -26,6 +28,7 @@
   } from './lib/library.svelte';
   import Panel from './lib/Panel.svelte';
   import { defaultQuery } from './lib/library';
+  import { app } from './lib/store.svelte';
 
   const trashName =
     typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent) ? 'Recycle Bin' : 'Trash';
@@ -50,6 +53,9 @@
   const groups = $derived(groupClips(clips, lib.query.sort, new Date()));
   const tiles = $derived(listing?.strip.tiles ?? 16);
   const minWidth = $derived(sizes.find((s) => s.id === lib.size)?.min ?? 230);
+
+  // The first working clip hotkey, for the "save your first clip" hint.
+  const firstKey = $derived((app.status?.hotkeys ?? []).find((h) => h.action === 'clip.save' && h.secs && h.keys && !h.error) ?? null);
 
   let grid: HTMLElement | undefined = $state();
   let search = $state(lib.query.search);
@@ -164,6 +170,9 @@
 <svelte:window onclick={() => (menu = null)} />
 
 <div class="workspace">
+  <div class="top">
+    <RecorderBar />
+  </div>
   <div class="left">
     <Panel tabs={['Browse']}>
       <Filters />
@@ -229,7 +238,15 @@
             {:else if listing.total === 0}
               <div class="empty-state">
                 <p class="big">No clips yet</p>
-                <p class="muted">Clips you save while playing show up here. Scout keeps them as plain MP4 files in {listing.folder}.</p>
+                <p class="muted">
+                  {#if firstKey}
+                    Press <span class="combo">{#each (firstKey.keys ?? '').split('+') as k, i (i)}<kbd>{k}</kbd>{/each}</span>
+                    in a game to save the last {formatDuration((firstKey.secs ?? 30) * 1000)}, or use <b>Save</b> above.
+                  {:else}
+                    Use <b>Save</b> above while a game runs.
+                  {/if}
+                </p>
+                <p class="muted">Your clips show up here, newest first. Scout keeps them as plain MP4 files in {listing.folder}.</p>
               </div>
             {:else if clips.length === 0}
               <div class="empty-state">
@@ -349,8 +366,18 @@
   .workspace {
     display: grid;
     grid-template-columns: 220px minmax(0, 1fr) 320px;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 2px;
     height: 100%;
+  }
+  .top {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .combo {
+    display: inline-flex;
+    gap: 3px;
+    margin: 0 2px;
   }
   .left,
   .center,

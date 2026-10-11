@@ -25,7 +25,6 @@ import { describeEvent, type Tone } from './format';
 import { patchFor, splitError, type Settings } from './settings';
 import { editorEvent } from './editor.svelte';
 import { libraryEvent } from './library.svelte';
-import { recentEvent } from './recent.svelte';
 import type { ThemeSetting } from './themes';
 import type { KlipEvent, Status, StorageStatus } from './types';
 
@@ -38,11 +37,12 @@ export interface Activity {
 
 const MAX_ACTIVITY = 50;
 
-export type Page = 'home' | 'library' | 'editor' | 'settings';
+/** The Library is the start page (M11.2: the old Home folded into it). */
+export type Page = 'library' | 'editor' | 'settings';
 
 export const app = $state({
   /** The workspace shown. */
-  page: 'home' as Page,
+  page: 'library' as Page,
   /** The Settings category shown (`''`: the first). */
   settingsPage: '',
   status: null as Status | null,
@@ -335,7 +335,6 @@ export async function connect(): Promise<() => void> {
       return;
     }
     libraryEvent(e);
-    recentEvent(e);
     editorEvent(e);
     if (e.event === 'thumbs_ready' || e.event === 'library_changed' || e.event === 'export_progress') return;
     log(e);

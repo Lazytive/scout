@@ -5,6 +5,15 @@ reason)`.
 
 ## Unreleased
 
+- M11.2 — The Library is Scout's start page; Home is gone (the user: "lets do it",
+  after I suggested folding Home into the Library the other way round). A recorder bar
+  on top of the Library (`src/library/RecorderBar.svelte`): state, game, buffer meter,
+  a badge for a failed start or broken hotkeys, Record / Bookmark / Save, and an ⓘ
+  pop-up with the recorder's details, problems (link to Settings → Hotkeys) and the
+  activity log. Storage moved into the Details panel (nothing selected); the empty grid
+  says how to save the first clip. M11.1's recent-clips strip removed with Home
+  (`recent.svelte.ts`, its helpers and tests); `KLIP_START_PAGE` no longer takes `home`.
+  (Claude Opus 5.5: the user's call)
 - M11.1 — Home: **Recent clips** under a shorter Monitor (`src/lib/recent.svelte.ts`):
   the 8 newest clips (`library.list` with `limit`), the Library's cards (hover-scrub,
   star), a click opens the editor, a plain wheel scrolls the row; listed when Home opens

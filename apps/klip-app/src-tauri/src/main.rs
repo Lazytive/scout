@@ -5,7 +5,7 @@
 //! Development and test overrides (environment):
 //! - `KLIP_SETTINGS`: settings file instead of the user's.
 //! - `KLIP_DISCOVERY`: control-channel discovery file instead of the user's.
-//! - `KLIP_START_PAGE=home|library|editor|settings`: the page the window opens on (tests
+//! - `KLIP_START_PAGE=library|editor|settings`: the page the window opens on (tests
 //!   take screenshots of an off-screen window they can't click); `editor` needs
 //!   `KLIP_START_CLIP=<path of a clip in the folder>`.
 //! - `KLIP_WINDOW_POS=x,y`: open the window there at start, without taking focus (tests
@@ -69,7 +69,7 @@ fn create_main<R: Runtime>(
         .inner_size(1180.0, 760.0)
         .min_inner_size(820.0, 520.0);
     if let Ok(page) = std::env::var("KLIP_START_PAGE")
-        && matches!(page.as_str(), "home" | "library" | "editor" | "settings")
+        && matches!(page.as_str(), "library" | "editor" | "settings")
     {
         b = b.initialization_script(format!("window.__KLIP_START_PAGE__ = '{page}';"));
     }
