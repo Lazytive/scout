@@ -9,9 +9,11 @@ on:
     branches: [main, "ci/**"]
   workflow_dispatch:
 
+# One run per branch at a time; a newer push waits (replacing any older waiting run)
+# instead of cancelling the one in progress, so runs finish even with frequent pushes.
 concurrency:
   group: linux-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   ci:
