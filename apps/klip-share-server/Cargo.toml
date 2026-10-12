@@ -1,0 +1,36 @@
+[package]
+name = "klip-share-server"
+description = "Scout's self-hostable share server (M11.6, ADR 0021): unlisted links with a player page Discord embeds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "scout-share"
+path = "src/main.rs"
+
+[dependencies]
+axum.workspace = true
+futures-util = { version = "0.3", default-features = false }
+klip-mp4.workspace = true
+klip-share.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tower = { version = "0.5", features = ["util"] }
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+bytes.workspace = true
+klip-media.workspace = true
+tempfile.workspace = true
+ureq.workspace = true
+
+[lints]
+workspace = true

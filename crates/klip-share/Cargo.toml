@@ -1,0 +1,19 @@
+[package]
+name = "klip-share"
+description = "Scout's share protocol (M11, ADR 0021): the types, ids and tokens the share server and the app agree on"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+getrandom.workspace = true
+serde.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

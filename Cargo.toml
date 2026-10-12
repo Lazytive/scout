@@ -5,6 +5,7 @@ members = [
     "apps/klip-cli",
     "apps/klip-testgame",
     "apps/klip-app/src-tauri",
+    "apps/klip-share-server",
     "xtask",
 ]
 
@@ -19,6 +20,7 @@ publish = false
 klip-media = { path = "crates/klip-media" }
 klip-buffer = { path = "crates/klip-buffer" }
 klip-mp4 = { path = "crates/klip-mp4" }
+klip-share = { path = "crates/klip-share" }
 klip-control = { path = "crates/klip-control" }
 klip-testkit = { path = "crates/klip-testkit" }
 klip-platform = { path = "crates/klip-platform" }
@@ -40,6 +42,14 @@ clap = { version = "4.6", features = ["derive"] }
 cpal = "0.18"
 dirs = "7"
 getrandom = "0.4"
+# The share server (M11.6, ADR 0021); only `apps/klip-share-server` uses these.
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "query", "json"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "fs", "io-util", "time", "signal", "sync"] }
+tower-http = { version = "0.6", features = ["fs"] }
+toml = "1"
+sha2 = "0.10"
+# Plain-HTTP client for the share server's tests (the app's client comes in M11.8).
+ureq = { version = "3", default-features = false }
 gstreamer = { version = "0.25", features = ["v1_24"] }
 gstreamer-app = { version = "0.25", features = ["v1_24"] }
 gstreamer-video = { version = "0.25", features = ["v1_24"] }

@@ -16,6 +16,7 @@ pub const PURE: &[&str] = &[
     "klip-settings",
     "klip-library",
     "klip-edit",
+    "klip-share",
 ];
 /// Media engine (and the platform layer): no UI, no apps.
 pub const ENGINE: &[&str] = &[
@@ -27,7 +28,13 @@ pub const ENGINE: &[&str] = &[
     "klip-engine",
 ];
 /// Applications and tools: may depend on anything below them.
-pub const APPS: &[&str] = &["klip-cli", "klip-testgame", "klip-app", "xtask"];
+pub const APPS: &[&str] = &[
+    "klip-cli",
+    "klip-testgame",
+    "klip-app",
+    "klip-share-server",
+    "xtask",
+];
 
 const UI_PREFIXES: &[&str] = &["tauri", "wry", "tao"];
 const NATIVE_PREFIXES: &[&str] = &["gstreamer", "windows", "glib", "ashpd", "pipewire"];

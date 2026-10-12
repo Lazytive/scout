@@ -5,6 +5,16 @@ reason)`.
 
 ## Unreleased
 
+- M11.6 — The share server `scout-share` (`apps/klip-share-server`, axum) and the
+  protocol crate `klip-share` (ADR 0021): upload tokens kept hashed (`token add|list|
+  remove`), `POST /api/v1/clips` streams the MP4 to `tmp/` under a size cap, an idle
+  timeout and the quota, checks it with `klip_mp4::probe`, keeps it under a 128-bit id
+  with a manage token for deleting it and setting its poster; `/c/{id}` is a player page
+  with Open Graph video tags (no script, strict CSP, `noindex`), `/c/{id}.mp4` serves
+  ranges; links can expire (swept hourly). Refused uploads have the start of their
+  body read first, so the sender sees the answer, not a reset (found by the tests on
+  Windows). (Claude Opus 5.5: M11 plan)
+
 - M11.5 — "Discord" on a clip (ADR 0021): engine `share.discord {path}` copies the file
   as it is when Discord takes it (fits the limit setting, H.264 MP4, no edits), else
   starts a Discord-preset export (edits applied) and copies the result when it's done
