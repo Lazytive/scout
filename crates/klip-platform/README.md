@@ -18,6 +18,11 @@ Windows (Win32/DXGI via the `windows` crate):
 - `move_to_trash(paths)` (both OSes): the `trash` crate (MIT) on a `klip-trash` thread
   of its own (its Windows code sets up COM for the calling thread). Diagnostic
   `diag_trash_moves_a_file` (manual: it leaves a file in the Recycle Bin).
+- `copy_files(paths)` (M11.4, `clipboard.rs`, ADR 0021): "copied files" on the clipboard
+  through `arboard`'s file list (Windows CF_HDROP, Linux `text/uri-list` on Wayland
+  data-control or X11); one clipboard handle lives for the process (on Linux the
+  program that set the clipboard serves it). `copied_files`, `clipboard_text`,
+  `set_clipboard_text` for tests; `copied_files_read_back` (e2e) puts the text back.
 - `open_file(path)` / `reveal_file(path)` (M7, `shell.rs`): the library's Open and Show
   in folder. Windows: `ShellExecuteW("open")` and `SHParseDisplayName` +
   `SHOpenFolderAndSelectItems` on a short-lived single-threaded-apartment thread. Linux:

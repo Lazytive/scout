@@ -126,6 +126,9 @@ interface Args {
   tags?: string[];
 }
 
+/** What the mock's `clip.copy` put on the "clipboard" last (tests read it). */
+export const copied: string[] = [];
+
 export function mockLibrary(emit: (e: KlipEvent) => void) {
   const clips = makeClips();
   const cache = new Map<string, string>();
@@ -259,6 +262,15 @@ export function mockLibrary(emit: (e: KlipEvent) => void) {
       case 'clip.reveal':
         byPath(a.path);
         return { opened: true };
+      case 'clip.copy': {
+        const paths = a.paths as unknown;
+        if (!Array.isArray(paths) || paths.length === 0) {
+          throw new CommandError('bad_args', 'copy 1 to 1000 clips');
+        }
+        for (const p of paths) byPath(p);
+        copied.splice(0, copied.length, ...(paths as string[]));
+        return { copied: paths.length };
+      }
       default:
         return undefined;
     }

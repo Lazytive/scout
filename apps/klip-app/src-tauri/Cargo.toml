@@ -22,6 +22,7 @@ serde_json.workspace = true
 tauri = { version = "2.12", features = ["tray-icon", "protocol-asset"] }
 tauri-plugin-autostart = "2.5"
 tauri-plugin-dialog = "2.8"
+tauri-plugin-drag = "2.1"
 tauri-plugin-notification = "2.5"
 tauri-plugin-single-instance = "2.5"
 tracing.workspace = true

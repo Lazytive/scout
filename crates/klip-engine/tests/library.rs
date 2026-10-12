@@ -248,6 +248,19 @@ fn library_commands() {
             .code,
         "bad_args"
     );
+    // Copy refuses before touching the clipboard (the happy path is in e2e below).
+    for bad in [
+        json!({"paths": "x"}),
+        json!({"paths": []}),
+        json!({"paths": [1]}),
+        json!({"paths": ["C:/elsewhere/x.mp4"]}),
+    ] {
+        assert_eq!(
+            engine.handle("clip.copy", &bad).unwrap_err().code,
+            "bad_args",
+            "{bad}"
+        );
+    }
 
     // Delete (permanently here; the app's default is the Recycle Bin).
     let d = engine
@@ -274,5 +287,43 @@ fn library_commands() {
             .code,
         "bad_args"
     );
+    engine.shutdown();
+}
+
+/// `clip.copy` puts the clips on the desktop clipboard (its text is put back after), so
+/// it runs with `cargo xtask e2e`.
+#[test]
+#[ignore = "e2e: uses the desktop clipboard"]
+fn clip_copy_puts_files_on_the_clipboard() {
+    let dir = tempfile::tempdir().unwrap();
+    let clips = dir.path().join("clips");
+    let one = clips.join("Apex").join("Scout_1.mp4");
+    let two = clips.join("Scout_2.mp4");
+    clip(&one, 60);
+    clip(&two, 60);
+    let (engine, rx) = start(settings(dir.path()));
+    next(&rx, "ready");
+    let before = klip_platform::clipboard_text().ok();
+    let r = engine.handle("clip.copy", &json!({"paths": [one, two]}));
+    let back = klip_platform::copied_files();
+    if let Some(text) = before {
+        klip_platform::set_clipboard_text(&text).unwrap();
+    }
+    assert_eq!(r.unwrap()["copied"], 2);
+    let names: Vec<String> = back
+        .unwrap()
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["Scout_1.mp4", "Scout_2.mp4"]);
+
+    // A recording still being written is refused.
+    let mut sidecar = two.as_os_str().to_owned();
+    sidecar.push(klip_library::RECORDING_SIDECAR);
+    std::fs::write(&sidecar, b"").unwrap();
+    let e = engine
+        .handle("clip.copy", &json!({"paths": [two]}))
+        .unwrap_err();
+    assert_eq!(e.code, "busy");
     engine.shutdown();
 }

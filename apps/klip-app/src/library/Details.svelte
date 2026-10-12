@@ -8,6 +8,10 @@
   import { app } from '../lib/store.svelte';
   import { displayName, qualityLabel } from '../lib/library';
   import {
+    cancelDiscord,
+    copyClips,
+    discord,
+    discordClip,
     askDelete,
     lib,
     openClip,
@@ -99,12 +103,28 @@
       />
     </label>
     {#if lib.renameError}<p class="error">{lib.renameError}</p>{/if}
+    {#if discord.job?.key === one.key}
+      <div class="job" role="status">
+        <span>Making a Discord copy{discord.job.pass > 1 ? ` (pass ${discord.job.pass})` : ''}… {discord.job.pct} %</span>
+        <button class="flat" onclick={() => void cancelDiscord()}>Cancel</button>
+        <div class="bar"><div style:width="{discord.job.pct}%"></div></div>
+      </div>
+    {/if}
     {#if displayName(one.name) !== one.name}<p class="hint">Shown as “{displayName(one.name)}”.</p>{/if}
 
     <div class="actions">
       <button class="primary" onclick={() => openEditor(one)}>Edit</button>
       <button onclick={() => openClip(one)}>Open</button>
       <button onclick={() => openClip(one, true)}>Show in folder</button>
+      <button onclick={() => void copyClips([one])} title="Copy the file: paste it in Discord, a chat or a folder (Ctrl+C)"
+        >Copy</button
+      >
+      <button
+        onclick={() => void discordClip(one)}
+        disabled={discord.job !== null}
+        title="Copy it for Discord: as it is when it fits the upload limit, else a smaller copy is made first"
+        >Discord</button
+      >
       <button
         class="flat icon"
         class:on={one.starred}
@@ -144,6 +164,7 @@
     <p class="big">{clips.length} clips selected</p>
     <p class="muted">{formatBytes(total)} · {formatDuration(clips.reduce((s, c) => s + (c.info?.duration_ms ?? 0), 0))}</p>
     <div class="actions column">
+      <button onclick={() => void copyClips(clips)}>Copy {clips.length} files</button>
       <button onclick={() => setStar(clips, !allStarred)}>{allStarred ? 'Unstar all' : 'Star all'}</button>
       <button class="danger" onclick={() => askDelete(clips.map((c) => c.key), false)}
         >Move {clips.length} clips to the {trashName}…</button
@@ -306,5 +327,27 @@
     font-size: var(--text-lg);
     color: var(--text-strong);
     margin-top: var(--space-2);
+  }
+  .job {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 8px 0;
+    font-size: var(--text-sm);
+  }
+  .job span {
+    flex: 1;
+  }
+  .job .bar {
+    flex-basis: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--input);
+    overflow: hidden;
+  }
+  .job .bar div {
+    height: 100%;
+    background: var(--accent);
   }
 </style>

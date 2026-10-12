@@ -132,7 +132,9 @@ app sizes its window).
 - `src/lib/forms/`: Row, Toggle (blue square checkbox), Select, NumberField, Segmented
   (pill radio group), KeyCapture, ListEditor, FolderField, Meter. `src/lib/settings.ts`:
   the settings types and pure helpers (merge patches, error paths, key capture).
-- Plugins: `tauri-plugin-dialog` (folder picker), `tauri-plugin-autostart` (applied only
+- Plugins: `tauri-plugin-drag` (M11.4: drag clips out as files; called as
+  `plugin:drag|start_drag` from `dragFilesOut` in `src/lib/api.ts`, since its npm
+  wrapper has no licence), `tauri-plugin-dialog` (folder picker), `tauri-plugin-autostart` (applied only
   when `app.autostart` changes, so the OS's own startup-apps choice isn't overridden at
   every start).
 - The Library is the start page (M11.2; Home was folded into it, the user's choice).

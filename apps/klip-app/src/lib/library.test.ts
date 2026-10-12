@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   clickSelect,
+  copiedText,
   dayLabel,
+  discordReadyText,
+  dragGroup,
   defaultQuery,
   displayName,
   filtered,
@@ -189,5 +192,21 @@ describe('selection', () => {
 
   it('drops selected clips that are gone', () => {
     expect(pruneSelection(['a', 'x'], [clip('a', now)])).toEqual(['a']);
+  });
+});
+
+describe('copy and drag out (M11.4)', () => {
+  it('says what was copied', () => {
+    expect(copiedText(1)).toBe('Copied: paste it in Discord, a chat or a folder');
+    expect(copiedText(3)).toBe('Copied 3 clips: paste them in Discord, a chat or a folder');
+  });
+  it('says whether the Discord copy is the clip itself (M11.5)', () => {
+    expect(discordReadyText(true)).toBe('Copied: it already fits Discord. Paste it there');
+    expect(discordReadyText(false)).toBe('Ready: the Discord copy is on the clipboard. Paste it in Discord');
+  });
+  it('drags the selection from a selected card, else only that card', () => {
+    expect(dragGroup('b', ['a', 'b', 'c'])).toEqual(['a', 'b', 'c']);
+    expect(dragGroup('d', ['a', 'b'])).toEqual(['d']);
+    expect(dragGroup('a', [])).toEqual(['a']);
   });
 });

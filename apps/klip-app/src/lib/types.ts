@@ -112,5 +112,8 @@ export type KlipEvent =
       path: string | null;
       error: string | null;
       summary: unknown;
+      /** M11.5: the result was put on the clipboard (a "Discord" job). */
+      copied?: boolean;
+      copy_error?: string | null;
     }
   | ThumbsReadyEvent;

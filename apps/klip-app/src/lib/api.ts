@@ -49,6 +49,30 @@ function getBackend(): Promise<Backend> {
   return backend;
 }
 
+/** A 1×1 clear PNG: the drag picture while a clip has no poster yet. */
+const BLANK_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==';
+
+/** Files dragged out of the window in the browser mock (tests read it). */
+export const mockDrags: string[][] = [];
+
+/** Drag files out of Scout as copied files (M11.4: `tauri-plugin-drag`, OLE / GTK),
+ *  `icon` (a picture file) under the pointer. Call from `dragstart`, after
+ *  `preventDefault()`: the mouse button must still be down. */
+export async function dragFilesOut(paths: string[], icon: string | null): Promise<void> {
+  if (!inTauri) {
+    mockDrags.push(paths);
+    return;
+  }
+  const { Channel, invoke } = await import('@tauri-apps/api/core');
+  await invoke('plugin:drag|start_drag', {
+    item: paths,
+    image: icon ?? BLANK_PNG,
+    options: { mode: 'copy' },
+    onEvent: new Channel(),
+  });
+}
+
 /** Run a command; rejects with a `CommandError` (`code`, `message`). */
 export async function call<T = unknown>(cmd: string, args?: unknown): Promise<T> {
   return (await getBackend()).call(cmd, args) as Promise<T>;

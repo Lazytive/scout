@@ -1,8 +1,21 @@
 // Library state: the query, what `library.list` returned, the selection, and the actions
 // on clips. Every action is an engine command (`library.*`, `clip.*`).
 
-import { call, CommandError } from './api';
-import { defaultQuery, listArgs, pruneSelection, type LibClip, type Listing, type Query } from './library';
+import { call, CommandError, dragFilesOut } from './api';
+import { progressPct } from './editor';
+import {
+  copiedText,
+  defaultQuery,
+  discordReadyText,
+  dragGroup,
+  type DiscordResult,
+  listArgs,
+  pruneSelection,
+  type LibClip,
+  type Listing,
+  type Query,
+} from './library';
+import { toast } from './toasts.svelte';
 import type { KlipEvent, ThumbsReadyEvent } from './types';
 
 export type CardSize = 's' | 'm' | 'l';
@@ -111,6 +124,7 @@ function thumbsReady(e: ThumbsReadyEvent): void {
 
 /** Engine events that change the library. */
 export function libraryEvent(e: KlipEvent): void {
+  if (e.event === 'export_progress' || e.event === 'export_done') discordEvent(e);
   if (!lib.active) return;
   switch (e.event) {
     case 'thumbs_ready':
@@ -207,5 +221,109 @@ export async function openClip(c: LibClip, reveal = false): Promise<void> {
     await call(reveal ? 'clip.reveal' : 'clip.open', { path: c.path });
   } catch (e) {
     lib.error = message(e);
+  }
+}
+
+/** Put clips on the clipboard as copied files (M11.4); says so in a toast. */
+export async function copyClips(clips: LibClip[]): Promise<boolean> {
+  if (clips.length === 0) return false;
+  try {
+    await call('clip.copy', { paths: clips.map((c) => c.path) });
+    toast(copiedText(clips.length));
+    return true;
+  } catch (e) {
+    toast(`Couldn't copy: ${message(e)}`, 'error');
+    return false;
+  }
+}
+
+/** Copy a file Scout made (an export) by its path. */
+export async function copyPath(path: string): Promise<boolean> {
+  try {
+    await call('clip.copy', { paths: [path] });
+    toast(copiedText(1));
+    return true;
+  } catch (e) {
+    toast(`Couldn't copy: ${message(e)}`, 'error');
+    return false;
+  }
+}
+
+/** Drag clips out of the window as files (M11.4): the selection when `c` is in it, else
+ *  `c` alone (which becomes the selection), its poster under the pointer. */
+export async function dragClipsOut(c: LibClip): Promise<void> {
+  const keys = dragGroup(c.key, lib.selected);
+  if (!lib.selected.includes(c.key)) {
+    lib.selected = [c.key];
+    lib.anchor = c.key;
+    lib.cursor = c.key;
+  }
+  const paths = keys.map((k) => clipByKey(k)?.path).filter((p): p is string => !!p);
+  if (paths.length === 0) return;
+  let icon: string | null = null;
+  if (c.thumbs.poster) {
+    try {
+      icon = (await call<{ path: string }>('library.thumb', { key: c.key, kind: 'poster' })).path;
+    } catch {
+      // No poster file yet: the plain drag picture.
+    }
+  }
+  try {
+    await dragFilesOut(paths, icon);
+  } catch (e) {
+    toast(`Couldn't drag: ${message(e)}`, 'error');
+  }
+}
+
+/** The Library's "Discord" job (M11.5): the export making a copy of `key` that fits. */
+export const discord = $state<{
+  job: { key: string; id: number; pass: number; pct: number; reason: string } | null;
+}>({ job: null });
+
+/** Put a clip on the clipboard for Discord: as it is when it fits, else after an export
+ *  with the Discord preset (the engine copies the result when it's done). */
+export async function discordClip(c: LibClip): Promise<void> {
+  if (discord.job) {
+    toast('A Discord copy is already being made', 'error');
+    return;
+  }
+  try {
+    const r = await call<DiscordResult>('share.discord', { path: c.path });
+    if (r.action === 'copied') {
+      toast(discordReadyText(true));
+      return;
+    }
+    discord.job = { key: c.key, id: r.id, pass: 1, pct: 0, reason: r.reason };
+    toast(`Making a Discord copy: ${r.reason}…`);
+  } catch (e) {
+    toast(`Couldn't copy it for Discord: ${message(e)}`, 'error');
+  }
+}
+
+export async function cancelDiscord(): Promise<void> {
+  const job = discord.job;
+  if (!job) return;
+  try {
+    await call('export.cancel', { id: job.id });
+  } catch {
+    // Already finished: its export_done clears the job.
+  }
+}
+
+function discordEvent(e: KlipEvent): void {
+  const job = discord.job;
+  if (!job) return;
+  if (e.event === 'export_progress' && e.id === job.id) {
+    discord.job = { ...job, pass: e.pass, pct: progressPct(e.frames_done, e.frames_total) };
+  } else if (e.event === 'export_done' && e.id === job.id) {
+    discord.job = null;
+    if (!e.ok) {
+      if (e.error === 'cancelled') toast('Discord copy cancelled');
+      else toast(`The Discord copy failed: ${e.error ?? 'unknown error'}`, 'error');
+    } else if (e.copied) {
+      toast(discordReadyText(false));
+    } else {
+      toast(`The Discord copy is saved but couldn't be copied: ${e.copy_error ?? 'unknown error'}`, 'error');
+    }
   }
 }

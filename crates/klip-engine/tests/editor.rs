@@ -957,3 +957,86 @@ fn audio_tracks_and_files_for_the_preview() {
         ]
     );
 }
+
+/// M11.5: `share.discord` refuses bad arguments and a recording still being written
+/// before it touches the clipboard (the copying itself is in the e2e test below).
+#[test]
+fn share_discord_refuses_before_copying() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("clips").join("Game").join("Clip.mp4");
+    clip(&path, 60);
+    let (engine, _rx) = start(settings(dir.path()));
+    for args in [
+        json!(null),
+        json!({ "path": 3 }),
+        json!({ "path": "C:/elsewhere/x.mp4" }),
+    ] {
+        assert_eq!(
+            engine.handle("share.discord", &args).unwrap_err().code,
+            "bad_args",
+            "{args}"
+        );
+    }
+    let mut sidecar = path.as_os_str().to_owned();
+    sidecar.push(klip_library::RECORDING_SIDECAR);
+    std::fs::write(&sidecar, b"").unwrap();
+    let e = engine
+        .handle("share.discord", &json!({ "path": path }))
+        .unwrap_err();
+    assert_eq!(e.code, "busy");
+    engine.shutdown();
+}
+
+/// M11.5 on the real clipboard (its text is put back): a small unedited H.264 clip is
+/// copied as it is; once trimmed it's exported with the Discord preset and the export
+/// is what ends up on the clipboard.
+#[test]
+#[ignore = "e2e: encodes a real clip and uses the desktop clipboard"]
+fn share_discord_copies_as_is_or_exports_then_copies() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("clips").join("Game").join("Scout_1.mp4");
+    assert!(real_clip(&path, 180, "ball"), "no H.264 encoder");
+    let (engine, rx) = start(settings(dir.path()));
+    let before = klip_platform::clipboard_text().ok();
+    let p = path.to_string_lossy().to_string();
+
+    let r = engine
+        .handle("share.discord", &json!({ "path": p }))
+        .unwrap();
+    assert_eq!(r["action"], "copied", "{r}");
+    let as_is = klip_platform::copied_files().unwrap();
+
+    let got = engine
+        .handle("editor.project.get", &json!({ "path": p }))
+        .unwrap();
+    let mut project = got["project"].clone();
+    // A new project's empty piece list is the whole clip: keep its first second.
+    project["pieces"] = json!([{ "start_ms": 0, "end_ms": 1000, "speed": 1.0 }]);
+    engine
+        .handle(
+            "editor.project.set",
+            &json!({ "path": p, "project": project }),
+        )
+        .unwrap();
+    let r = engine
+        .handle("share.discord", &json!({ "path": p }))
+        .unwrap();
+    assert_eq!(r["action"], "export", "{r}");
+    assert_eq!(r["reason"], "it has edits");
+    let done = next(&rx, "export_done");
+    let exported = klip_platform::copied_files();
+    if let Some(text) = before {
+        klip_platform::set_clipboard_text(&text).unwrap();
+    }
+    assert_eq!(as_is.len(), 1);
+    assert_eq!(as_is[0].file_name().unwrap(), "Scout_1.mp4");
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(done["copied"], true, "{done}");
+    let out = PathBuf::from(done["path"].as_str().unwrap());
+    assert_eq!(out.file_name().unwrap(), "Scout_1 - Discord.mp4");
+    assert!(std::fs::metadata(&out).unwrap().len() <= 10_000_000);
+    let exported = exported.unwrap();
+    assert_eq!(exported.len(), 1);
+    assert_eq!(exported[0].file_name().unwrap(), "Scout_1 - Discord.mp4");
+    engine.shutdown();
+}

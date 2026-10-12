@@ -16,6 +16,10 @@
     askDelete,
     clipByKey,
     confirmDelete,
+    copyClips,
+    discord,
+    discordClip,
+    dragClipsOut,
     lib,
     openClip,
     refreshLibrary,
@@ -134,6 +138,12 @@
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
           lib.selected = [...order];
+        }
+        break;
+      case 'c':
+        if ((e.ctrlKey || e.metaKey) && sel.length > 0) {
+          e.preventDefault();
+          void copyClips(sel);
         }
         break;
       default:
@@ -267,6 +277,8 @@
                         onopen={() => openEditor(c)}
                         onmenu={(e) => openMenu(c, e)}
                         onstar={() => setStar([c], !c.starred)}
+                        ondragout={() => void dragClipsOut(c)}
+                        progress={discord.job?.key === c.key ? discord.job.pct : null}
                       />
                     {/each}
                   </div>
@@ -303,6 +315,14 @@
         <button class="flat item" role="menuitem" onclick={() => { menu = null; void openClip(c); }}>Open in player</button>
         <button class="flat item" role="menuitem" onclick={() => { menu = null; void openClip(c, true); }}>Show in folder</button>
         <button class="flat item" role="menuitem" onclick={() => { menu = null; renameFocus += 1; }}>Rename<kbd>F2</kbd></button>
+      {/if}
+      <button class="flat item" role="menuitem" onclick={() => { menu = null; void copyClips(selectedClips()); }}
+        >{many ? `Copy ${lib.selected.length} files` : 'Copy file'}<kbd>Ctrl+C</kbd></button
+      >
+      {#if !many}
+        <button class="flat item" role="menuitem" disabled={discord.job !== null} onclick={() => { menu = null; void discordClip(c); }}
+          >Copy for Discord</button
+        >
       {/if}
       <button
         class="flat item"

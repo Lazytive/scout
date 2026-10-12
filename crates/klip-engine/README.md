@@ -84,7 +84,11 @@ Scout's engine (ADR 0014): everything the app does that isn't UI. The desktop ap
   are missing), `library.thumbs` (make these keys' thumbnails next), `library.thumb`
   (the cached file, for the app's URI scheme), `clip.rename`, `clip.tags`, `clip.delete`
   (Recycle Bin / Trash; `permanent: true` deletes; never a recording in progress),
-  `clip.open`, `clip.reveal`; `library_changed` after rename / tags / star / delete. A
+  `clip.open`, `clip.reveal`, `clip.copy` (M11.4: the clips on the clipboard as copied
+  files; `busy` for a recording in progress), `share.discord` (M11.5, `engine/share.rs`:
+  copied as is when it fits `export.discord_limit_mb`, is H.264 in an MP4 and has no
+  edits, else a Discord-preset export with `then_copy`, whose `export_done` says
+  `copied` / `copy_error`); `library_changed` after rename / tags / star / delete. A
   `klip-thumbs` thread makes missing posters and strips through the media worker:
   requested keys first, then the rest newest first, but only while no game is followed
   (the game stopping wakes it); failures are remembered in the index and emitted as

@@ -6,6 +6,7 @@
 
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
+mod clipboard;
 #[cfg(windows)]
 mod gst_d3d11;
 #[cfg(all(test, windows))]
@@ -30,6 +31,7 @@ mod wgc;
 #[cfg(windows)]
 mod windows_impl;
 
+pub use clipboard::{MAX_COPY_FILES, clipboard_text, copied_files, copy_files, set_clipboard_text};
 pub use screencast::{ScreenCast, ScreenCastRequest, ScreenCastSource, ScreenCastStream};
 pub use shell::{open_file, reveal_file};
 pub use shortcuts::{APP_ID, BoundShortcut, GlobalShortcuts, ShortcutSpec, register_app_id};

@@ -105,6 +105,13 @@ fn clip_path(lib: &Library, key: &str) -> PathBuf {
         .fold(lib.root().to_path_buf(), |p, part| p.join(part))
 }
 
+/// The recorder is still writing this file (its sidecar exists).
+pub(super) fn recording_in_progress(path: &Path) -> bool {
+    let mut sidecar = path.as_os_str().to_owned();
+    sidecar.push(klip_library::RECORDING_SIDECAR);
+    Path::new(&sidecar).exists()
+}
+
 impl Inner {
     pub(super) fn clip_library(&self) -> Result<Library, CommandError> {
         config::clip_base(&self.settings())
@@ -414,6 +421,39 @@ impl Inner {
         };
         r.map_err(|e| CommandError::new("failed", e.to_string()))?;
         Ok(json!({ "opened": true }))
+    }
+
+    /// `clip.copy {paths}`: the clips on the clipboard as copied files (M11.4). A
+    /// recording still being written is refused (a paste would copy half of it).
+    pub(super) fn clip_copy(&self, args: &Value) -> Result<Value, CommandError> {
+        let paths = args
+            .get("paths")
+            .and_then(Value::as_array)
+            .ok_or_else(|| CommandError::bad_args("paths must be a list"))?;
+        if paths.is_empty() || paths.len() > klip_platform::MAX_COPY_FILES {
+            return Err(CommandError::bad_args(format!(
+                "copy 1 to {} clips",
+                klip_platform::MAX_COPY_FILES
+            )));
+        }
+        let lib = self.clip_library()?;
+        let mut files = Vec::with_capacity(paths.len());
+        for p in paths {
+            let s = p
+                .as_str()
+                .ok_or_else(|| CommandError::bad_args("paths must be strings"))?;
+            let (path, _) = self.clip_arg(&lib, s)?;
+            if recording_in_progress(&path) {
+                return Err(CommandError::new(
+                    "busy",
+                    "that recording is still being written",
+                ));
+            }
+            files.push(path);
+        }
+        klip_platform::copy_files(&files)
+            .map_err(|e| CommandError::new("failed", e.to_string()))?;
+        Ok(json!({ "copied": files.len() }))
     }
 
     /// Queue thumbnail work for the clips in `root`: `urgent` keys go first (in order),

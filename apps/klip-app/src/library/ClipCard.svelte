@@ -18,6 +18,8 @@
     onopen,
     onmenu,
     onstar,
+    ondragout,
+    progress = null,
   }: {
     clip: LibClip;
     tiles: number;
@@ -29,6 +31,10 @@
     onopen: () => void;
     onmenu: (e: MouseEvent) => void;
     onstar: () => void;
+    /** Dragged out of the window as a file (M11.4). */
+    ondragout: () => void;
+    /** A job on this clip (the Discord copy), 0–100. */
+    progress?: number | null;
   } = $props();
 
   let el: HTMLElement | undefined = $state();
@@ -101,6 +107,13 @@
   ondblclick={onopen}
   oncontextmenu={onmenu}
   onkeydown={() => undefined}
+  draggable="true"
+  ondragstart={(e) => {
+    // The OS drag (a real file) replaces the page's own.
+    e.preventDefault();
+    hover = false;
+    ondragout();
+  }}
 >
   <div
     class="thumb"
@@ -128,6 +141,11 @@
       <span class="badge mono">{formatTimecode(tileTime(tile, tiles, duration))}</span>
     {:else if duration !== null}
       <span class="badge mono">{formatTimecode(duration)}</span>
+    {/if}
+    {#if progress !== null}
+      <div class="job" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} title="Making a Discord copy">
+        <div style:width="{progress}%"></div>
+      </div>
     {/if}
     {#if (clip.info?.bookmarks_ms.length ?? 0) > 0}
       <span class="marks" title="{clip.info?.bookmarks_ms.length} bookmark(s)">◆ {clip.info?.bookmarks_ms.length}</span>
@@ -327,5 +345,17 @@
   }
   .sub .mono {
     flex: none;
+  }
+  .job {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 4px;
+    background: rgb(0 0 0 / 50%);
+  }
+  .job div {
+    height: 100%;
+    background: var(--accent);
   }
 </style>

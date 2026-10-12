@@ -189,7 +189,8 @@ impl Inner {
         let lib = self.clip_library()?;
         let (path, key) = self.clip_arg(&lib, str_arg(args, "path")?)?;
         let info = self.clip_info(&lib, &path, &key)?;
-        let (id, out) = self.start_export(ExportKind::Preset(preset), &lib, path, key, &info)?;
+        let (id, out) =
+            self.start_export(ExportKind::Preset(preset), &lib, path, key, &info, false)?;
         Ok(json!({ "id": id, "out": out.to_string_lossy(), "preset": preset.id() }))
     }
 
@@ -218,7 +219,8 @@ impl Inner {
     }
 
     /// Start a job for `key`: the project rendered with a preset next to the clip, or
-    /// the proxy. Returns the job id and where the file will be.
+    /// the proxy; `then_copy` puts the result on the clipboard (M11.5). Returns the job
+    /// id and where the file will be.
     pub(super) fn start_export(
         &self,
         kind: ExportKind,
@@ -226,6 +228,7 @@ impl Inner {
         clip: PathBuf,
         key: String,
         info: &ClipInfo,
+        then_copy: bool,
     ) -> Result<(u64, PathBuf), CommandError> {
         if lock(&self.exports).slot(kind).is_some() {
             return Err(busy(kind));
@@ -306,10 +309,15 @@ impl Inner {
         };
         let me = self.me.clone();
         let exe = self.media_worker.clone();
-        let root = lib.root().to_path_buf();
+        let ctx = JobCtx {
+            kind,
+            key,
+            root: lib.root().to_path_buf(),
+            then_copy,
+        };
         let spawned = std::thread::Builder::new()
             .name(format!("klip-export-{id}"))
-            .spawn(move || export_thread(&me, exe, job, kind, key, root, cancel));
+            .spawn(move || export_thread(&me, exe, job, ctx, cancel));
         if let Err(e) = spawned {
             lock(&self.exports).release(id);
             return Err(CommandError::new(
@@ -372,15 +380,29 @@ fn custom_arg(args: &Value) -> Result<CustomOutput, CommandError> {
     })
 }
 
+/// What an export thread does around the encoding.
+struct JobCtx {
+    kind: ExportKind,
+    key: String,
+    /// The library root (the new file is indexed there).
+    root: PathBuf,
+    /// Put the result on the clipboard (`share.discord`).
+    then_copy: bool,
+}
+
 fn export_thread(
     me: &Weak<Inner>,
     exe: Option<PathBuf>,
     job: ExportJob,
-    kind: ExportKind,
-    key: String,
-    root: PathBuf,
+    ctx: JobCtx,
     cancel: Arc<AtomicBool>,
 ) {
+    let JobCtx {
+        kind,
+        key,
+        root,
+        then_copy,
+    } = ctx;
     let id = job.id;
     let preset = kind.preset();
     let mut worker = match exe {
@@ -408,6 +430,13 @@ fn export_thread(
         ),
         Err(e) => (false, None, Some(e.clone()), Value::Null),
     };
+    let (copied, copy_error) = match path.as_deref() {
+        Some(p) if then_copy => match klip_platform::copy_files(&[PathBuf::from(p)]) {
+            Ok(()) => (true, None),
+            Err(e) => (false, Some(e.to_string())),
+        },
+        _ => (false, None),
+    };
     let done = json!({
         "id": id,
         "key": key,
@@ -416,6 +445,8 @@ fn export_thread(
         "path": path,
         "error": error,
         "summary": summary,
+        "copied": copied,
+        "copy_error": copy_error,
     });
     {
         let mut st = lock(&inner.exports);
@@ -431,6 +462,8 @@ fn export_thread(
         path: path.clone(),
         error,
         summary,
+        copied,
+        copy_error,
     });
     if ok && kind != ExportKind::Proxy {
         inner.emit(&Event::LibraryChanged {

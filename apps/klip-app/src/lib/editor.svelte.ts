@@ -787,7 +787,8 @@ export async function revealPath(path: string): Promise<void> {
 export function editorEvent(e: KlipEvent): void {
   if (e.event === 'export_progress') {
     if (e.preset === 'proxy') return;
-    if (ed.exporting?.id === e.id || !ed.exporting) {
+    // The Library's Discord copy of another clip isn't this editor's export.
+    if (ed.exporting?.id === e.id || (!ed.exporting && ed.clip?.key === e.key)) {
       ed.exporting = {
         id: e.id,
         preset: e.preset,
@@ -806,6 +807,7 @@ export function editorEvent(e: KlipEvent): void {
       if (placed) void loadClipSource(placed, true).then(() => (ed.mediaVersion += 1));
       return;
     }
+    if (ed.exporting?.id !== e.id && ed.clip?.key !== e.key) return;
     ed.exporting = null;
     // A refusal from while it ran ("an export is already running") is stale now.
     ed.exportError = null;

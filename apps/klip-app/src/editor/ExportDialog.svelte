@@ -9,6 +9,7 @@
   import type { CustomSettings, ExportPreset } from '../lib/editor';
   import { cancelExport, ed, revealPath, startExport } from '../lib/editor.svelte';
   import NumberField from '../lib/forms/NumberField.svelte';
+  import { copyPath } from '../lib/library.svelte';
   import Segmented from '../lib/forms/Segmented.svelte';
   import { formatBytes, formatDuration } from '../lib/format';
 
@@ -143,6 +144,9 @@
         <button onclick={() => void cancelExport()}>Cancel export</button>
       {:else if result?.ok && result.path}
         <button onclick={() => void revealPath(result.path ?? '')}>Show in folder</button>
+        <button onclick={() => void copyPath(result.path ?? '')} title="Paste it in Discord, a chat or a folder"
+          >Copy file</button
+        >
       {/if}
       <span class="grow"></span>
       <button onclick={onclose}>Close</button>

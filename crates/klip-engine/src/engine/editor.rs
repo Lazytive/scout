@@ -820,7 +820,8 @@ impl Inner {
         if let Some(id) = self.export_running_for(&key, "proxy") {
             return Ok(json!({ "status": "making", "id": id, "key": key }));
         }
-        let (id, _) = self.start_export(ExportKind::Proxy, &lib, path, key.clone(), &info)?;
+        let (id, _) =
+            self.start_export(ExportKind::Proxy, &lib, path, key.clone(), &info, false)?;
         Ok(json!({ "status": "making", "id": id, "key": key }))
     }
 }

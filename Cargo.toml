@@ -54,6 +54,8 @@ serde_path_to_error = "0.1"
 tempfile = "3"
 thiserror = "2"
 # Recycle Bin / freedesktop Trash. No chrono (only needed to list the trash).
+# "Copied files" on the clipboard (M11.4, ADR 0021): CF_HDROP / text/uri-list.
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 trash = { version = "5.2", default-features = false, features = ["coinit_apartmentthreaded"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

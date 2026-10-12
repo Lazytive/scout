@@ -30,6 +30,7 @@ mod host;
 mod library;
 mod overlay;
 mod setup;
+mod share;
 mod storage;
 mod themes;
 
@@ -872,6 +873,8 @@ impl Handler for Inner {
             commands::CLIP_DELETE => self.clip_delete(args),
             commands::CLIP_OPEN => self.clip_open(args, false),
             commands::CLIP_REVEAL => self.clip_open(args, true),
+            commands::CLIP_COPY => self.clip_copy(args),
+            commands::SHARE_DISCORD => self.share_discord(args),
             commands::EDITOR_PROJECT_GET => self.editor_project_get(args),
             commands::EDITOR_PROJECT_SET => self.editor_project_set(args),
             commands::EDITOR_PROXY => self.editor_proxy(args),

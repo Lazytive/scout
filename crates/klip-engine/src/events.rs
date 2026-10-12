@@ -128,7 +128,8 @@ pub enum Event {
         frames_total: u64,
     },
     /// An export ended: `path` and `summary` (`klip_export::ExportSummary`) when `ok`,
-    /// `error` otherwise (cancel included).
+    /// `error` otherwise (cancel included). `copied`: the file was put on the clipboard
+    /// (a `share.discord` job, M11.5), `copy_error` when that failed.
     ExportDone {
         id: u64,
         key: String,
@@ -137,6 +138,8 @@ pub enum Event {
         path: Option<String>,
         error: Option<String>,
         summary: Value,
+        copied: bool,
+        copy_error: Option<String>,
     },
     /// Recordings a killed recorder left, finalised at start.
     Recovered {

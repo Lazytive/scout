@@ -110,6 +110,32 @@ const DEFAULT_NAME = /^(?:Scout|Klip)(_Recording)?_(\d{4})-(\d{2})-(\d{2})_(\d{2
 /** What a card calls a clip: Scout's own file names become `Clip 18:22:01` /
     `Recording 18:22:01` (clips are often saved seconds apart); names people gave stay as
     they are. */
+/** What `share.discord` answers (M11.5): copied as is, or an export making a copy that
+ *  fits (it goes on the clipboard when done). */
+export type DiscordResult =
+  | { action: 'copied' }
+  | { action: 'export'; id: number; out: string; reason: string; running?: boolean };
+
+/** The toast once a clip is on the clipboard for Discord. */
+export function discordReadyText(asIs: boolean): string {
+  return asIs
+    ? 'Copied: it already fits Discord. Paste it there'
+    : 'Ready: the Discord copy is on the clipboard. Paste it in Discord';
+}
+
+/** The toast after copying `n` clips as files (M11.4). */
+export function copiedText(n: number): string {
+  return n === 1
+    ? 'Copied: paste it in Discord, a chat or a folder'
+    : `Copied ${n} clips: paste them in Discord, a chat or a folder`;
+}
+
+/** Which clips a drag that starts on `key` takes: the whole selection when `key` is in
+ *  it (in selection order), else only that clip. */
+export function dragGroup(key: string, selected: string[]): string[] {
+  return selected.includes(key) ? selected : [key];
+}
+
 export function displayName(name: string): string {
   const m = DEFAULT_NAME.exec(name);
   if (!m) return name;

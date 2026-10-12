@@ -5,6 +5,30 @@ reason)`.
 
 ## Unreleased
 
+- M11.5 — "Discord" on a clip (ADR 0021): engine `share.discord {path}` copies the file
+  as it is when Discord takes it (fits the limit setting, H.264 MP4, no edits), else
+  starts a Discord-preset export (edits applied) and copies the result when it's done
+  (`export_done` gains `copied` / `copy_error`; export jobs carry `then_copy`). Library:
+  Discord in Details and "Copy for Discord" in the context menu; progress with Cancel in
+  Details and a bar on the card; toasts for ready / failed / cancelled. The editor no
+  longer adopts another clip's export as its own. Mock fix: its `export_done` never
+  carried the event name (since M8.5), so the mock never ended an export. (Claude Opus
+  5.5: M11 plan)
+
+- M11.4 — Copy clips as files and drag them out (ADR 0021): engine `clip.copy {paths}`
+  puts library files on the clipboard as copied files (`klip_platform::copy_files`,
+  `arboard`; Windows CF_HDROP, Linux `text/uri-list`), so Ctrl+V works in Discord,
+  Explorer and chat apps; a recording still being written is refused. Library: Copy in
+  Details (one or many), in the context menu and on Ctrl+C; the export dialog's done
+  state has "Copy file"; a toast says what happened (`src/lib/toasts.svelte.ts`). Cards
+  drag out as files (`tauri-plugin-drag`, copy only, the poster under the pointer; a
+  selected card takes the whole selection). (Claude Opus 5.5: M11 plan, the user's "start
+  M11")
+- CI — Linux gates on GitHub Actions (`.github/workflows/linux.yml`): `cargo xtask ci`
+  in a Fedora 44 container on every push to `main`. It found two Linux-only breakages at
+  once (a missing import from the rename, a clippy lint), fixed. (Claude Opus 5.5: the
+  user chose this over a local check, which can't build PipeWire's bindings on Windows)
+
 - M11.3 — One bar as the title bar (Windows): the system title bar is off and Scout's
   bar holds the workspaces, the recorder (moved up from the Library), the theme menu and
   minimize / maximize / close drawn like Windows 11's (`src/lib/WindowButtons.svelte`,

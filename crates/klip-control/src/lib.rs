@@ -87,6 +87,9 @@ pub mod commands {
     pub const CLIP_OPEN: &str = "clip.open";
     /// Show a clip in the file manager. Args: `{"path"}`.
     pub const CLIP_REVEAL: &str = "clip.reveal";
+    /// Put clips on the clipboard as copied files (paste in Discord, Explorer, …).
+    /// Args: `{"paths": [..]}` → `{"copied": n}`.
+    pub const CLIP_COPY: &str = "clip.copy";
     /// `{path}` → the clip's editor project (new or saved), repair issues, `source`.
     pub const EDITOR_PROJECT_GET: &str = "editor.project.get";
     /// `{path, project}` → the project repaired and saved.
@@ -123,6 +126,10 @@ pub mod commands {
     pub const EXPORT_CANCEL: &str = "export.cancel";
     /// → `{active, last}`.
     pub const EXPORT_STATUS: &str = "export.status";
+    /// Put a clip on the clipboard for Discord (M11.5, ADR 0021): `{path}` →
+    /// `{action: "copied"}` when the file fits as it is, else `{action: "export", id,
+    /// out, reason}` (a Discord-preset export whose `export_done` says `copied`).
+    pub const SHARE_DISCORD: &str = "share.discord";
     /// Custom themes (M10, ADR 0019): `{dir, themes, issues}`.
     pub const THEME_LIST: &str = "theme.list";
     /// Create or replace a custom theme from the editor (`{id?, theme, picture?}`).

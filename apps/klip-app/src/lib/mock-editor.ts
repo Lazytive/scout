@@ -10,6 +10,7 @@
  */
 
 import { CommandError } from './api';
+import { copied } from './mock-library';
 import { readAdvanced } from './advanced';
 import { compose, visibleAt } from './compose';
 import type { SourceInfo } from './editor';
@@ -147,7 +148,7 @@ export function mockEditor(emit: (e: KlipEvent) => void, allClips: () => LibClip
     return { url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`, width, height };
   };
 
-  return (cmd: string, args: Args): unknown => {
+  const handle = (cmd: string, args: Args): unknown => {
     switch (cmd) {
       case 'editor.project.get': {
         const clip = clipOf(args);
@@ -263,6 +264,8 @@ export function mockEditor(emit: (e: KlipEvent) => void, allClips: () => LibClip
           if (typeof c?.codec !== 'string' || !CODECS.includes(c.codec)) throw new CommandError('bad_args', 'custom.codec must be h264, hevc or av1');
         }
         if (active) throw new CommandError('busy', 'an export is already running');
+        // `share.discord` below asks for the result on the clipboard.
+        const thenCopy = args?._then_copy === true;
         const id = ++nextId;
         const label = preset[0]!.toUpperCase() + preset.slice(1);
         const out = clip.path.replace(/\.mp4$/i, ` - ${label === 'Youtube' ? 'YouTube' : label === 'Tiktok' ? 'TikTok' : label}.mp4`);
@@ -288,8 +291,11 @@ export function mockEditor(emit: (e: KlipEvent) => void, allClips: () => LibClip
                 path: ok ? out : null,
                 error: ok ? null : 'encoding failed: nvd3d11h264enc: the encoder stopped taking data',
                 summary: ok ? { bytes: 8_400_000, duration_ms: outputDurationMs(project), width: 1920, height: 1080, fps: 60, passes: pass } : null,
+                copied: ok && thenCopy,
+                copy_error: null,
               };
-              emit(last as KlipEvent & { event: 'export_done' });
+              if (ok && thenCopy) copied.splice(0, copied.length, out);
+              emit({ event: 'export_done', ...(last as object) } as KlipEvent);
               if (ok) emit({ event: 'library_changed', reason: 'exported' });
               return;
             }
@@ -299,6 +305,24 @@ export function mockEditor(emit: (e: KlipEvent) => void, allClips: () => LibClip
         active = { id, key: clip.key, preset, out, timer };
         return { id, out, preset };
       }
+      case 'share.discord': {
+        const clip = clipOf(args);
+        const limit = 10_000_000;
+        const h264 = clip.info?.codec === 'H.264';
+        const edited = projects.has(clip.path);
+        if (clip.bytes <= limit && h264 && !edited && clip.path.toLowerCase().endsWith('.mp4')) {
+          copied.splice(0, copied.length, clip.path);
+          return { action: 'copied' };
+        }
+        const reason =
+          clip.bytes > limit
+            ? "it's over Discord's 10 MB"
+            : !h264
+              ? `Discord may not play ${clip.info?.codec ?? 'this video'}`
+              : 'it has edits';
+        const r = handle('export.start', { path: clip.path, preset: 'discord', _then_copy: true }) as { id: number; out: string };
+        return { action: 'export', id: r.id, out: r.out, reason };
+      }
       case 'export.cancel': {
         const id = args?.id;
         if (!active || active.id !== id) throw new CommandError('not_found', 'no such export');
@@ -306,7 +330,7 @@ export function mockEditor(emit: (e: KlipEvent) => void, allClips: () => LibClip
         const a = active;
         active = null;
         last = { id: a.id, key: a.key, preset: a.preset, ok: false, path: null, error: 'cancelled', summary: null };
-        setTimeout(() => emit(last as KlipEvent & { event: 'export_done' }), 60);
+        setTimeout(() => emit({ event: 'export_done', ...(last as object) } as KlipEvent), 60);
         return { id };
       }
       case 'export.status':
@@ -319,4 +343,5 @@ export function mockEditor(emit: (e: KlipEvent) => void, allClips: () => LibClip
         return undefined;
     }
   };
+  return handle;
 }
