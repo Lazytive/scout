@@ -228,7 +228,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .invoke_handler(tauri::generate_handler![
             ipc::klip,
             ipc::overlay_close,
-            ipc::editor_media
+            ipc::editor_media,
+            ipc::debug_info,
+            ipc::debug_save_report,
+            ipc::open_logs
         ])
         // Library thumbnails for <img> tags (thumb_scheme.rs).
         .register_asynchronous_uri_scheme_protocol(

@@ -2,13 +2,16 @@
      Every change is saved at once (a strict `settings.set`); a rejected value shows its
      reason next to the field. -->
 <script lang="ts">
-  import type { Component } from 'svelte';
+  import { onMount, type Component } from 'svelte';
+
+  import { debugInfo } from './lib/api';
 
   import Panel from './lib/Panel.svelte';
   import type { Settings as SettingsData } from './lib/settings';
   import { app } from './lib/store.svelte';
   import Appearance from './settings/Appearance.svelte';
   import Audio from './settings/Audio.svelte';
+  import Debug from './settings/Debug.svelte';
   import Games from './settings/Games.svelte';
   import General from './settings/General.svelte';
   import Hotkeys from './settings/Hotkeys.svelte';
@@ -16,7 +19,8 @@
   import Recording from './settings/Recording.svelte';
   import Storage from './settings/Storage.svelte';
 
-  const pages: { id: string; label: string; page: Component<{ s: SettingsData }> }[] = [
+  type PageDef = { id: string; label: string; page: Component<{ s: SettingsData }> };
+  const basePages: PageDef[] = [
     { id: 'general', label: 'General', page: General },
     { id: 'appearance', label: 'Appearance', page: Appearance },
     { id: 'recording', label: 'Recording', page: Recording },
@@ -26,6 +30,14 @@
     { id: 'storage', label: 'Storage', page: Storage },
     { id: 'overlay', label: 'Overlay', page: Overlay },
   ];
+  // Debug (the self-test) only in tester builds (`full-logs`) and the browser mock.
+  let showDebug = $state(false);
+  onMount(() => {
+    void debugInfo().then((i) => (showDebug = i.full_logs));
+  });
+  const pages = $derived<PageDef[]>(
+    showDebug ? [...basePages, { id: 'debug', label: 'Debug', page: Debug }] : basePages,
+  );
 
   let { initial = 'general' }: { initial?: string } = $props();
   const current = $derived(pages.find((p) => p.id === (app.settingsPage || initial)) ?? pages[0]!);

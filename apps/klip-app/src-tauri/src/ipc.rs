@@ -153,3 +153,51 @@ mod tests {
         assert_eq!(named_files("audio", &many).len(), MAX_MEDIA_FILES);
     }
 }
+
+/// The Debug page (tester builds): what this build is and where it logs.
+#[tauri::command]
+pub fn debug_info() -> Value {
+    let bundled = std::env::current_exe()
+        .ok()
+        .and_then(|e| {
+            e.parent()
+                .map(|d| d.join(klip_platform::BUNDLED_PLUGIN_DIR))
+        })
+        .is_some_and(|d| d.is_dir());
+    serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "full_logs": crate::logging::FULL,
+        "bundled_gstreamer": bundled,
+        "logs": crate::logging::dir().map(|d| d.to_string_lossy().into_owned()),
+    })
+}
+
+/// Largest self-test report kept.
+const MAX_REPORT_BYTES: usize = 1 << 20;
+
+/// Save the self-test report beside the logs; its file name.
+#[tauri::command]
+pub fn debug_save_report(text: String) -> Result<String, String> {
+    if text.len() > MAX_REPORT_BYTES {
+        return Err("the report is too long".into());
+    }
+    let dir = crate::logging::dir().ok_or("no folder for logs")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let name = format!("selftest-{secs}.txt");
+    // Windows line ends, so Notepad shows the lines.
+    std::fs::write(dir.join(&name), text.replace('\n', "\r\n")).map_err(|e| e.to_string())?;
+    tracing::info!(file = %name, "self-test report saved");
+    Ok(name)
+}
+
+/// Open the logs folder in the file manager.
+#[tauri::command]
+pub fn open_logs() -> Result<(), String> {
+    let dir = crate::logging::dir().ok_or("no folder for logs")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    klip_platform::open_file(&dir).map_err(|e| e.to_string())
+}

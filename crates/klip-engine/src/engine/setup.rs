@@ -113,16 +113,57 @@ impl Inner {
                 })
             })
             .collect();
+        // `fresh` (the Debug self-test): forget this codec's saved probe results first,
+        // and report every candidate's outcome, failures included.
+        let fresh = args.get("fresh").and_then(Value::as_bool).unwrap_or(false);
+        let names: Vec<String> = klip_probe::candidates(codec, &config::gpu_vendors(), None)
+            .into_iter()
+            .map(|c| c.element)
+            .collect();
         let started = Instant::now();
         let list = {
             let mut c = lock(&self.cache);
+            if fresh {
+                c.0.results.retain(|r| !names.contains(&r.element));
+            }
             let r = config::pick_encoders(codec, None, None, &mut c.0);
             config::save_encoder_cache(&c.0, c.1.as_deref());
             r
         };
+        if fresh {
+            // Ranking stops at the first encoder that works; the self-test wants them all.
+            let untested: Vec<klip_probe::EncoderChoice> = {
+                let c = lock(&self.cache);
+                klip_probe::candidates(codec, &config::gpu_vendors(), None)
+                    .into_iter()
+                    .filter(|e| c.0.get(&e.element).is_none())
+                    .collect()
+            };
+            let prober = config::prober();
+            for choice in untested {
+                let r = prober.probe(&choice, Duration::from_secs(10));
+                tracing::info!(element = %choice.element, ok = r.ok, "encoder probe (self-test)");
+                let mut c = lock(&self.cache);
+                c.0.record(&r);
+                config::save_encoder_cache(&c.0, c.1.as_deref());
+            }
+        }
+        let tested: Vec<Value> = {
+            let c = lock(&self.cache);
+            names
+                .iter()
+                .map(|n| match c.0.get(n) {
+                    Some(r) => json!({
+                        "element": n, "ok": r.ok, "error": r.error, "probe_ms": r.probe_ms,
+                    }),
+                    None => json!({ "element": n, "ok": null, "error": "not tested" }),
+                })
+                .collect()
+        };
         let took_ms = started.elapsed().as_millis();
         Ok(match list {
             Ok(l) => json!({
+                "tested": tested,
                 "gpus": gpus,
                 "codec": codec.name(),
                 "encoders": l.iter().map(|e| json!({
@@ -134,6 +175,7 @@ impl Inner {
                 "took_ms": took_ms,
             }),
             Err(e) => json!({
+                "tested": tested,
                 "gpus": gpus,
                 "codec": codec.name(),
                 "encoders": [],

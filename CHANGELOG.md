@@ -5,6 +5,19 @@ reason)`.
 
 ## Unreleased
 
+- M13 — Settings → Debug (tester builds only, `full-logs`): a self-test of Scout's real
+  paths (`src/lib/selftest.ts`): fresh probes of every H.264/HEVC/AV1 encoder (engine
+  `encoders.list {fresh: true}` now re-probes them all and returns `tested` with each
+  one's outcome), a real recording with each working H.264 encoder (the game if one
+  runs, else the screen), thumbnails, a preview frame, YouTube and Discord exports, then
+  the test clips deleted and the settings put back; the report goes beside the logs
+  (`selftest-<time>.txt`), with Open the logs folder / Copy the report. A settings change
+  to recording or games now retries the recorder at once. Measured in the real tester
+  build from its installer without a system GStreamer (RTX 4080 SUPER, the test game on
+  the second monitor): 14 encoders probed, 4 recordings, all 13 steps OK in 54 s.
+  (Claude Opus 5.5: the user, "make it do a full test suite hide it in debug in the
+  settings", for their AMD tester)
+
 - M13 — Encoder cache: a cached result where every encoder failed is ignored (probe
   again), and the cache format is now 2, so caches written by the broken bundle (the
   AMD tester's "all failed") are dropped without anyone deleting files. `xtask bundle

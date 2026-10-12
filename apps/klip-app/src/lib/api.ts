@@ -266,3 +266,30 @@ export async function editorFiles(path: string): Promise<ProjectFile[]> {
   const files = Array.isArray(r?.files) ? r.files : [];
   return Promise.all(files.map(async (f) => ({ ...f, url: f.ok ? ((await fileUrl(f.path)) ?? undefined) : undefined })));
 }
+
+/** What this build is (the Debug page; tester builds have `full_logs`). */
+export interface DebugInfo {
+  version: string;
+  full_logs: boolean;
+  bundled_gstreamer: boolean;
+  logs: string | null;
+}
+
+export async function debugInfo(): Promise<DebugInfo> {
+  if (!inTauri) return { version: 'mock', full_logs: true, bundled_gstreamer: false, logs: 'C:/mock/logs' };
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<DebugInfo>('debug_info');
+}
+
+/** Save the self-test report beside the logs; its file name. */
+export async function saveDebugReport(text: string): Promise<string> {
+  if (!inTauri) return 'selftest-mock.txt';
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string>('debug_save_report', { text });
+}
+
+export async function openLogs(): Promise<void> {
+  if (!inTauri) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('open_logs');
+}

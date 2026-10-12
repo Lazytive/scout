@@ -745,6 +745,11 @@ impl Inner {
         if new.storage != old.storage || new.clips != old.clips {
             self.cleanup_in_background(Vec::new());
         }
+        if new.recording != old.recording || new.games != old.games {
+            // A changed encoder or buffer mode is tried now, not after the failed start's
+            // wait (the Debug self-test switches encoders one after another).
+            lock(&self.state).retry_at = None;
+        }
         let v = new
             .to_value()
             .map_err(|e| CommandError::new("failed", e.to_string()))?;
