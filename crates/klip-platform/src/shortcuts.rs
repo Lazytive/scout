@@ -138,7 +138,7 @@ mod linux {
     use futures_util::StreamExt;
     use futures_util::future::{Either, select};
 
-    use super::{BoundShortcut, ShortcutSpec};
+    use super::{BoundShortcut, LEGACY_APP_ID, ShortcutSpec};
     use crate::PlatformError;
 
     /// The portal objects live on their own thread until this is dropped.
