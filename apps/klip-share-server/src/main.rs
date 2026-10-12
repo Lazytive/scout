@@ -5,6 +5,7 @@
 //! scout-share token add NAME [--config FILE]     prints the new token once
 //! scout-share token list [--config FILE]
 //! scout-share token remove NAME [--config FILE]
+//! scout-share health [--config FILE]             exit 0 when the server answers (Docker)
 //! ```
 //! Settings: the TOML file (`--config`, or `SCOUT_SHARE_CONFIG`) and `SCOUT_SHARE_*`
 //! environment variables; see the README.
@@ -21,6 +22,7 @@ const USAGE: &str = "usage:
   scout-share token add NAME [--config FILE]
   scout-share token list [--config FILE]
   scout-share token remove NAME [--config FILE]
+  scout-share health [--config FILE]
 settings: SCOUT_SHARE_PUBLIC_URL (needed to serve), SCOUT_SHARE_DATA_DIR, SCOUT_SHARE_LISTEN, … (README)";
 
 fn main() -> ExitCode {
@@ -51,6 +53,7 @@ fn main() -> ExitCode {
         ["token", "add", name] => token_add(&cfg, name),
         ["token", "list"] => token_list(&cfg),
         ["token", "remove", name] => token_remove(&cfg, name),
+        ["health"] => health(&cfg),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -93,6 +96,31 @@ fn token_remove(cfg: &Config, name: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("no token called {name}"))
+    }
+}
+
+/// `GET /healthz` on this machine's listening port (the Docker healthcheck; the image
+/// has no curl).
+fn health(cfg: &Config) -> Result<(), String> {
+    use std::io::{Read, Write};
+    use std::net::{Ipv4Addr, SocketAddr, TcpStream};
+    use std::time::Duration;
+    let mut addr = cfg.listen_addr().map_err(|e| e.to_string())?;
+    if addr.ip().is_unspecified() {
+        addr = SocketAddr::from((Ipv4Addr::LOCALHOST, addr.port()));
+    }
+    let timeout = Duration::from_secs(3);
+    let mut c = TcpStream::connect_timeout(&addr, timeout).map_err(|e| format!("{addr}: {e}"))?;
+    c.set_read_timeout(Some(timeout))
+        .map_err(|e| e.to_string())?;
+    c.write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .map_err(|e| e.to_string())?;
+    let mut buf = [0u8; 64];
+    let n = c.read(&mut buf).map_err(|e| e.to_string())?;
+    if buf.get(..n).is_some_and(|b| b.starts_with(b"HTTP/1.1 200")) {
+        Ok(())
+    } else {
+        Err("the server didn't answer ok".into())
     }
 }
 

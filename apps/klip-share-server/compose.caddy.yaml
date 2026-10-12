@@ -1,0 +1,30 @@
+# Scout's share server behind Caddy, which gets the HTTPS certificate for your domain
+# (a DuckDNS name works). Ports 80 and 443 must reach this machine. From the repository
+# root:
+#   SCOUT_SHARE_DOMAIN=clips.example.com docker compose -f apps/klip-share-server/compose.caddy.yaml up -d --build
+#   docker compose -f apps/klip-share-server/compose.caddy.yaml exec share scout-share token add my-pc
+services:
+  share:
+    build:
+      context: ../..
+      dockerfile: apps/klip-share-server/Dockerfile
+    image: scout-share
+    restart: unless-stopped
+    environment:
+      SCOUT_SHARE_PUBLIC_URL: https://${SCOUT_SHARE_DOMAIN:?set SCOUT_SHARE_DOMAIN}
+    volumes:
+      - scout-share-data:/data
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    command: caddy reverse-proxy --from ${SCOUT_SHARE_DOMAIN:?set SCOUT_SHARE_DOMAIN} --to share:8080
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+
+volumes:
+  scout-share-data:
+  caddy-data:

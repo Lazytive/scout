@@ -5,6 +5,14 @@ reason)`.
 
 ## Unreleased
 
+- M11.7 — The share server in Docker: a two-stage `Dockerfile` (Rust 1.99 on Debian
+  trixie, then trixie-slim running as user 10001, `/data` volume, healthcheck through
+  the new `scout-share health`), `.dockerignore`, `compose.yaml` (127.0.0.1 only, for
+  Tailscale Funnel) and `compose.caddy.yaml` (Caddy with HTTPS for a domain), the
+  README's walk-through; `.github/workflows/share-server.yml` builds the image and
+  drives it with curl (wrong token, upload, page, ranges, poster, delete, healthy, quick
+  stop). (Claude Opus 5.5: M11 plan; Docker isn't on this PC, so CI is where it runs)
+
 - M11.6 — The share server `scout-share` (`apps/klip-share-server`, axum) and the
   protocol crate `klip-share` (ADR 0021): upload tokens kept hashed (`token add|list|
   remove`), `POST /api/v1/clips` streams the MP4 to `tmp/` under a size cap, an idle

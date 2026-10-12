@@ -1,0 +1,80 @@
+# The share server's Docker image (M11.7): build it, run it, and drive it with curl the
+# way Scout will: token, upload, page, ranged video, poster, delete, healthcheck, stop.
+name: Share server image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/klip-share-server/**"
+      - "crates/klip-share/**"
+      - "crates/klip-mp4/**"
+      - "crates/klip-media/**"
+      - "Cargo.lock"
+      - ".github/workflows/share-server.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: share-server-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the image
+        run: docker build -f apps/klip-share-server/Dockerfile -t scout-share .
+
+      - name: A test clip (ffmpeg as a test tool only)
+        run: |
+          command -v ffmpeg || { sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg; }
+          ffmpeg -loglevel error -f lavfi -i testsrc=size=320x240:rate=30 -t 2 \
+            -pix_fmt yuv420p -movflags +faststart clip.mp4
+          ls -l clip.mp4
+
+      - name: Run and drive it
+        run: |
+          set -euo pipefail
+          docker run -d --name share -p 127.0.0.1:8080:8080 \
+            -e SCOUT_SHARE_PUBLIC_URL=http://127.0.0.1:8080 scout-share
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 1; done
+          TOKEN=$(docker exec share scout-share token add ci)
+          echo "::add-mask::$TOKEN"
+          # Wrong token, then a real upload.
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST --data-binary @clip.mp4 \
+            -H 'Authorization: Bearer sst_nope' http://127.0.0.1:8080/api/v1/clips)" = 401
+          curl -fsS -X POST --data-binary @clip.mp4 -H "Authorization: Bearer $TOKEN" \
+            'http://127.0.0.1:8080/api/v1/clips?title=CI%20clip' > up.json
+          cat up.json | sed 's/"manage_token":"[^"]*"/"manage_token":"…"/'
+          ID=$(sed -E 's/.*"id":"([0-9a-f]{32})".*/\1/' up.json)
+          MANAGE=$(sed -E 's/.*"manage_token":"([^"]+)".*/\1/' up.json)
+          echo "::add-mask::$MANAGE"
+          # The page has the Open Graph video tag; the video serves ranges.
+          curl -fsS http://127.0.0.1:8080/c/$ID | grep -q "og:video\" content=\"http://127.0.0.1:8080/c/$ID.mp4\""
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-99' http://127.0.0.1:8080/c/$ID.mp4)" = 206
+          cmp <(curl -fsS http://127.0.0.1:8080/c/$ID.mp4) clip.mp4
+          # A poster, then delete.
+          printf '\xff\xd8\xff\xe0poster' > poster.jpg
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X PUT --data-binary @poster.jpg \
+            -H "Authorization: Bearer $MANAGE" http://127.0.0.1:8080/api/v1/clips/$ID/poster)" = 204
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/c/$ID.jpg)" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+            -H "Authorization: Bearer $MANAGE" http://127.0.0.1:8080/api/v1/clips/$ID)" = 204
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/c/$ID)" = 404
+          # The healthcheck turns healthy; the clip data lives in the volume as user 10001.
+          for i in $(seq 1 20); do
+            s=$(docker inspect -f '{{.State.Health.Status}}' share); [ "$s" = healthy ] && break; sleep 2
+          done
+          test "$(docker inspect -f '{{.State.Health.Status}}' share)" = healthy
+          test "$(docker exec share id -u)" = 10001
+          # `docker stop` ends it at once (SIGTERM is handled).
+          start=$(date +%s); docker stop share; end=$(date +%s)
+          test $((end - start)) -lt 5
+          test "$(docker inspect -f '{{.State.ExitCode}}' share)" = 0
+
+      - name: Logs
+        if: always()
+        run: docker logs share 2>&1 | tail -50 || true

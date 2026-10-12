@@ -1,0 +1,30 @@
+# Scout's share server on a home server, reached through Tailscale Funnel (HTTPS, no
+# open ports). From the repository root:
+#   1. Set SCOUT_SHARE_PUBLIC_URL below to your Funnel address
+#      (https://<machine>.<tailnet>.ts.net).
+#   2. docker compose -f apps/klip-share-server/compose.yaml up -d --build
+#   3. sudo tailscale funnel --bg 8080
+#   4. docker compose -f apps/klip-share-server/compose.yaml exec share scout-share token add my-pc
+#      and put the printed token and the address into Scout (Settings → Sharing).
+# With your own domain instead, see compose.caddy.yaml.
+services:
+  share:
+    build:
+      context: ../..
+      dockerfile: apps/klip-share-server/Dockerfile
+    image: scout-share
+    restart: unless-stopped
+    environment:
+      SCOUT_SHARE_PUBLIC_URL: https://your-machine.your-tailnet.ts.net
+      # SCOUT_SHARE_MAX_UPLOAD_MB: "500"
+      # SCOUT_SHARE_QUOTA_GB: "20"
+      # SCOUT_SHARE_MAX_EXPIRY_DAYS: "0"
+      # SCOUT_SHARE_DEFAULT_EXPIRY_DAYS: "0"
+    ports:
+      # Only this machine (and so Tailscale Funnel) reaches it.
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - scout-share-data:/data
+
+volumes:
+  scout-share-data:

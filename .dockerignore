@@ -1,0 +1,11 @@
+# Only the Rust sources are needed to build the share server image.
+target/
+plan/
+out/
+.git/
+.github/
+.claude/
+**/node_modules/
+apps/klip-app/dist/
+**/*.mp4
+**/*.mp4.part

@@ -15,7 +15,32 @@ needs an address on the internet with HTTPS. Two easy ways on a home server:
   without opening ports.
 - **Caddy** in front (gets the HTTPS certificate for a domain or a DuckDNS name).
 
-Docker files and the full walk-through: see "Docker" below (M11.7). Without Docker:
+### With Docker (M11.7)
+
+On the home server, from a copy of this repository:
+
+1. **Tailscale Funnel** (`compose.yaml`): set `SCOUT_SHARE_PUBLIC_URL` in it to the
+   machine's Funnel address (`https://<machine>.<tailnet>.ts.net`), then
+   ```bash
+   docker compose -f apps/klip-share-server/compose.yaml up -d --build
+   sudo tailscale funnel --bg 8080
+   ```
+   The container only listens on 127.0.0.1:8080; Funnel is the way in.
+2. **Your own domain** (`compose.caddy.yaml`, ports 80 and 443 open to the machine):
+   ```bash
+   SCOUT_SHARE_DOMAIN=clips.example.com docker compose -f apps/klip-share-server/compose.caddy.yaml up -d --build
+   ```
+3. Make a token (printed once) and put it with the address into Scout (Settings →
+   Sharing):
+   ```bash
+   docker compose -f apps/klip-share-server/compose.yaml exec share scout-share token add my-pc
+   ```
+
+The image runs as user 10001 with the data in the `/data` volume (back that up), has a
+healthcheck (`scout-share health`) and stops at once on `docker stop`. CI builds it and
+drives it with curl on every change (`.github/workflows/share-server.yml`).
+
+### Without Docker
 
 ```bash
 cargo build --release -p klip-share-server
