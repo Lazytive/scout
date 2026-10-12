@@ -14,8 +14,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::ProbeResult;
 
-/// Format version of the file.
-const VERSION: u32 = 1;
+/// Format version of the file. 2 (2026-10-12): drops every cache written while the
+/// installer lacked the probe's test source (all encoders "failed" on the AMD tester).
+const VERSION: u32 = 2;
 
 /// Larger files are not read (a real one is a few kB).
 const MAX_FILE_BYTES: u64 = 256 * 1024;
@@ -76,6 +77,12 @@ impl ProbeCache {
     /// otherwise an empty cache for `fingerprint`. Never fails.
     pub fn load(path: &Path, fingerprint: &str) -> ProbeCache {
         match Self::read(path) {
+            // Probes that all failed say more about the setup at the time (a broken
+            // install) than about the GPUs: probe again rather than never record.
+            Ok(c) if !c.results.is_empty() && c.results.iter().all(|r| !r.ok) => {
+                tracing::info!("every cached encoder failed; probing again");
+                Self::new(fingerprint)
+            }
             Ok(c) if c.version == VERSION && c.fingerprint == fingerprint => c,
             Ok(_) => {
                 tracing::info!("encoder cache is for another setup; probing again");
@@ -273,7 +280,7 @@ mod tests {
             "[1,2,3]".to_string(),
             r#"{"version":1,"fingerprint":"fp","results":[{"element":5}]}"#.to_string(),
             format!(
-                r#"{{"version":1,"fingerprint":"fp","results":[],"pad":"{}"}}"#,
+                r#"{{"version":2,"fingerprint":"fp","results":[],"pad":"{}"}}"#,
                 "x".repeat(300_000)
             ),
         ] {
@@ -295,7 +302,7 @@ mod tests {
         fs::write(
             &path,
             format!(
-                r#"{{"version":1,"fingerprint":"fp","results":[{}]}}"#,
+                r#"{{"version":2,"fingerprint":"fp","results":[{}]}}"#,
                 many.join(",")
             ),
         )
@@ -335,5 +342,19 @@ mod tests {
             a,
             fingerprint(&[(0x10de, 0x2702, Some(6))], &["a".into(), "b".into()])
         );
+    }
+
+    #[test]
+    fn a_cache_where_everything_failed_is_probed_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("encoders.json");
+        let mut c = ProbeCache::new("fp");
+        c.record(&result("amfh264enc", false));
+        c.record(&result("mfh264enc", false));
+        c.save(&path).unwrap();
+        assert!(ProbeCache::load(&path, "fp").results.is_empty());
+        c.record(&result("mfh264enc", true));
+        c.save(&path).unwrap();
+        assert_eq!(ProbeCache::load(&path, "fp").results.len(), 2);
     }
 }

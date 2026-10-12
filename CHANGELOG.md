@@ -5,6 +5,11 @@ reason)`.
 
 ## Unreleased
 
+- M13 — Encoder cache: a cached result where every encoder failed is ignored (probe
+  again), and the cache format is now 2, so caches written by the broken bundle (the
+  AMD tester's "all failed") are dropped without anyone deleting files. `xtask bundle
+  --full-logs` no longer overwrites the plain installer. (Claude Opus 5.5)
+
 - M13 — Fix: the bundle lacked `videotestsrc`, which the encoder probe uses for its test
   frames, so on a PC without GStreamer every encoder failed the probe and recording
   never started (the user's AMD tester, logs 2026-10-12; my own check missed it because

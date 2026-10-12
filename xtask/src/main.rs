@@ -267,6 +267,17 @@ fn bundle_installer(full_logs: bool) -> Result<()> {
     let exe = root().join("target").join("release").join("klip-app.exe");
     bundle::run(&root(), &exe)?;
     audit::run(&root())?;
+    // tauri names both builds the same: park a plain installer while the tester builds.
+    let nsis = root()
+        .join("target")
+        .join("release")
+        .join("bundle")
+        .join("nsis");
+    let plain = nsis.join(format!("Scout_{}_x64-setup.exe", env!("CARGO_PKG_VERSION")));
+    let parked = nsis.join("plain-installer.parked");
+    if full_logs && plain.is_file() {
+        std::fs::rename(&plain, &parked).context("parking the plain installer")?;
+    }
     let mut c = npm::npm(&root());
     c.args([
         "run",
@@ -277,22 +288,23 @@ fn bundle_installer(full_logs: bool) -> Result<()> {
         "src-tauri/tauri.bundle.conf.json",
     ])
     .args(features);
-    run_step("installer (tauri build)", c)?;
+    let built = run_step("installer (tauri build)", c);
     if full_logs {
-        let nsis = root()
-            .join("target")
-            .join("release")
-            .join("bundle")
-            .join("nsis");
-        let name = format!("Scout_{}_x64-setup.exe", env!("CARGO_PKG_VERSION"));
         let tester = format!(
             "Scout_{}_x64-setup-full-logs.exe",
             env!("CARGO_PKG_VERSION")
         );
-        std::fs::rename(nsis.join(&name), nsis.join(&tester))
-            .with_context(|| format!("naming {tester}"))?;
+        if built.is_ok() {
+            std::fs::rename(&plain, nsis.join(&tester))
+                .with_context(|| format!("naming {tester}"))?;
+        }
+        if parked.is_file() {
+            std::fs::rename(&parked, &plain).context("restoring the plain installer")?;
+        }
+        built?;
         println!("bundle: tester installer target/release/bundle/nsis/{tester}");
     } else {
+        built?;
         println!("bundle: installer in target/release/bundle/nsis/");
     }
     Ok(())
