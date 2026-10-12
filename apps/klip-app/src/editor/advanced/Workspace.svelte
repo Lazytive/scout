@@ -69,7 +69,11 @@
   import type { Player, SourceMedia } from './player';
   import Timeline from './Timeline.svelte';
 
-  let { project, onmode, exportFacts }: { project: Project; onmode: (m: 'normal' | 'advanced') => void; exportFacts: import('svelte').Snippet } = $props();
+  let {
+    project,
+    onmode,
+    exportFacts,
+  }: { project: Project; onmode: (m: 'normal' | 'advanced') => void; exportFacts: import('svelte').Snippet } = $props();
 
   const clip = $derived(ed.clip!);
   const source = $derived(ed.source!);
@@ -87,7 +91,12 @@
   }
   type Split = keyof Layout;
   const LAYOUT_KEY = 'klip.editor.layout.v2';
-  const LIMITS: Record<Split, [number, number]> = { topLeft: [240, 680], topRight: [220, 560], bottomLeft: [200, 560], bottom: [160, 720] };
+  const LIMITS: Record<Split, [number, number]> = {
+    topLeft: [240, 680],
+    topRight: [220, 560],
+    bottomLeft: [200, 560],
+    bottom: [160, 720],
+  };
   function loadLayout(): Layout {
     const d: Layout = { topLeft: 440, topRight: 290, bottomLeft: 300, bottom: 300 };
     try {
@@ -96,7 +105,8 @@
       const old = JSON.parse(localStorage.getItem('klip.editor.layout') ?? 'null') as { timeline?: unknown } | null;
       if (old && typeof old.timeline === 'number' && Number.isFinite(old.timeline)) d.bottom = old.timeline + 40;
       if (raw && typeof raw === 'object')
-        for (const k of Object.keys(LIMITS) as Split[]) if (typeof raw[k] === 'number' && Number.isFinite(raw[k])) d[k] = raw[k];
+        for (const k of Object.keys(LIMITS) as Split[])
+          if (typeof raw[k] === 'number' && Number.isFinite(raw[k])) d[k] = raw[k];
       for (const k of Object.keys(LIMITS) as Split[]) d[k] = Math.min(LIMITS[k][1], Math.max(LIMITS[k][0], d[k]));
     } catch {
       // Defaults.
@@ -152,12 +162,33 @@
         const c = ed.clips.find((x) => x.key === s.key);
         if (!c?.source) return null;
         const e = ed.sources[`lib:${s.key}`];
-        return { url: e?.url ?? null, tracks: e?.tracks ?? [], image: null, width: c.source.width, height: c.source.height, strip: stripOf(s.key, c.source.duration_ms) };
+        return {
+          url: e?.url ?? null,
+          tracks: e?.tracks ?? [],
+          image: null,
+          width: c.source.width,
+          height: c.source.height,
+          strip: stripOf(s.key, c.source.duration_ms),
+        };
       }
       case 'file':
-        return { url: ed.sources[`file:${s.path}`]?.url ?? null, tracks: [], image: null, width: 0, height: 0, strip: null };
+        return {
+          url: ed.sources[`file:${s.path}`]?.url ?? null,
+          tracks: [],
+          image: null,
+          width: 0,
+          height: 0,
+          strip: null,
+        };
       case 'image':
-        return { url: null, tracks: [], image: ed.sources[`image:${s.path}`]?.image ?? null, width: 0, height: 0, strip: null };
+        return {
+          url: null,
+          tracks: [],
+          image: ed.sources[`image:${s.path}`]?.image ?? null,
+          width: 0,
+          height: 0,
+          strip: null,
+        };
     }
   }
 
@@ -192,7 +223,12 @@
     if (!f) return null;
     return (
       comp.layers.find(
-        (l) => l.track === f.track.id && l.src_in_ms === f.clip.in_ms && l.src_out_ms === f.clip.out_ms && layerActive(l, ed.playhead) && (l.kind === 'video' || l.kind === 'image'),
+        (l) =>
+          l.track === f.track.id &&
+          l.src_in_ms === f.clip.in_ms &&
+          l.src_out_ms === f.clip.out_ms &&
+          layerActive(l, ed.playhead) &&
+          (l.kind === 'video' || l.kind === 'image'),
       ) ?? null
     );
   });
@@ -254,7 +290,12 @@
     const canvas = document.querySelector<HTMLCanvasElement>('canvas[aria-label="Preview"]');
     if (!p || !c || !canvas) throw new Error('no preview');
     ed.playing = false;
-    const r = await call<{ jpeg: string; width: number; height: number }>('editor.frame', { path: c.path, out_ms: outMs, width, project: ed.project });
+    const r = await call<{ jpeg: string; width: number; height: number }>('editor.frame', {
+      path: c.path,
+      out_ms: outMs,
+      width,
+      project: ed.project,
+    });
     const img = new Image();
     img.src = `data:image/jpeg;base64,${r.jpeg}`;
     await img.decode();
@@ -374,11 +415,13 @@
         break;
       case 's':
       case 'S':
-        if (f && localOf(f) > 0 && localOf(f) < clipLength(f.clip)) edit((p) => void splitClip(p, f.clip.id, f.clip.at_ms + localOf(f)), 'Split clip');
+        if (f && localOf(f) > 0 && localOf(f) < clipLength(f.clip))
+          edit((p) => void splitClip(p, f.clip.id, f.clip.at_ms + localOf(f)), 'Split clip');
         else if (ed.mainLocked) ed.error = MAIN_LOCKED;
         else if (mainTrackOf(readAdvanced(project))) {
           const ids = mainTrackOf(readAdvanced(project))?.clips.map((c) => c.id) ?? [];
-          if (cutsAt(readAdvanced(project), ids, ed.playhead).length) edit((p) => void splitClipsAt(p, ids, ed.playhead), 'Split Main');
+          if (cutsAt(readAdvanced(project), ids, ed.playhead).length)
+            edit((p) => void splitClipsAt(p, ids, ed.playhead), 'Split Main');
         } else splitAtPlayhead();
         break;
       case 'Delete':
@@ -458,7 +501,13 @@
     const mt = mainTrackOf(adv);
     const all = unlockedClipIds(adv, ed.mainLocked);
     const clips = cutsAt(adv, all, t).length;
-    const inMain = mt ? cutsAt(adv, mt.clips.map((c) => c.id), t).length > 0 : segments(project).some((s) => t > s.out_start_ms && t < s.out_end_ms);
+    const inMain = mt
+      ? cutsAt(
+          adv,
+          mt.clips.map((c) => c.id),
+          t,
+        ).length > 0
+      : segments(project).some((s) => t > s.out_start_ms && t < s.out_end_ms);
     const main = !mt && inMain && !ed.mainLocked;
     if (clips === 0 && !main) {
       if (inMain && ed.mainLocked) ed.error = MAIN_LOCKED;
@@ -509,57 +558,81 @@
             <button
               class="flat"
               disabled={!!mainTrackOf(readAdvanced(project))}
-              title={mainTrackOf(readAdvanced(project)) ? 'Your clip is arranged on V1: Normal mode can\'t show that (Main clip tab → Back to the simple cut)' : 'Normal mode'}
+              title={mainTrackOf(readAdvanced(project))
+                ? "Your clip is arranged on V1: Normal mode can't show that (Main clip tab → Back to the simple cut)"
+                : 'Normal mode'}
               onclick={() => onmode('normal')}>Normal</button
             >
             <button class="flat on" aria-pressed="true">Advanced</button>
           </div>
           <button class="flat" onclick={closeEditor}>← Library</button>
         {/snippet}
-          <div class="stage">
-            <Canvas
-              {comp}
-              {resolve}
-              playhead={ed.playhead}
-              playing={ed.playing}
-              cues={ed.cues}
-              selected={selectedLayer}
-              mediaVersion={ed.mediaVersion}
-              onplayhead={(ms) => (ed.playhead = ms)}
-              onended={() => {
-                ed.playing = false;
-                shuttle = 0;
-              }}
-              {onmove}
-              {onzoom}
-              bind:player
-            />
-            <div class="monitor-bar">
-              <span class="tc mono" title="Playhead">{formatTimecode(ed.playhead)}</span>
-              {#if shuttle !== 0 && shuttle !== 1}<span class="shuttle mono">{shuttle}x</span>{/if}
-              <span class="grow"></span>
-              {#if ed.media.status === 'making'}<span class="muted">Making a preview…</span>{/if}
-              {#if ed.saving}<span class="muted">Saving…</span>{:else if ed.dirty}<span class="muted">Edited</span>{/if}
-              <span class="dur mono" title="Length of the edit">{formatTimecode(comp.duration_ms)}</span>
-            </div>
-            <div class="transport">
-              <span class="side"></span>
-              <div class="buttons">
-                <button class="icon" title="Go to the start" onclick={() => seek(0)}>⏮</button>
-                <button class="icon" title="Back one frame (←)" onclick={() => seek(ed.playhead - frameMs)}>◀|</button>
-                <button class="icon" title="Play backwards (J; again: faster)" onclick={() => setShuttle(shuttle >= 0 ? -1 : Math.max(-4, shuttle * 2))}>◀◀</button>
-                <button class="icon play" onclick={togglePlay} title="Play / pause (Space)" aria-label={ed.playing ? 'Pause' : 'Play'}>{ed.playing ? '❚❚' : '▶'}</button>
-                <button class="icon" title="Play faster (L; again: faster)" onclick={() => setShuttle(shuttle <= 0 ? 1 : Math.min(4, shuttle * 2))}>▶▶</button>
-                <button class="icon" title="Forward one frame (→)" onclick={() => seek(ed.playhead + frameMs)}>|▶</button>
-                <button class="icon" title="Go to the end" onclick={() => seek(Math.max(0, comp.duration_ms - 1))}>⏭</button>
-              </div>
-              <span class="side end">
-                <button class="icon" disabled={ed.undo.length === 0} onclick={() => undo()} title="Undo {ed.undoLabels.at(-1) ?? ''} (Ctrl+Z)">↶</button>
-                <button class="icon" disabled={ed.redo.length === 0} onclick={() => redo()} title="Redo (Ctrl+Y)">↷</button>
-              </span>
-            </div>
-            {#if ed.error}<p class="error" role="alert">{ed.error}</p>{/if}
+        <div class="stage">
+          <Canvas
+            {comp}
+            {resolve}
+            playhead={ed.playhead}
+            playing={ed.playing}
+            cues={ed.cues}
+            selected={selectedLayer}
+            mediaVersion={ed.mediaVersion}
+            onplayhead={(ms) => (ed.playhead = ms)}
+            onended={() => {
+              ed.playing = false;
+              shuttle = 0;
+            }}
+            {onmove}
+            {onzoom}
+            bind:player
+          />
+          <div class="monitor-bar">
+            <span class="tc mono" title="Playhead">{formatTimecode(ed.playhead)}</span>
+            {#if shuttle !== 0 && shuttle !== 1}<span class="shuttle mono">{shuttle}x</span>{/if}
+            <span class="grow"></span>
+            {#if ed.media.status === 'making'}<span class="muted">Making a preview…</span>{/if}
+            {#if ed.saving}<span class="muted">Saving…</span>{:else if ed.dirty}<span class="muted">Edited</span>{/if}
+            <span class="dur mono" title="Length of the edit">{formatTimecode(comp.duration_ms)}</span>
           </div>
+          <div class="transport">
+            <span class="side"></span>
+            <div class="buttons">
+              <button class="icon" title="Go to the start" onclick={() => seek(0)}>⏮</button>
+              <button class="icon" title="Back one frame (←)" onclick={() => seek(ed.playhead - frameMs)}>◀|</button>
+              <button
+                class="icon"
+                title="Play backwards (J; again: faster)"
+                onclick={() => setShuttle(shuttle >= 0 ? -1 : Math.max(-4, shuttle * 2))}>◀◀</button
+              >
+              <button
+                class="icon play"
+                onclick={togglePlay}
+                title="Play / pause (Space)"
+                aria-label={ed.playing ? 'Pause' : 'Play'}>{ed.playing ? '❚❚' : '▶'}</button
+              >
+              <button
+                class="icon"
+                title="Play faster (L; again: faster)"
+                onclick={() => setShuttle(shuttle <= 0 ? 1 : Math.min(4, shuttle * 2))}>▶▶</button
+              >
+              <button class="icon" title="Forward one frame (→)" onclick={() => seek(ed.playhead + frameMs)}>|▶</button>
+              <button class="icon" title="Go to the end" onclick={() => seek(Math.max(0, comp.duration_ms - 1))}
+                >⏭</button
+              >
+            </div>
+            <span class="side end">
+              <button
+                class="icon"
+                disabled={ed.undo.length === 0}
+                onclick={() => undo()}
+                title="Undo {ed.undoLabels.at(-1) ?? ''} (Ctrl+Z)">↶</button
+              >
+              <button class="icon" disabled={ed.redo.length === 0} onclick={() => redo()} title="Redo (Ctrl+Y)"
+                >↷</button
+              >
+            </span>
+          </div>
+          {#if ed.error}<p class="error" role="alert">{ed.error}</p>{/if}
+        </div>
       </Panel>
     </div>
     {@render splitter('topRight', 'v')}
@@ -593,7 +666,15 @@
     {@render splitter('bottomLeft', 'v')}
     <div class="cell">
       <Panel tabs={['Timeline']} flush>
-          <Timeline {comp} {project} mainName={clip.name} {names} {sourceMs} thumbs={(s) => resolve(s)?.strip ?? null} audio={soundOf} />
+        <Timeline
+          {comp}
+          {project}
+          mainName={clip.name}
+          {names}
+          {sourceMs}
+          thumbs={(s) => resolve(s)?.strip ?? null}
+          audio={soundOf}
+        />
       </Panel>
     </div>
     <div class="gap"></div>

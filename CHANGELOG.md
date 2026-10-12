@@ -5,6 +5,13 @@ reason)`.
 
 ## Unreleased
 
+- Improvements I.6 — Front end: a prettier gate (`npm run fmt:check`, first in the npm
+  gates of `cargo xtask ci`; `.prettierrc.json`: single quotes, 120 columns, the Svelte
+  plugin) and every front-end file formatted once by it (68 files, lines over 120
+  columns wrapped, nothing else). README: what exists today, the app and installer
+  commands, a Linux build section with the packages CI installs. (Claude Opus 5.5:
+  `plan/IMPROVEMENTS.md` A, the user's "go ahead with scout improvements")
+
 - Improvements I.1–I.5 — Bug risks from the 2026-10-09 review, each with a test: the
   free-space check after a recorder start no longer runs under the engine's state lock;
   a clean-up that isn't a save's own (at start, a changed cap, `storage.cleanup`) never

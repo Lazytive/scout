@@ -12,7 +12,8 @@ export const customChrome =
     (!inTauri && new URLSearchParams(window.location.search).has('chrome')));
 
 /** What a press may land on without moving the window: controls and pop-ups. */
-const CONTROLS = 'button, a, input, select, textarea, label, [role="dialog"], [role="menu"], [role="listbox"], [data-no-drag]';
+const CONTROLS =
+  'button, a, input, select, textarea, label, [role="dialog"], [role="menu"], [role="listbox"], [data-no-drag]';
 
 /** Whether a press on the title bar at `target` moves the window (not on a control). */
 export function dragsWindow(target: { closest(selector: string): unknown } | null): boolean {

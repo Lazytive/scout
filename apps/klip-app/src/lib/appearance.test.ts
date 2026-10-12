@@ -138,7 +138,11 @@ describe('contrast warning', () => {
   it('names the pairs below AA', () => {
     const grey: CustomTheme = { ...neon, base: 'dark', colors: { 'text-muted': '#3a3a3a' } };
     const p = contrastProblems(resolveLook({ theme: 'custom', custom_theme: 'neon' }, [grey], env, url));
-    expect(p.map((x) => x.label)).toEqual(['Muted text on panels', 'Muted text on the viewer', 'Muted text on the status bar']);
+    expect(p.map((x) => x.label)).toEqual([
+      'Muted text on panels',
+      'Muted text on the viewer',
+      'Muted text on the status bar',
+    ]);
     expect(p.every((x) => x.need === 4.5 && x.ratio < 4.5)).toBe(true);
   });
 
@@ -156,14 +160,28 @@ describe('contrast warning', () => {
 
   it('only checks pairs the UI uses', () => {
     const all = new Set([...textPairs, ...uiPairs].map(([f, b]) => `${f}/${b}`));
-    const p = contrastProblems(resolveLook({ theme: 'custom', custom_theme: 'x' }, [{ ...neon, id: 'x', colors: { text: '#fefefe' } }], env, url));
+    const p = contrastProblems(
+      resolveLook(
+        { theme: 'custom', custom_theme: 'x' },
+        [{ ...neon, id: 'x', colors: { text: '#fefefe' } }],
+        env,
+        url,
+      ),
+    );
     for (const x of p) expect(all.has(`${x.fg}/${x.bg}`)).toBe(true);
   });
 });
 
 describe('CSS', () => {
   it('sets every token, the radius, font, scale and root attributes', () => {
-    const css = lookCss(resolveLook({ theme: 'custom', custom_theme: 'neon', text_size: 'large', density: 'compact', motion: 'reduce' }, [neon], env, url));
+    const css = lookCss(
+      resolveLook(
+        { theme: 'custom', custom_theme: 'neon', text_size: 'large', density: 'compact', motion: 'reduce' },
+        [neon],
+        env,
+        url,
+      ),
+    );
     for (const k of Object.keys(themes.dark.tokens)) {
       expect(css.vars, k).toHaveProperty(`--${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`);
     }
@@ -172,11 +190,22 @@ describe('CSS', () => {
     expect(css.vars['--font']).toBe(`"Inter", ${DEFAULT_FONT}`);
     expect(css.vars['--text-scale']).toBe('1.15');
     expect(css.vars['--backdrop-image']).toBe('none');
-    expect(css.attrs).toEqual({ theme: 'custom:neon', scheme: 'light', density: 'compact', motion: 'reduce', backdrop: 'off' });
+    expect(css.attrs).toEqual({
+      theme: 'custom:neon',
+      scheme: 'light',
+      density: 'compact',
+      motion: 'reduce',
+      backdrop: 'off',
+    });
   });
 
   it('makes the big surfaces translucent over a picture, never the raised ones', () => {
-    const t = { ...neon, base: 'dark' as const, colors: {}, background: { path: 'C:/a b/"x".png', dim: 30, opacity: 80 } };
+    const t = {
+      ...neon,
+      base: 'dark' as const,
+      colors: {},
+      background: { path: 'C:/a b/"x".png', dim: 30, opacity: 80 },
+    };
     const css = lookCss(resolveLook({ theme: 'custom', custom_theme: 'neon' }, [t], env, url));
     expect(css.vars['--panel']).toBe('rgb(29 29 29 / 80%)');
     expect(css.vars['--panel-raised']).toBe(themes.dark.tokens.panelRaised);
@@ -187,7 +216,9 @@ describe('CSS', () => {
   });
 
   it('keeps quotes out of the font name', () => {
-    const css = lookCss(resolveLook({ theme: 'custom', custom_theme: 'neon' }, [{ ...neon, font: 'A"B\\C' }], env, url));
+    const css = lookCss(
+      resolveLook({ theme: 'custom', custom_theme: 'neon' }, [{ ...neon, font: 'A"B\\C' }], env, url),
+    );
     expect(css.vars['--font']?.startsWith('"ABC", ')).toBe(true);
   });
 
@@ -212,9 +243,27 @@ describe('colour helpers', () => {
   });
   it('lists every token key the engine accepts', () => {
     const engine = [
-      'gutter', 'chrome', 'statusbar', 'panel', 'panel-raised', 'viewer', 'input', 'border', 'border-strong',
-      'text', 'text-strong', 'text-muted', 'accent', 'accent-strong', 'accent-text', 'on-accent', 'good', 'warn',
-      'bad', 'rec', 'focus',
+      'gutter',
+      'chrome',
+      'statusbar',
+      'panel',
+      'panel-raised',
+      'viewer',
+      'input',
+      'border',
+      'border-strong',
+      'text',
+      'text-strong',
+      'text-muted',
+      'accent',
+      'accent-strong',
+      'accent-text',
+      'on-accent',
+      'good',
+      'warn',
+      'bad',
+      'rec',
+      'focus',
     ];
     const ui = Object.keys(themes.dark.tokens).filter((k) => k !== 'hover');
     expect(engine.map(tokenKey).sort()).toEqual([...ui].sort() as (keyof Tokens)[]);

@@ -18,7 +18,17 @@ import type { Cue } from '../editor/advanced/player';
 import { compose } from './compose';
 import { moveClip, readAdvanced, unlockedClipIds } from './advanced';
 import type { Project, Speed, TextLayer } from './timeline';
-import { EditError, asProject, cloneProject, cut, outputDurationMs, outputTime, setSpeed, split, trim } from './timeline';
+import {
+  EditError,
+  asProject,
+  cloneProject,
+  cut,
+  outputDurationMs,
+  outputTime,
+  setSpeed,
+  split,
+  trim,
+} from './timeline';
 import type { KlipEvent } from './types';
 
 export type MediaStatus = 'none' | 'loading' | 'original' | 'ready' | 'making' | 'error';
@@ -502,9 +512,12 @@ export function trimEnd(srcMs: number): void {
 }
 
 export function setFormat(kind: 'wide' | 'tall'): void {
-  edit((p) => {
-    p.format.kind = kind;
-  }, kind === 'tall' ? 'Format 9:16' : 'Format 16:9');
+  edit(
+    (p) => {
+      p.format.kind = kind;
+    },
+    kind === 'tall' ? 'Format 9:16' : 'Format 16:9',
+  );
 }
 
 export function setCropX(x: number): void {
@@ -621,7 +634,10 @@ async function loadClipSource(c: PlacedInfo, force = false): Promise<void> {
   const key = ed.clip?.key;
   try {
     const m = await editorMedia(c.path);
-    const tracks = (await editorAudio(c.path).catch(() => [] as AudioTrack[])).filter((t) => !!t.url) as { name: string; url: string }[];
+    const tracks = (await editorAudio(c.path).catch(() => [] as AudioTrack[])).filter((t) => !!t.url) as {
+      name: string;
+      url: string;
+    }[];
     if (ed.clip?.key !== key) return;
     ed.sources[id] = { url: m.url ?? null, tracks, image: null, status: m.status === 'making' ? 'making' : 'ready' };
   } catch {
@@ -659,7 +675,12 @@ export async function loadSources(): Promise<void> {
 export async function adoptFile(kind: 'image' | 'audio', path: string): Promise<string | null> {
   const url = await fileUrl(path);
   const id = `${kind === 'image' ? 'image' : 'file'}:${path}`;
-  ed.sources[id] = { url: kind === 'audio' ? url : null, tracks: [], image: kind === 'image' ? url : null, status: url ? 'ready' : 'none' };
+  ed.sources[id] = {
+    url: kind === 'audio' ? url : null,
+    tracks: [],
+    image: kind === 'image' ? url : null,
+    status: url ? 'ready' : 'none',
+  };
   ed.mediaVersion += 1;
   return url;
 }
@@ -697,7 +718,11 @@ export async function addToMontageAt(path: string, atMs: number, track: number |
     if (ed.clip?.key !== clip.key) return;
     if (before) pushUndo(before, 'Add a clip');
     take(r);
-    const added = ed.project ? readAdvanced(ed.project).tracks.flatMap((t) => t.clips).find((c) => !known.includes(c.id)) : undefined;
+    const added = ed.project
+      ? readAdvanced(ed.project)
+          .tracks.flatMap((t) => t.clips)
+          .find((c) => !known.includes(c.id))
+      : undefined;
     if (added && ed.project) {
       const next = cloneProject(ed.project);
       try {

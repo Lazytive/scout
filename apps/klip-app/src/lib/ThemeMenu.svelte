@@ -64,12 +64,7 @@
     <div class="menu" role="menu">
       {#each items as c, i (c.id)}
         {#if i === choices.length}<div class="sep" role="separator"></div>{/if}
-        <button
-          class="flat item"
-          role="menuitemradio"
-          aria-checked={current === c.id}
-          onclick={() => pick(c.id)}
-        >
+        <button class="flat item" role="menuitemradio" aria-checked={current === c.id} onclick={() => pick(c.id)}>
           <span class="check" aria-hidden="true">{current === c.id ? '✓' : ''}</span>
           <span class="label">{c.label}</span>
         </button>

@@ -153,7 +153,9 @@ describe('transitions on the timeline', () => {
     setFromBelow(p, a, 600);
     const adv = readAdvanced(p);
     expect(overlapOf(adv, adv.tracks[0]!, adv.tracks[0]!.clips[0]!)).toBe(600);
-    expect(transitionBoxes(adv)).toEqual([expect.objectContaining({ after: FROM_BELOW, next: a, kind: 'crossfade', start: 9_400, end: 10_000 })]);
+    expect(transitionBoxes(adv)).toEqual([
+      expect.objectContaining({ after: FROM_BELOW, next: a, kind: 'crossfade', start: 9_400, end: 10_000 }),
+    ]);
     expect(() => setFromBelow(p, b, 600)).toThrow();
     setTransitionAt(p, adv.tracks[0]!.id, FROM_BELOW, 'cut', 0);
     expect(transitionBoxes(readAdvanced(p))).toEqual([]);

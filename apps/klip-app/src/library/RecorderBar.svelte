@@ -104,19 +104,37 @@
 />
 
 <div class="bar" data-mode={mode} bind:this={root}>
-  <span class="state" title={stateLabel}><span class="dot" aria-hidden="true"></span><span class="label">{stateLabel}</span></span>
+  <span class="state" title={stateLabel}
+    ><span class="dot" aria-hidden="true"></span><span class="label">{stateLabel}</span></span
+  >
   {#if who}<span class="who" title={who}>{who}</span>{/if}
   <div class="meter" title="Replay buffer: {formatTimecode(buffered)} of {formatTimecode(capacity)}">
     <span class="mono now">{formatTimecode(buffered)}</span>
-    <div class="ruler" aria-label="Replay buffer filled" role="meter" aria-valuenow={Math.round(fill * 100)} aria-valuemin={0} aria-valuemax={100}>
+    <div
+      class="ruler"
+      aria-label="Replay buffer filled"
+      role="meter"
+      aria-valuenow={Math.round(fill * 100)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
       <div class="fill" style:width="{fill * 100}%"></div>
     </div>
     <span class="mono of">{formatTimecode(capacity)}</span>
   </div>
   {#if problems > 0}
-    {@const what = st?.last_error ? 'Recording couldn’t start' : `${brokenKeys.length} hotkey${brokenKeys.length === 1 ? '' : 's'} not working`}
+    {@const what = st?.last_error
+      ? 'Recording couldn’t start'
+      : `${brokenKeys.length} hotkey${brokenKeys.length === 1 ? '' : 's'} not working`}
     <button class="flat problem" onclick={() => (open = true)} title="{what}: show what went wrong" aria-label={what}>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.7h-13z" /><path d="M8 6.2v3.6" /><circle class="fill-dot" cx="8" cy="11.6" r="0.8" /></svg>
+      <svg viewBox="0 0 16 16" aria-hidden="true"
+        ><path d="M8 1.8l6.5 11.7h-13z" /><path d="M8 6.2v3.6" /><circle
+          class="fill-dot"
+          cx="8"
+          cy="11.6"
+          r="0.8"
+        /></svg
+      >
       <span class="label">{what}</span>
     </button>
   {/if}
@@ -127,7 +145,12 @@
   </button>
   <button class="extra" disabled={!live || app.busy} onclick={() => run('bookmark.add')}>Bookmark</button>
   {#each clipLengths as secs, i (secs)}
-    <button class:primary={i === 0} class:extra={i > 0} disabled={!live || app.busy} onclick={() => run('clip.save', { last_ms: secs * 1000 })}>
+    <button
+      class:primary={i === 0}
+      class:extra={i > 0}
+      disabled={!live || app.busy}
+      onclick={() => run('clip.save', { last_ms: secs * 1000 })}
+    >
       Save last {formatDuration(secs * 1000)}
     </button>
   {/each}
@@ -139,7 +162,9 @@
     title="Recorder details and activity"
     onclick={() => (open = !open)}
   >
-    <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" /><path d="M8 7v4.5" /><circle class="fill-dot" cx="8" cy="4.8" r="0.9" /></svg>
+    <svg viewBox="0 0 16 16" aria-hidden="true"
+      ><circle cx="8" cy="8" r="6.5" /><path d="M8 7v4.5" /><circle class="fill-dot" cx="8" cy="4.8" r="0.9" /></svg
+    >
   </button>
 
   {#if open}
@@ -151,7 +176,9 @@
         </button>
         <button disabled={!live || app.busy} onclick={() => run('bookmark.add')}>Bookmark</button>
         {#each clipLengths as secs (secs)}
-          <button disabled={!live || app.busy} onclick={() => run('clip.save', { last_ms: secs * 1000 })}>Save last {formatDuration(secs * 1000)}</button>
+          <button disabled={!live || app.busy} onclick={() => run('clip.save', { last_ms: secs * 1000 })}
+            >Save last {formatDuration(secs * 1000)}</button
+          >
         {/each}
       </div>
       <section>
@@ -169,9 +196,15 @@
         {#if st?.last_error}<p class="note bad">Recording couldn’t start: {st.last_error}</p>{/if}
         {#each brokenKeys as h (h.id)}
           <p class="note warn">
-            <span class="combo">{#each (h.keys ?? '').split('+') as k, i (i)}<kbd>{k}</kbd>{/each}</span>
+            <span class="combo"
+              >{#each (h.keys ?? '').split('+') as k, i (i)}<kbd>{k}</kbd>{/each}</span
+            >
             ({actionLabel(h.action, h.secs)}): {h.error}.
-            <button class="link" onclick={() => ((open = false), (app.settingsPage = 'hotkeys'), (app.page = 'settings'))}>Hotkey settings</button>
+            <button
+              class="link"
+              onclick={() => ((open = false), (app.settingsPage = 'hotkeys'), (app.page = 'settings'))}
+              >Hotkey settings</button
+            >
           </p>
         {/each}
         {#if app.activity.length === 0}

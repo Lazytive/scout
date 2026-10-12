@@ -52,7 +52,11 @@
   />
 </Row>
 
-<Row label="Voice chat" hint="Voice apps that are running when the game starts get their own track." error={fieldError('audio.voice_apps')}>
+<Row
+  label="Voice chat"
+  hint="Voice apps that are running when the game starts get their own track."
+  error={fieldError('audio.voice_apps')}
+>
   <Toggle label="Record voice chat" checked={a.voice} onchange={(v) => save(['audio', 'voice'], v)} />
   {#if a.voice}
     <ListEditor
@@ -83,7 +87,11 @@
   {/if}
 </Row>
 
-<Row label="Music" hint="Keeps copyrighted music out of clips when recording everything." error={fieldError('audio.exclude_apps')}>
+<Row
+  label="Music"
+  hint="Keeps copyrighted music out of clips when recording everything."
+  error={fieldError('audio.exclude_apps')}
+>
   <Toggle
     label="Leave music players out"
     checked={a.default_excludes}

@@ -303,7 +303,8 @@ export class FollowSound {
   constructor(private video: HTMLVideoElement) {
     // In the document (like the player's elements), out of sight.
     this.host = document.createElement('div');
-    this.host.style.cssText = 'position:fixed;left:-10px;top:-10px;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none';
+    this.host.style.cssText =
+      'position:fixed;left:-10px;top:-10px;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none';
     this.host.dataset.sound = 'follow';
     document.body.appendChild(this.host);
     this.loop();

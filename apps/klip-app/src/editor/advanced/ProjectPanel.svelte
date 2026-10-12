@@ -116,7 +116,8 @@
     const at = ed.playhead;
     if (kind === 'sticker') {
       let id: number | null = null;
-      if (edit((p) => (id = addClip(p, 'video', { kind: 'image', path }, 0, STICKER_MS, at)), 'Add a sticker')) ed.clipId = id;
+      if (edit((p) => (id = addClip(p, 'video', { kind: 'image', path }, 0, STICKER_MS, at)), 'Add a sticker'))
+        ed.clipId = id;
       return;
     }
     let len = url ? await soundLength(url) : null;
@@ -127,7 +128,12 @@
     }
     const track = kind === 'music' ? 'music' : 'audio';
     let id: number | null = null;
-    if (edit((p) => (id = addClip(p, track, { kind: 'file', path }, 0, len, kind === 'music' && ed.playhead === 0 ? 0 : at)), kind === 'music' ? 'Add music' : 'Add a sound'))
+    if (
+      edit(
+        (p) => (id = addClip(p, track, { kind: 'file', path }, 0, len, kind === 'music' && ed.playhead === 0 ? 0 : at)),
+        kind === 'music' ? 'Add music' : 'Add a sound',
+      )
+    )
       ed.clipId = id;
   }
 </script>
@@ -159,7 +165,13 @@
           style:background-size={strip && tiles > 0 ? `100% ${tiles * 100}%` : 'cover'}
           style:background-position-y={strip && tiles > 0 ? stripPosition(tile, tiles) : undefined}
         >
-          <input class="tick" type="checkbox" checked={picked.includes(c.path)} aria-label="Pick {c.name}" onchange={() => toggle(c.path)} />
+          <input
+            class="tick"
+            type="checkbox"
+            checked={picked.includes(c.path)}
+            aria-label="Pick {c.name}"
+            onchange={() => toggle(c.path)}
+          />
         </div>
         <div class="meta">
           <span class="chip" aria-hidden="true"></span>
@@ -173,11 +185,24 @@
   </ul>
   {#if note}<p class="hint muted">{note}</p>{/if}
   <div class="bar">
-    <button class="flat" onclick={() => addFile('sticker')} title="A picture over the video for {STICKER_MS / 1000} s, at the playhead">+ Sticker</button>
-    <button class="flat" onclick={() => addFile('sound')} title="A sound effect at the playhead (it ducks the music)">+ Sound</button>
-    <button class="flat" onclick={() => addFile('music')} title="Music on its own track (ducked under voices)">+ Music</button>
+    <button
+      class="flat"
+      onclick={() => addFile('sticker')}
+      title="A picture over the video for {STICKER_MS / 1000} s, at the playhead">+ Sticker</button
+    >
+    <button class="flat" onclick={() => addFile('sound')} title="A sound effect at the playhead (it ducks the music)"
+      >+ Sound</button
+    >
+    <button class="flat" onclick={() => addFile('music')} title="Music on its own track (ducked under voices)"
+      >+ Music</button
+    >
     <span class="grow"></span>
-    <button class="primary add" disabled={picked.length === 0 || busy} onclick={addClips} title="Add the ticked clips after the end of the edit">
+    <button
+      class="primary add"
+      disabled={picked.length === 0 || busy}
+      onclick={addClips}
+      title="Add the ticked clips after the end of the edit"
+    >
       Add{picked.length ? ` ${picked.length}` : ''}
     </button>
   </div>

@@ -153,7 +153,13 @@ export function fitContain(w: number, h: number, maxW: number, maxH: number): [n
  * fills it, another video fits inside it, a picture keeps its size relative to the
  * main clip's `cropW` source pixels).
  */
-export function fitted(kind: PictureKind, main: boolean, native: [number, number], cropW: number, canvas: [number, number]): [number, number] {
+export function fitted(
+  kind: PictureKind,
+  main: boolean,
+  native: [number, number],
+  cropW: number,
+  canvas: [number, number],
+): [number, number] {
   const outW = Math.max(2, canvas[0]);
   const outH = Math.max(2, canvas[1]);
   if (main) return [outW, outH];
@@ -192,7 +198,13 @@ export interface PixelRect {
  * `compose::visible`: the part of a `srcW x srcH` picture placed at `p` that lands on
  * the canvas, as `[source rect, canvas rect]` in whole pixels, or `null`.
  */
-export function visible(p: Placement, srcW: number, srcH: number, outW: number, outH: number): [PixelRect, PixelRect] | null {
+export function visible(
+  p: Placement,
+  srcW: number,
+  srcH: number,
+  outW: number,
+  outH: number,
+): [PixelRect, PixelRect] | null {
   if (p.width === 0 || p.height === 0 || srcW === 0 || srcH === 0) return null;
   const axis = (pos: number, len: number, src: number, out: number): [number, number, number, number] | null => {
     const start = pos;
@@ -230,7 +242,8 @@ const LUMA = [0.2126, 0.7152, 0.0722].map(Math.fround);
 
 /** `Colour::sanitized`: clamped; anything not finite is "as recorded". */
 export function sanitizedColour(c: Colour): Colour {
-  const f = (v: number, lo: number, hi: number, d: number) => (Number.isFinite(v) ? clampNum(Math.fround(v), lo, hi) : d);
+  const f = (v: number, lo: number, hi: number, d: number) =>
+    Number.isFinite(v) ? clampNum(Math.fround(v), lo, hi) : d;
   return {
     brightness: f(c.brightness, -1, 1, 0),
     contrast: f(c.contrast, 0, 2, 1),

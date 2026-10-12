@@ -44,12 +44,23 @@
   });
 </script>
 
-<div class="meters" role="meter" aria-label="Output level" aria-valuemin={FLOOR} aria-valuemax={0} aria-valuenow={Math.round(Math.max(level[0], level[1]))}>
+<div
+  class="meters"
+  role="meter"
+  aria-label="Output level"
+  aria-valuemin={FLOOR}
+  aria-valuemax={0}
+  aria-valuenow={Math.round(Math.max(level[0], level[1]))}
+>
   <div class="bars">
     {#each [0, 1] as i (i)}
       <div class="bar">
         <div class="fill" style:clip-path="inset({100 - pct(level[i] ?? FLOOR)}% 0 0 0)"></div>
-        {#if (hold[i] ?? FLOOR) > FLOOR}<div class="hold" class:clip={(hold[i] ?? FLOOR) >= -0.1} style:bottom="{pct(hold[i] ?? FLOOR)}%"></div>{/if}
+        {#if (hold[i] ?? FLOOR) > FLOOR}<div
+            class="hold"
+            class:clip={(hold[i] ?? FLOOR) >= -0.1}
+            style:bottom="{pct(hold[i] ?? FLOOR)}%"
+          ></div>{/if}
       </div>
     {/each}
     <div class="scale mono">

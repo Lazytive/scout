@@ -147,7 +147,11 @@
       ></div>
     {/each}
     {#each gaps(project) as g (g.start_ms)}
-      <div class="gap" style:left="{msToPct(g.start_ms, duration)}%" style:width="{msToPct(g.end_ms - g.start_ms, duration)}%"></div>
+      <div
+        class="gap"
+        style:left="{msToPct(g.start_ms, duration)}%"
+        style:width="{msToPct(g.end_ms - g.start_ms, duration)}%"
+      ></div>
     {/each}
     {#each kept as p, i (i)}
       {#if speedBadge(p.speed)}

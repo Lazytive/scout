@@ -23,10 +23,8 @@
       {#each items as item (item)}
         <li>
           <span>{item}</span>
-          <button
-            class="flat x"
-            aria-label="Remove {item}"
-            onclick={() => onchange(items.filter((i) => i !== item))}>×</button
+          <button class="flat x" aria-label="Remove {item}" onclick={() => onchange(items.filter((i) => i !== item))}
+            >×</button
           >
         </li>
       {/each}

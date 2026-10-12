@@ -76,7 +76,9 @@ function project(sourceMs: number, pieces: [number, number, Speed][] = []): Proj
 describe('edits', () => {
   it('a project without pieces is the whole clip', () => {
     const p = project(10_000);
-    expect(segments(p)).toEqual([{ src_start_ms: 0, src_end_ms: 10_000, speed: 1, out_start_ms: 0, out_end_ms: 10_000 }]);
+    expect(segments(p)).toEqual([
+      { src_start_ms: 0, src_end_ms: 10_000, speed: 1, out_start_ms: 0, out_end_ms: 10_000 },
+    ]);
     expect(sourceTime(p, 9_999)).toBe(9_999);
     expect(sourceTime(p, 10_000)).toBeNull();
     expect(segments(project(0))).toEqual([]);

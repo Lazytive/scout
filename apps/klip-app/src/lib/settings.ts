@@ -213,10 +213,7 @@ export function keyParts(keys: string): string[] {
 }
 
 /** Hotkey state the engine reports for a binding's keys (e.g. taken by another app). */
-export function bindingError(
-  keys: string,
-  bound: { keys: string | null; error: string | null }[],
-): string | null {
+export function bindingError(keys: string, bound: { keys: string | null; error: string | null }[]): string | null {
   if (!keys) return null;
   return bound.find((b) => b.keys === keys)?.error ?? null;
 }

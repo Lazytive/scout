@@ -7,7 +7,8 @@
   import { loadPeaks, mergePeaks, peaksPath } from '../../lib/peaks';
 
   /** `urls`: the sound's files (a clip's tracks are drawn together). */
-  let { urls, from, to, w, a, b }: { urls: string[]; from: number; to: number; w: number; a: number; b: number } = $props();
+  let { urls, from, to, w, a, b }: { urls: string[]; from: number; to: number; w: number; a: number; b: number } =
+    $props();
 
   let peaks = $state<Float32Array | null>(null);
   $effect(() => {
@@ -24,11 +25,20 @@
   });
   const n = $derived(Math.max(1, Math.min(2000, Math.round((b - a) / 2))));
   const span = $derived(Math.max(1, w));
-  const d = $derived(peaks && b > a ? peaksPath(peaks, from + (a / span) * (to - from), from + (b / span) * (to - from), n) : '');
+  const d = $derived(
+    peaks && b > a ? peaksPath(peaks, from + (a / span) * (to - from), from + (b / span) * (to - from), n) : '',
+  );
 </script>
 
 {#if d}
-  <svg class="wave" style:left="{a}px" style:width="{b - a}px" viewBox="0 0 {n} 1" preserveAspectRatio="none" aria-hidden="true"><path {d} /></svg>
+  <svg
+    class="wave"
+    style:left="{a}px"
+    style:width="{b - a}px"
+    viewBox="0 0 {n} 1"
+    preserveAspectRatio="none"
+    aria-hidden="true"><path {d} /></svg
+  >
 {/if}
 
 <style>

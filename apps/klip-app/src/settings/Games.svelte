@@ -103,8 +103,11 @@
           <span class="exe mono">{u.exe}</span>
           <button
             class="flat remove"
-            onclick={() => save(['games', 'user_games'], g.user_games.filter((x) => x.exe !== u.exe))}
-            >Remove</button
+            onclick={() =>
+              save(
+                ['games', 'user_games'],
+                g.user_games.filter((x) => x.exe !== u.exe),
+              )}>Remove</button
           >
         </li>
       {/each}
@@ -128,10 +131,19 @@
 </Row>
 
 <Row label="Never record" hint="Programs that look like games but aren't." error={fieldError('games.never')}>
-  <ListEditor label="Never record" items={g.never} placeholder="Program.exe" onchange={(v) => save(['games', 'never'], v)} />
+  <ListEditor
+    label="Never record"
+    items={g.never}
+    placeholder="Program.exe"
+    onchange={(v) => save(['games', 'never'], v)}
+  />
 </Row>
 
-<Row label="Per-game settings" hint="Override the buffer, quality or audio for one game." error={fieldError('games.profiles')}>
+<Row
+  label="Per-game settings"
+  hint="Override the buffer, quality or audio for one game."
+  error={fieldError('games.profiles')}
+>
   {#if profileGames.length === 0}
     <p class="muted">Add a game first, or start one.</p>
   {:else}

@@ -33,8 +33,7 @@
   import { defaultQuery } from './lib/library';
   import { app } from './lib/store.svelte';
 
-  const trashName =
-    typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent) ? 'Recycle Bin' : 'Trash';
+  const trashName = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent) ? 'Recycle Bin' : 'Trash';
 
   const sorts: { value: Sort; label: string }[] = [
     { value: 'newest', label: 'Newest first' },
@@ -58,7 +57,9 @@
   const minWidth = $derived(sizes.find((s) => s.id === lib.size)?.min ?? 230);
 
   // The first working clip hotkey, for the "save your first clip" hint.
-  const firstKey = $derived((app.status?.hotkeys ?? []).find((h) => h.action === 'clip.save' && h.secs && h.keys && !h.error) ?? null);
+  const firstKey = $derived(
+    (app.status?.hotkeys ?? []).find((h) => h.action === 'clip.save' && h.secs && h.keys && !h.error) ?? null,
+  );
 
   let grid: HTMLElement | undefined = $state();
   let search = $state(lib.query.search);
@@ -190,103 +191,108 @@
       {#snippet actions()}
         <span class="count mono">
           {#if listing}
-            {listing.matched === listing.total ? listing.total : `${listing.matched} of ${listing.total}`} clips
-            · {formatBytes(listing.total_bytes)}
+            {listing.matched === listing.total ? listing.total : `${listing.matched} of ${listing.total}`} clips · {formatBytes(
+              listing.total_bytes,
+            )}
           {/if}
         </span>
       {/snippet}
-        <div class="body">
-          <div class="toolbar">
-            <input
-              class="search"
-              type="search"
-              placeholder="Search names, games, tags"
-              aria-label="Search clips"
-              spellcheck="false"
-              bind:value={search}
-              oninput={() => setQuery({ search })}
-              onkeydown={(e) => {
-                if (e.key === 'Escape') {
-                  search = '';
-                  setQuery({ search: '' });
-                }
-              }}
-            />
-            <Select label="Sort" value={lib.query.sort} options={sorts} onchange={(v) => setQuery({ sort: v })} />
-            <span class="grow"></span>
-            <div class="sizes" role="radiogroup" aria-label="Card size">
-              {#each sizes as s (s.id)}
-                <button
-                  class="flat"
-                  role="radio"
-                  aria-checked={lib.size === s.id}
-                  class:on={lib.size === s.id}
-                  title="{s.label === 'S' ? 'Small' : s.label === 'M' ? 'Medium' : 'Large'} cards"
-                  onclick={() => setSize(s.id)}>{s.label}</button
-                >
-              {/each}
-            </div>
-          </div>
-          {#if lib.error}<p class="error" role="alert">{lib.error}</p>{/if}
-
-          <div
-            class="grid"
-            bind:this={grid}
-            role="listbox"
-            aria-label="Clips"
-            aria-multiselectable="true"
-            tabindex="0"
-            onkeydown={keydown}
-            style:--card-min="{minWidth}px"
-          >
-            {#if !listing}
-              <p class="empty-state muted">{lib.loading ? 'Reading the clip folder…' : ''}</p>
-            {:else if listing.total === 0}
-              <div class="empty-state">
-                <p class="big">No clips yet</p>
-                <p class="muted">
-                  {#if firstKey}
-                    Press <span class="combo">{#each (firstKey.keys ?? '').split('+') as k, i (i)}<kbd>{k}</kbd>{/each}</span>
-                    in a game to save the last {formatDuration((firstKey.secs ?? 30) * 1000)}, or use <b>Save</b> at the top.
-                  {:else}
-                    Use <b>Save</b> at the top while a game runs.
-                  {/if}
-                </p>
-                <p class="muted">Your clips show up here, newest first. Scout keeps them as plain MP4 files in {listing.folder}.</p>
-              </div>
-            {:else if clips.length === 0}
-              <div class="empty-state">
-                <p class="big">No clips match</p>
-                {#if filtered(lib.query)}<button onclick={clearFilters}>Clear filters</button>{/if}
-              </div>
-            {:else}
-              {#each groups as g (g.key)}
-                <section aria-label={g.label ?? 'Clips'}>
-                  {#if g.label}
-                    <h2>{g.label}<span class="n mono">{g.clips.length}</span></h2>
-                  {/if}
-                  <div class="cards">
-                    {#each g.clips as c (c.key)}
-                      <ClipCard
-                        clip={c}
-                        {tiles}
-                        selected={lib.selected.includes(c.key)}
-                        focused={lib.cursor === c.key}
-                        showDay={g.label === null}
-                        onpick={(e) => pick(c, e)}
-                        onopen={() => openEditor(c)}
-                        onmenu={(e) => openMenu(c, e)}
-                        onstar={() => setStar([c], !c.starred)}
-                        ondragout={() => void dragClipsOut(c)}
-                        progress={discord.job?.key === c.key ? discord.job.pct : null}
-                      />
-                    {/each}
-                  </div>
-                </section>
-              {/each}
-            {/if}
+      <div class="body">
+        <div class="toolbar">
+          <input
+            class="search"
+            type="search"
+            placeholder="Search names, games, tags"
+            aria-label="Search clips"
+            spellcheck="false"
+            bind:value={search}
+            oninput={() => setQuery({ search })}
+            onkeydown={(e) => {
+              if (e.key === 'Escape') {
+                search = '';
+                setQuery({ search: '' });
+              }
+            }}
+          />
+          <Select label="Sort" value={lib.query.sort} options={sorts} onchange={(v) => setQuery({ sort: v })} />
+          <span class="grow"></span>
+          <div class="sizes" role="radiogroup" aria-label="Card size">
+            {#each sizes as s (s.id)}
+              <button
+                class="flat"
+                role="radio"
+                aria-checked={lib.size === s.id}
+                class:on={lib.size === s.id}
+                title="{s.label === 'S' ? 'Small' : s.label === 'M' ? 'Medium' : 'Large'} cards"
+                onclick={() => setSize(s.id)}>{s.label}</button
+              >
+            {/each}
           </div>
         </div>
+        {#if lib.error}<p class="error" role="alert">{lib.error}</p>{/if}
+
+        <div
+          class="grid"
+          bind:this={grid}
+          role="listbox"
+          aria-label="Clips"
+          aria-multiselectable="true"
+          tabindex="0"
+          onkeydown={keydown}
+          style:--card-min="{minWidth}px"
+        >
+          {#if !listing}
+            <p class="empty-state muted">{lib.loading ? 'Reading the clip folder…' : ''}</p>
+          {:else if listing.total === 0}
+            <div class="empty-state">
+              <p class="big">No clips yet</p>
+              <p class="muted">
+                {#if firstKey}
+                  Press <span class="combo"
+                    >{#each (firstKey.keys ?? '').split('+') as k, i (i)}<kbd>{k}</kbd>{/each}</span
+                  >
+                  in a game to save the last {formatDuration((firstKey.secs ?? 30) * 1000)}, or use <b>Save</b> at the top.
+                {:else}
+                  Use <b>Save</b> at the top while a game runs.
+                {/if}
+              </p>
+              <p class="muted">
+                Your clips show up here, newest first. Scout keeps them as plain MP4 files in {listing.folder}.
+              </p>
+            </div>
+          {:else if clips.length === 0}
+            <div class="empty-state">
+              <p class="big">No clips match</p>
+              {#if filtered(lib.query)}<button onclick={clearFilters}>Clear filters</button>{/if}
+            </div>
+          {:else}
+            {#each groups as g (g.key)}
+              <section aria-label={g.label ?? 'Clips'}>
+                {#if g.label}
+                  <h2>{g.label}<span class="n mono">{g.clips.length}</span></h2>
+                {/if}
+                <div class="cards">
+                  {#each g.clips as c (c.key)}
+                    <ClipCard
+                      clip={c}
+                      {tiles}
+                      selected={lib.selected.includes(c.key)}
+                      focused={lib.cursor === c.key}
+                      showDay={g.label === null}
+                      onpick={(e) => pick(c, e)}
+                      onopen={() => openEditor(c)}
+                      onmenu={(e) => openMenu(c, e)}
+                      onstar={() => setStar([c], !c.starred)}
+                      ondragout={() => void dragClipsOut(c)}
+                      progress={discord.job?.key === c.key ? discord.job.pct : null}
+                    />
+                  {/each}
+                </div>
+              </section>
+            {/each}
+          {/if}
+        </div>
+      </div>
     </Panel>
   </div>
 
@@ -311,17 +317,56 @@
       onkeydown={(e) => e.key === 'Escape' && (menu = null)}
     >
       {#if !many}
-        <button class="flat item" role="menuitem" onclick={() => { menu = null; openEditor(c); }}>Edit</button>
-        <button class="flat item" role="menuitem" onclick={() => { menu = null; void openClip(c); }}>Open in player</button>
-        <button class="flat item" role="menuitem" onclick={() => { menu = null; void openClip(c, true); }}>Show in folder</button>
-        <button class="flat item" role="menuitem" onclick={() => { menu = null; renameFocus += 1; }}>Rename<kbd>F2</kbd></button>
+        <button
+          class="flat item"
+          role="menuitem"
+          onclick={() => {
+            menu = null;
+            openEditor(c);
+          }}>Edit</button
+        >
+        <button
+          class="flat item"
+          role="menuitem"
+          onclick={() => {
+            menu = null;
+            void openClip(c);
+          }}>Open in player</button
+        >
+        <button
+          class="flat item"
+          role="menuitem"
+          onclick={() => {
+            menu = null;
+            void openClip(c, true);
+          }}>Show in folder</button
+        >
+        <button
+          class="flat item"
+          role="menuitem"
+          onclick={() => {
+            menu = null;
+            renameFocus += 1;
+          }}>Rename<kbd>F2</kbd></button
+        >
       {/if}
-      <button class="flat item" role="menuitem" onclick={() => { menu = null; void copyClips(selectedClips()); }}
-        >{many ? `Copy ${lib.selected.length} files` : 'Copy file'}<kbd>Ctrl+C</kbd></button
+      <button
+        class="flat item"
+        role="menuitem"
+        onclick={() => {
+          menu = null;
+          void copyClips(selectedClips());
+        }}>{many ? `Copy ${lib.selected.length} files` : 'Copy file'}<kbd>Ctrl+C</kbd></button
       >
       {#if !many}
-        <button class="flat item" role="menuitem" disabled={discord.job !== null} onclick={() => { menu = null; void discordClip(c); }}
-          >Copy for Discord</button
+        <button
+          class="flat item"
+          role="menuitem"
+          disabled={discord.job !== null}
+          onclick={() => {
+            menu = null;
+            void discordClip(c);
+          }}>Copy for Discord</button
         >
       {/if}
       <button
@@ -334,11 +379,21 @@
         }}>{selectedClips().every((x) => x.starred) ? 'Unstar' : 'Star'}</button
       >
       <hr />
-      <button class="flat item bad" role="menuitem" onclick={() => { menu = null; askDelete(lib.selected, false); }}
-        >Move to {trashName}<kbd>Del</kbd></button
+      <button
+        class="flat item bad"
+        role="menuitem"
+        onclick={() => {
+          menu = null;
+          askDelete(lib.selected, false);
+        }}>Move to {trashName}<kbd>Del</kbd></button
       >
-      <button class="flat item bad" role="menuitem" onclick={() => { menu = null; askDelete(lib.selected, true); }}
-        >Delete permanently<kbd>Shift+Del</kbd></button
+      <button
+        class="flat item bad"
+        role="menuitem"
+        onclick={() => {
+          menu = null;
+          askDelete(lib.selected, true);
+        }}>Delete permanently<kbd>Shift+Del</kbd></button
       >
     </div>
   {/if}

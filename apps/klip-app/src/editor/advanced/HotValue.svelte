@@ -107,8 +107,8 @@
     aria-valuemax={max}
     title="Drag to change (Shift: faster), click to type"
     onpointerdown={down}
-    onkeydown={key}
-  >{value.toFixed(decimals)}{unit}</span>
+    onkeydown={key}>{value.toFixed(decimals)}{unit}</span
+  >
 {/if}
 
 <style>

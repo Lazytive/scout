@@ -24,7 +24,10 @@
   }
 
   function remove(i: number) {
-    void save(['hotkeys'], list.filter((_, j) => j !== i));
+    void save(
+      ['hotkeys'],
+      list.filter((_, j) => j !== i),
+    );
   }
 
   function add() {
@@ -33,8 +36,8 @@
 </script>
 
 <p class="intro muted">
-  Hotkeys work while a game has focus. A combination you set here is taken from other apps while
-  Scout runs, so pick one your games don't use.
+  Hotkeys work while a game has focus. A combination you set here is taken from other apps while Scout runs, so pick one
+  your games don't use.
 </p>
 
 <table>
@@ -58,13 +61,19 @@
             <Select
               label="Clip length"
               value={b.secs}
-              options={lengths.some((l) => l.value === b.secs) ? lengths : [...lengths, { value: b.secs, label: `last ${formatDuration(b.secs * 1000)}` }]}
+              options={lengths.some((l) => l.value === b.secs)
+                ? lengths
+                : [...lengths, { value: b.secs, label: `last ${formatDuration(b.secs * 1000)}` }]}
               onchange={(v) => update(i, { secs: v })}
             />
           {/if}
         </td>
         <td>
-          <KeyCapture label="Keys for {actions.find((x) => x.value === b.action)?.label}" keys={b.keys} onchange={(k) => update(i, { keys: k })} />
+          <KeyCapture
+            label="Keys for {actions.find((x) => x.value === b.action)?.label}"
+            keys={b.keys}
+            onchange={(k) => update(i, { keys: k })}
+          />
           {#if err}<p class="error">{err}</p>{/if}
         </td>
         <td><button class="flat remove" aria-label="Remove this hotkey" onclick={() => remove(i)}>Remove</button></td>

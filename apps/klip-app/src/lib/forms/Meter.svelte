@@ -8,7 +8,14 @@
   const hot = $derived(app.mic.peak > -3);
 </script>
 
-<div class="meter" role="meter" aria-label="Microphone level" aria-valuemin={-60} aria-valuemax={0} aria-valuenow={Math.round(app.mic.rms)}>
+<div
+  class="meter"
+  role="meter"
+  aria-label="Microphone level"
+  aria-valuemin={-60}
+  aria-valuemax={0}
+  aria-valuenow={Math.round(app.mic.rms)}
+>
   <div class="bar" class:hot style:width="{rms * 100}%"></div>
   <div class="peak" style:left="{peak * 100}%"></div>
 </div>

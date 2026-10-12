@@ -45,10 +45,20 @@
         ['input', 'Inputs'],
       ],
     },
-    { label: 'Lines', tokens: [['border', 'Borders'], ['border-strong', 'Outlines']] },
+    {
+      label: 'Lines',
+      tokens: [
+        ['border', 'Borders'],
+        ['border-strong', 'Outlines'],
+      ],
+    },
     {
       label: 'Text',
-      tokens: [['text', 'Text'], ['text-strong', 'Bright text'], ['text-muted', 'Muted text']],
+      tokens: [
+        ['text', 'Text'],
+        ['text-strong', 'Bright text'],
+        ['text-muted', 'Muted text'],
+      ],
     },
     {
       label: 'Accent',
@@ -62,7 +72,12 @@
     },
     {
       label: 'Status',
-      tokens: [['good', 'Success'], ['warn', 'Warning'], ['bad', 'Error'], ['rec', 'Recording']],
+      tokens: [
+        ['good', 'Success'],
+        ['warn', 'Warning'],
+        ['bad', 'Error'],
+        ['rec', 'Recording'],
+      ],
     },
   ];
 
@@ -81,9 +96,25 @@
   // Fonts: a name the engine accepts; suggestions are the common ones found on this PC.
   const FONT_RE = /^[\p{L}\p{N} ._-]{1,64}$/u;
   const COMMON_FONTS = [
-    'Segoe UI', 'Segoe UI Variable Text', 'Bahnschrift', 'Inter', 'Roboto', 'Noto Sans', 'Ubuntu',
-    'Cantarell', 'Arial', 'Verdana', 'Tahoma', 'Trebuchet MS', 'Calibri', 'Candara', 'Corbel',
-    'Georgia', 'Cascadia Code', 'Consolas', 'JetBrains Mono',
+    'Segoe UI',
+    'Segoe UI Variable Text',
+    'Bahnschrift',
+    'Inter',
+    'Roboto',
+    'Noto Sans',
+    'Ubuntu',
+    'Cantarell',
+    'Arial',
+    'Verdana',
+    'Tahoma',
+    'Trebuchet MS',
+    'Calibri',
+    'Candara',
+    'Corbel',
+    'Georgia',
+    'Cascadia Code',
+    'Consolas',
+    'JetBrains Mono',
   ];
   function installed(name: string): boolean {
     const c = document.createElement('canvas').getContext('2d');
@@ -140,7 +171,10 @@
   <input class="text" type="text" maxlength="48" aria-label="Theme name" bind:value={draft.name} />
 </Row>
 
-<Row label="Based on" hint="Colours you don't change come from this theme (it also decides light or dark); the accent's shades follow the accent unless you set them.">
+<Row
+  label="Based on"
+  hint="Colours you don't change come from this theme (it also decides light or dark); the accent's shades follow the accent unless you set them."
+>
   <Segmented
     label="Based on"
     value={draft.base}
@@ -149,7 +183,12 @@
   />
 </Row>
 
-<Row label="Colours" hint={accentOverride ? 'Your accent colour setting is used instead of the Accent group: pick “Theme\'s own” under Accent colour to see these.' : ''}>
+<Row
+  label="Colours"
+  hint={accentOverride
+    ? "Your accent colour setting is used instead of the Accent group: pick “Theme's own” under Accent colour to see these."
+    : ''}
+>
   <div class="groups">
     {#each GROUPS as g (g.label)}
       <fieldset>
@@ -165,7 +204,12 @@
             <span class="tname" class:changed={k in draft.colors}>{label}</span>
             <span class="mono hex">{colour(k)}</span>
             {#if k in draft.colors}
-              <button class="flat reset" title="Back to {base.label}'s colour" aria-label="Reset {label}" onclick={() => resetColour(k)}>↺</button>
+              <button
+                class="flat reset"
+                title="Back to {base.label}'s colour"
+                aria-label="Reset {label}"
+                onclick={() => resetColour(k)}>↺</button
+              >
             {/if}
           </div>
         {/each}
@@ -188,7 +232,9 @@
 
 <Row
   label="Font"
-  hint={fontMissing ? 'Not installed on this PC: the default font is used.' : 'A font installed on your PC; empty for the default. Fonts are not part of theme files: whoever imports this theme needs it too.'}
+  hint={fontMissing
+    ? 'Not installed on this PC: the default font is used.'
+    : 'A font installed on your PC; empty for the default. Fonts are not part of theme files: whoever imports this theme needs it too.'}
   error={fontOk ? null : 'Letters, digits, spaces, . _ and - only (up to 64).'}
 >
   <input
@@ -205,10 +251,16 @@
   </datalist>
 </Row>
 
-<Row label="Background picture" hint="Shown behind the panels (PNG, JPEG or WebP up to 8 MB). Saved as soon as you pick it.">
+<Row
+  label="Background picture"
+  hint="Shown behind the panels (PNG, JPEG or WebP up to 8 MB). Saved as soon as you pick it."
+>
   {#if draft.background}
     <div class="pic">
-      <span class="thumb" style:background-image={`url("${pictureUrl(draft.background.path, draft.background.version)}")`}></span>
+      <span
+        class="thumb"
+        style:background-image={`url("${pictureUrl(draft.background.path, draft.background.version)}")`}
+      ></span>
       <button onclick={choosePicture} disabled={busy}>Change…</button>
       <button onclick={() => picture(null)} disabled={busy}>Remove</button>
     </div>

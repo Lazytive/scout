@@ -68,7 +68,13 @@ describe('placement fixture (crates/klip-edit/fixtures/advanced/placement.json)'
       expect(fitContain(w!, h!, mw!, mh!), JSON.stringify(c.args)).toEqual(want.fit_contain);
     }
     for (const c of fx.fitted!) {
-      const got = fitted(c.kind as PictureKind, c.main as boolean, c.native as [number, number], c.crop_w as number, c.canvas as [number, number]);
+      const got = fitted(
+        c.kind as PictureKind,
+        c.main as boolean,
+        c.native as [number, number],
+        c.crop_w as number,
+        c.canvas as [number, number],
+      );
       expect(got, JSON.stringify(c)).toEqual(c.expect);
     }
   });
@@ -92,6 +98,8 @@ describe('placement fixture (crates/klip-edit/fixtures/advanced/placement.json)'
       const want = (c.expect as number[][]).flat();
       got.forEach((v, i) => expect(v, `${JSON.stringify(c.c)}[${i}]`).toBeCloseTo(want[i]!, 6));
     }
-    expect(svgColourMatrix({ brightness: 0, contrast: 1, saturation: 1 })).toBe('1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0');
+    expect(svgColourMatrix({ brightness: 0, contrast: 1, saturation: 1 })).toBe(
+      '1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0',
+    );
   });
 });

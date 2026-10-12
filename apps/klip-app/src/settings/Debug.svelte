@@ -81,15 +81,16 @@
 </script>
 
 <p class="lead">
-  For testers. The self-test probes every encoder again, records a few seconds with each working H.264
-  encoder (your screen, or the game if one is running), makes thumbnails and a preview frame, exports with
-  the YouTube and Discord presets, then deletes the test clips and puts your settings back. It takes about
-  two minutes; leave Scout open until it says it's done.
+  For testers. The self-test probes every encoder again, records a few seconds with each working H.264 encoder (your
+  screen, or the game if one is running), makes thumbnails and a preview frame, exports with the YouTube and Discord
+  presets, then deletes the test clips and puts your settings back. It takes about two minutes; leave Scout open until
+  it says it's done.
 </p>
 {#if info}
   <p class="muted">
-    Scout {info.version} · full logs {info.full_logs ? 'on' : 'off'} · bundled GStreamer {info.bundled_gstreamer ? 'yes' : 'no'} ·
-    replay buffer {s.games.buffer} · encoder {s.recording.encoder ?? 'automatic'}
+    Scout {info.version} · full logs {info.full_logs ? 'on' : 'off'} · bundled GStreamer {info.bundled_gstreamer
+      ? 'yes'
+      : 'no'} · replay buffer {s.games.buffer} · encoder {s.recording.encoder ?? 'automatic'}
   </p>
 {/if}
 
@@ -105,7 +106,9 @@
 
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if saved}
-  <p class="done">Done. The report is saved as <span class="mono">{saved}</span> in the logs folder: send the whole folder.</p>
+  <p class="done">
+    Done. The report is saved as <span class="mono">{saved}</span> in the logs folder: send the whole folder.
+  </p>
 {/if}
 
 {#if steps.length > 0}
@@ -113,7 +116,17 @@
     {#each steps as st (st.id)}
       <li class={st.status}>
         <span class="mark" aria-label={st.status}>
-          {st.status === 'ok' ? '✓' : st.status === 'fail' ? '✗' : st.status === 'warn' ? '!' : st.status === 'skip' ? '–' : st.status === 'running' ? '…' : '·'}
+          {st.status === 'ok'
+            ? '✓'
+            : st.status === 'fail'
+              ? '✗'
+              : st.status === 'warn'
+                ? '!'
+                : st.status === 'skip'
+                  ? '–'
+                  : st.status === 'running'
+                    ? '…'
+                    : '·'}
         </span>
         <span class="label">{st.label}</span>
         {#if st.detail}<pre class="detail">{st.detail}</pre>{/if}

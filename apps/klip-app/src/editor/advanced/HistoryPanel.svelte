@@ -18,7 +18,13 @@
   }
 
   const when = (ms: number) =>
-    new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    new Date(ms).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
 </script>
 
 <section>
@@ -32,7 +38,9 @@
     <li class="now"><span>Now</span></li>
     {#each [...ed.undoLabels].map((l, i) => ({ l, i })).reverse() as u (`u${u.i}`)}
       <li>
-        <button class="flat" title="Go back to before this" onclick={() => undo(ed.undoLabels.length - u.i)}>{u.l}</button>
+        <button class="flat" title="Go back to before this" onclick={() => undo(ed.undoLabels.length - u.i)}
+          >{u.l}</button
+        >
       </li>
     {/each}
     <li class="start"><span class="muted">Opened</span></li>
@@ -51,10 +59,13 @@
         <li>
           <span class="mono">{when(s.saved_unix_ms)}</span>
           <span class="muted">{formatBytes(s.bytes)}</span>
-          <button class="flat" onclick={async () => {
-            await restoreHistory(s.id);
-            await load();
-          }}>Restore</button>
+          <button
+            class="flat"
+            onclick={async () => {
+              await restoreHistory(s.id);
+              await load();
+            }}>Restore</button
+          >
         </li>
       {/each}
     </ul>

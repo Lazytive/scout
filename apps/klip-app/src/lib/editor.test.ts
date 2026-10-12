@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyShorts, clampCustom, cropRect, gaps, keepAspect, msToPct, newText, outputSize, progressPct, pxToMs, tileFor, trimText } from './editor';
+import {
+  applyShorts,
+  clampCustom,
+  cropRect,
+  gaps,
+  keepAspect,
+  msToPct,
+  newText,
+  outputSize,
+  progressPct,
+  pxToMs,
+  tileFor,
+  trimText,
+} from './editor';
 import { newProject } from './timeline';
 
 describe('crop', () => {

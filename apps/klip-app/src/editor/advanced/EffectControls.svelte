@@ -9,9 +9,33 @@
 -->
 <script lang="ts">
   import type { Lane, PlacedClip, Track } from '../../lib/advanced';
-  import { LANES, RATE_MAX, RATE_MIN, clipLength, laneValue, moveKey, overlapOf, rateAt, readAdvanced, removeSpeedPoint, setSpeedPoint, sourceLabel } from '../../lib/advanced';
+  import {
+    LANES,
+    RATE_MAX,
+    RATE_MIN,
+    clipLength,
+    laneValue,
+    moveKey,
+    overlapOf,
+    rateAt,
+    readAdvanced,
+    removeSpeedPoint,
+    setSpeedPoint,
+    sourceLabel,
+  } from '../../lib/advanced';
   import type { Field, Group } from '../../lib/effect-controls';
-  import { applyValue, groupTimes, isAnimated, nextKey, prevKey, resetGroup, spreadKeys, startAnimating, stopAnimating, toggleKey } from '../../lib/effect-controls';
+  import {
+    applyValue,
+    groupTimes,
+    isAnimated,
+    nextKey,
+    prevKey,
+    resetGroup,
+    spreadKeys,
+    startAnimating,
+    stopAnimating,
+    toggleKey,
+  } from '../../lib/effect-controls';
   import { beginGesture, ed, edit, endGesture, gesture, liveEdit, seek } from '../../lib/editor.svelte';
   import { formatTimecode } from '../../lib/format';
   import type { Project } from '../../lib/timeline';
@@ -45,17 +69,40 @@
     step: number;
   }
   function spec(f: Field): Spec {
-    if (f === 'speed') return { label: 'Speed', scale: 1, decimals: 0, unit: '%', min: RATE_MIN, max: RATE_MAX, step: 1 };
+    if (f === 'speed')
+      return { label: 'Speed', scale: 1, decimals: 0, unit: '%', min: RATE_MIN, max: RATE_MAX, step: 1 };
     const l = LANES.find((x) => x.id === f)!;
-    const label = f === 'zoom' ? 'Zoom' : f === 'x' ? 'Position X' : f === 'y' ? 'Position Y' : f === 'opacity' ? 'Opacity' : 'Level';
-    return { label, scale: 100, decimals: f === 'volume' ? 0 : 1, unit: '%', min: l.min * 100, max: l.max * 100, step: f === 'volume' ? 1 : 0.5 };
+    const label =
+      f === 'zoom'
+        ? 'Zoom'
+        : f === 'x'
+          ? 'Position X'
+          : f === 'y'
+            ? 'Position Y'
+            : f === 'opacity'
+              ? 'Opacity'
+              : 'Level';
+    return {
+      label,
+      scale: 100,
+      decimals: f === 'volume' ? 0 : 1,
+      unit: '%',
+      min: l.min * 100,
+      max: l.max * 100,
+      step: f === 'volume' ? 1 : 0.5,
+    };
   }
-  const valueOf = (c: PlacedClip, f: Field, t: number) => (f === 'speed' ? rateAt(c, t) : laneValue(c, f as Lane, t) * 100);
+  const valueOf = (c: PlacedClip, f: Field, t: number) =>
+    f === 'speed' ? rateAt(c, t) : laneValue(c, f as Lane, t) * 100;
 
   const GROUP_LABEL: Record<Group, string> = { motion: 'Motion', opacity: 'Opacity', volume: 'Volume', speed: 'Speed' };
   function groupsFor(t: Track, c: PlacedClip): { group: Group; fields: Field[] }[] {
     const image = c.source.kind === 'image';
-    if (t.kind === 'audio' || t.kind === 'music') return [{ group: 'volume', fields: ['volume'] }, { group: 'speed', fields: ['speed'] }];
+    if (t.kind === 'audio' || t.kind === 'music')
+      return [
+        { group: 'volume', fields: ['volume'] },
+        { group: 'speed', fields: ['speed'] },
+      ];
     const out: { group: Group; fields: Field[] }[] = [
       { group: 'motion', fields: ['zoom', 'x', 'y'] },
       { group: 'opacity', fields: ['opacity'] },
@@ -89,7 +136,8 @@
 
   function toggle(c: PlacedClip, g: Group, at: number) {
     const has = groupTimes(c, g).includes(at);
-    if (edit((p) => toggleKey(p, c.id, g, at), has ? 'Remove a key' : 'Add a key')) ed.animating[stickyKey(c, g)] = true;
+    if (edit((p) => toggleKey(p, c.id, g, at), has ? 'Remove a key' : 'Add a key'))
+      ed.animating[stickyKey(c, g)] = true;
   }
 
   // ---- the key lane ----
@@ -174,7 +222,9 @@
   <div class="ec">
     <div class="row top">
       <div class="props">
-        <span class="pill" title={sourceLabel(c.source, mainName, names)}>{t.name || 'Track'} · {sourceLabel(c.source, mainName, names)}</span>
+        <span class="pill" title={sourceLabel(c.source, mainName, names)}
+          >{t.name || 'Track'} · {sourceLabel(c.source, mainName, names)}</span
+        >
       </div>
       <div class="lane head" bind:clientWidth={laneW} role="presentation" onpointerdown={(e) => laneSeek(e, t, c)}>
         <span class="clipbar">{sourceLabel(c.source, mainName, names)}</span>
@@ -191,15 +241,39 @@
       {@const onKey = times.includes(at)}
       {@const single = grp.fields.length === 1}
       {#snippet controls()}
-        <button class="watch" class:on={anim} aria-pressed={anim} title={anim ? 'Stop animating (keeps the value at the playhead)' : 'Animate: keys from now on'} onclick={() => stopwatch(c, g, at)}>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="9" r="5.5" /><path d="M8 9V6.2M6.5 2h3M12.3 4.3l1 -1" /></svg>
+        <button
+          class="watch"
+          class:on={anim}
+          aria-pressed={anim}
+          title={anim ? 'Stop animating (keeps the value at the playhead)' : 'Animate: keys from now on'}
+          onclick={() => stopwatch(c, g, at)}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true"
+            ><circle cx="8" cy="9" r="5.5" /><path d="M8 9V6.2M6.5 2h3M12.3 4.3l1 -1" /></svg
+          >
         </button>
       {/snippet}
       {#snippet nav()}
         <span class="nav">
-          <button class="flat tiny" disabled={!anim || prevKey(times, at) === null} title="Previous key" onclick={() => seek(from + (prevKey(times, at) ?? 0))}>◀</button>
-          <button class="flat tiny key" class:on={onKey} aria-pressed={onKey} title={onKey ? 'Remove the key here' : 'Add a key here'} onclick={() => toggle(c, g, at)}>◆</button>
-          <button class="flat tiny" disabled={!anim || nextKey(times, at) === null} title="Next key" onclick={() => seek(from + (nextKey(times, at) ?? 0))}>▶</button>
+          <button
+            class="flat tiny"
+            disabled={!anim || prevKey(times, at) === null}
+            title="Previous key"
+            onclick={() => seek(from + (prevKey(times, at) ?? 0))}>◀</button
+          >
+          <button
+            class="flat tiny key"
+            class:on={onKey}
+            aria-pressed={onKey}
+            title={onKey ? 'Remove the key here' : 'Add a key here'}
+            onclick={() => toggle(c, g, at)}>◆</button
+          >
+          <button
+            class="flat tiny"
+            disabled={!anim || nextKey(times, at) === null}
+            title="Next key"
+            onclick={() => seek(from + (nextKey(times, at) ?? 0))}>▶</button
+          >
         </span>
       {/snippet}
       {#snippet laneCell(withKeys: boolean)}
@@ -213,7 +287,9 @@
                 style:left="{d.x}px"
                 role="button"
                 tabindex="-1"
-                title="{formatTimecode(d.t)}{g === 'speed' ? ` · ${rateAt(c, d.t)} %` : ''} (drag to move, double-click to remove)"
+                title="{formatTimecode(d.t)}{g === 'speed'
+                  ? ` · ${rateAt(c, d.t)} %`
+                  : ''} (drag to move, double-click to remove)"
                 onpointerdown={(e) => keyDown(e, t, c, g, d.t)}
                 ondblclick={(e) => {
                   e.stopPropagation();
@@ -236,10 +312,14 @@
             {@render nav()}
           {/if}
           <span class="grow"></span>
-          <button class="flat tiny reset" title="Reset {GROUP_LABEL[g].toLowerCase()}" onclick={() => {
-            edit((p) => resetGroup(p, c.id, g), `Reset ${GROUP_LABEL[g].toLowerCase()}`);
-            delete ed.animating[stickyKey(c, g)];
-          }}>↺</button>
+          <button
+            class="flat tiny reset"
+            title="Reset {GROUP_LABEL[g].toLowerCase()}"
+            onclick={() => {
+              edit((p) => resetGroup(p, c.id, g), `Reset ${GROUP_LABEL[g].toLowerCase()}`);
+              delete ed.animating[stickyKey(c, g)];
+            }}>↺</button
+          >
         </div>
         {@render laneCell(!single)}
       </div>
@@ -267,7 +347,10 @@
         </div>
       {/each}
       {#if g === 'speed'}
-        <p class="hint muted">Speed changes from each point on; the clip keeps its part of the source, so slower makes it longer. The pitch stays.</p>
+        <p class="hint muted">
+          Speed changes from each point on; the clip keeps its part of the source, so slower makes it longer. The pitch
+          stays.
+        </p>
       {/if}
     {/each}
 
@@ -277,7 +360,9 @@
     </div>
   </div>
 {:else}
-  <p class="muted hint">Select a clip on the timeline to see its effects here: zoom and position, opacity, volume and speed, with keys.</p>
+  <p class="muted hint">
+    Select a clip on the timeline to see its effects here: zoom and position, opacity, volume and speed, with keys.
+  </p>
 {/if}
 
 <style>

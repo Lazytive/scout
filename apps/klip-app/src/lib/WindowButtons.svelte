@@ -25,9 +25,16 @@
   <button class="flat" aria-label="Minimize" title="Minimize" onclick={minimize}>
     <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5.5h10" /></svg>
   </button>
-  <button class="flat" aria-label={maximized ? 'Restore' : 'Maximize'} title={maximized ? 'Restore Down' : 'Maximize'} onclick={toggleMaximize}>
+  <button
+    class="flat"
+    aria-label={maximized ? 'Restore' : 'Maximize'}
+    title={maximized ? 'Restore Down' : 'Maximize'}
+    onclick={toggleMaximize}
+  >
     {#if maximized}
-      <svg viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="2.5" width="7" height="7" /><path d="M2.5 2.5v-2h7v7h-2" /></svg>
+      <svg viewBox="0 0 10 10" aria-hidden="true"
+        ><rect x="0.5" y="2.5" width="7" height="7" /><path d="M2.5 2.5v-2h7v7h-2" /></svg
+      >
     {:else}
       <svg viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" /></svg>
     {/if}

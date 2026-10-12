@@ -45,8 +45,14 @@ export function rowsOf(a: Advanced): TimelineRow[] {
     const track = video[i];
     if (track) out.push({ kind: 'track', track, label: `V${i + 2}`, group: 'video' });
   }
-  out.push(main ? { kind: 'track', track: main, label: 'V1', group: 'video' } : { kind: 'main', label: 'V1', group: 'video' });
-  out.push(main ? { kind: 'main-sound', label: 'A1', group: 'sound', track: main } : { kind: 'main-sound', label: 'A1', group: 'sound' });
+  out.push(
+    main ? { kind: 'track', track: main, label: 'V1', group: 'video' } : { kind: 'main', label: 'V1', group: 'video' },
+  );
+  out.push(
+    main
+      ? { kind: 'main-sound', label: 'A1', group: 'sound', track: main }
+      : { kind: 'main-sound', label: 'A1', group: 'sound' },
+  );
   sound.forEach((track, i) => out.push({ kind: 'track', track, label: `A${i + 2}`, group: 'sound' }));
   return out;
 }
@@ -77,7 +83,13 @@ export function zoomAt(pps: number, newPps: number, anchorX: number, scrollLeft:
 }
 
 /** The zoom and scroll that show the span between the bar's handles at `f0`…`f1`. */
-export function fromHandles(f0: number, f1: number, span: number, viewW: number, maxPps: number): { pps: number; scrollLeft: number } {
+export function fromHandles(
+  f0: number,
+  f1: number,
+  span: number,
+  viewW: number,
+  maxPps: number,
+): { pps: number; scrollLeft: number } {
   const a = Math.min(1, Math.max(0, Math.min(f0, f1)));
   const b = Math.min(1, Math.max(0, Math.max(f0, f1)));
   const fit = fitPps(span, viewW);
@@ -89,7 +101,13 @@ export function fromHandles(f0: number, f1: number, span: number, viewW: number,
 // ---- thumbnails and waveforms ----
 
 /** The part of a clip (px from its left edge, `left` px into the lane, `w` wide) in view, with a margin. */
-export function visibleSpan(left: number, w: number, scrollX: number, viewW: number, margin = 200): { a: number; b: number } {
+export function visibleSpan(
+  left: number,
+  w: number,
+  scrollX: number,
+  viewW: number,
+  margin = 200,
+): { a: number; b: number } {
   const a = Math.max(0, Math.floor(scrollX - left - margin));
   const b = Math.min(w, Math.ceil(scrollX + viewW - left + margin));
   return { a: Math.min(a, b), b };
@@ -154,7 +172,16 @@ export function transitionBoxes(a: Advanced): TransitionBox[] {
       if (!first || tr.kind !== 'crossfade') continue;
       const srcLen = Math.max(0, first.out_ms - first.in_ms);
       const start = first.at_ms - overlapOf(a, track, first);
-      out.push({ track: track.id, after: FROM_BELOW, next: first.id, kind: tr.kind, ms: tr.ms, start, end: start + Math.min(tr.ms, srcLen), max: Math.min(MAX_TRANSITION_MS, srcLen) });
+      out.push({
+        track: track.id,
+        after: FROM_BELOW,
+        next: first.id,
+        kind: tr.kind,
+        ms: tr.ms,
+        start,
+        end: start + Math.min(tr.ms, srcLen),
+        max: Math.min(MAX_TRANSITION_MS, srcLen),
+      });
       continue;
     }
     const i = track.clips.findIndex((c) => c.id === tr.after_clip);
@@ -173,7 +200,16 @@ export function transitionBoxes(a: Advanced): TransitionBox[] {
       start = prevEnd - ms;
       end = next.at_ms - overlapOf(a, track, next) + ms;
     }
-    out.push({ track: track.id, after: prev.id, next: next.id, kind: tr.kind, ms: tr.ms, start, end, max: Math.min(MAX_TRANSITION_MS, srcLen) });
+    out.push({
+      track: track.id,
+      after: prev.id,
+      next: next.id,
+      kind: tr.kind,
+      ms: tr.ms,
+      start,
+      end,
+      max: Math.min(MAX_TRANSITION_MS, srcLen),
+    });
   }
   return out;
 }
@@ -194,7 +230,8 @@ export function joins(a: Advanced, tolMs: number): { track: number; after: numbe
       if (!prev || !next) continue;
       if (a.transitions.some((x) => x.track === t.id && x.after_clip === prev.id && x.kind !== 'cut')) continue;
       const prevEnd = prev.at_ms - overlapOf(a, t, prev) + clipLength(prev);
-      if (Math.abs(next.at_ms - prevEnd) <= tolMs) out.push({ track: t.id, after: prev.id, next: next.id, at: next.at_ms });
+      if (Math.abs(next.at_ms - prevEnd) <= tolMs)
+        out.push({ track: t.id, after: prev.id, next: next.id, at: next.at_ms });
     }
   }
   return out;

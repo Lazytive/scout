@@ -196,7 +196,13 @@
 </script>
 
 <div class="viewer" bind:this={box} use:observe>
-  <div class="frame" style:width="{frame.w}px" style:height="{frame.h}px" style:left="{frame.left}px" style:top="{frame.top}px">
+  <div
+    class="frame"
+    style:width="{frame.w}px"
+    style:height="{frame.h}px"
+    style:left="{frame.left}px"
+    style:top="{frame.top}px"
+  >
     {#if usable}
       <!-- svelte-ignore a11y_media_has_caption -->
       <video
@@ -207,7 +213,7 @@
         playsinline
         ontimeupdate={tick}
         onerror={() => (failed = true)}
-        onended={onended}
+        {onended}
       ></video>
     {:else if strip}
       <div

@@ -12,15 +12,7 @@ import {
   type CustomTheme,
   type Look,
 } from './appearance';
-import {
-  CommandError,
-  call,
-  onEvent,
-  pickThemeExport,
-  pickThemeFile,
-  pictureUrl,
-  setWindowTheme,
-} from './api';
+import { CommandError, call, onEvent, pickThemeExport, pickThemeFile, pictureUrl, setWindowTheme } from './api';
 import { describeEvent, type Tone } from './format';
 import { patchFor, splitError, type Settings } from './settings';
 import { editorEvent } from './editor.svelte';
@@ -86,10 +78,8 @@ export async function refresh(): Promise<void> {
   }
 }
 
-const lightQuery =
-  typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: light)') : null;
-const motionQuery =
-  typeof window !== 'undefined' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+const lightQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: light)') : null;
+const motionQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
 
 /** The settings' appearance, with defaults for anything missing. */
 export function appearance(): Appearance {
@@ -97,7 +87,6 @@ export function appearance(): Appearance {
 }
 
 let contrastRun = 0;
-
 
 /** Apply the look the settings ask for (System follows the OS) and check its contrast. */
 export function showTheme(): void {
@@ -163,7 +152,9 @@ async function themeCall<T>(cmd: string, args: unknown): Promise<T | null> {
 }
 
 /** A new custom theme from `from` (a copy) or a built-in, saved and put in use. */
-export async function createTheme(from: CustomTheme | { base: CustomTheme['base']; name: string }): Promise<CustomTheme | null> {
+export async function createTheme(
+  from: CustomTheme | { base: CustomTheme['base']; name: string },
+): Promise<CustomTheme | null> {
   const t: CustomTheme =
     'id' in from
       ? { ...structuredClone($state.snapshot(from) as CustomTheme), name: `${from.name} copy`.slice(0, 48) }
@@ -248,7 +239,8 @@ export async function save(path: string[], value: unknown): Promise<boolean> {
     return true;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    const { path: at, text } = e instanceof CommandError && e.code === 'bad_args' ? splitError(message) : { path: '', text: message };
+    const { path: at, text } =
+      e instanceof CommandError && e.code === 'bad_args' ? splitError(message) : { path: '', text: message };
     app.fieldErrors = { ...app.fieldErrors, [at || key]: text };
     return false;
   }

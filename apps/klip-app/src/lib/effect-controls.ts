@@ -85,7 +85,8 @@ export function stopAnimating(p: Project, clipId: number, group: Group, t: numbe
     // Neutral values need no key, unless another lane of the group has one.
     if (v !== neutral || (group === 'motion' && c.transform.length > 0)) setLane(p, clipId, l, 0, v);
   });
-  if (group === 'motion' && c.transform.every((k) => k.value.zoom === 1 && k.value.x === 0 && k.value.y === 0)) c.transform = [];
+  if (group === 'motion' && c.transform.every((k) => k.value.zoom === 1 && k.value.x === 0 && k.value.y === 0))
+    c.transform = [];
 }
 
 /** ◆: add a key at `t`, or remove the one there. */

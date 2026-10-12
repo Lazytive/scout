@@ -36,8 +36,22 @@ export function mockBackend() {
     last_error: null,
     hotkeys: [
       { id: 'clip.save.0', action: 'clip.save', keys: 'Alt+F10', secs: 30, trigger: 'ALT+F10', error: null },
-      { id: 'clip.save.1', action: 'clip.save', keys: 'Alt+Shift+F10', secs: 120, trigger: 'ALT+SHIFT+F10', error: null },
-      { id: 'session.toggle.0', action: 'session.toggle', keys: 'Alt+F9', secs: 0, trigger: 'ALT+F9', error: 'already used by another app' },
+      {
+        id: 'clip.save.1',
+        action: 'clip.save',
+        keys: 'Alt+Shift+F10',
+        secs: 120,
+        trigger: 'ALT+SHIFT+F10',
+        error: null,
+      },
+      {
+        id: 'session.toggle.0',
+        action: 'session.toggle',
+        keys: 'Alt+F9',
+        secs: 0,
+        trigger: 'ALT+F9',
+        error: 'already used by another app',
+      },
       { id: 'bookmark.add.0', action: 'bookmark.add', keys: 'Alt+F8', secs: 0, trigger: 'ALT+F8', error: null },
     ],
     settings_status: 'loaded',
@@ -66,11 +80,20 @@ export function mockBackend() {
   // The engine's defaults (klip-settings), so every settings page can be worked on.
   let settings: Settings = {
     version: 1,
-    app: { first_run_done: !new URLSearchParams(location.search).has('firstrun'), autostart: false, start_minimized: true, close_to_tray: true, control_channel: true },
+    app: {
+      first_run_done: !new URLSearchParams(location.search).has('firstrun'),
+      autostart: false,
+      start_minimized: true,
+      close_to_tray: true,
+      control_channel: true,
+    },
     clips: { folder: null, per_game_folders: true, recordings_folder: null },
     recording: {
       buffer_secs: 120,
-      quality: { preset: 'balanced', custom: { max_width: 1920, max_height: 1080, fps: 60, bitrate_kbps: 20000, codec: 'h264' } },
+      quality: {
+        preset: 'balanced',
+        custom: { max_width: 1920, max_height: 1080, fps: 60, bitrate_kbps: 20000, codec: 'h264' },
+      },
       show_cursor: true,
       encoder: null,
     },
@@ -92,11 +115,31 @@ export function mockBackend() {
       { action: 'bookmark.add', keys: 'Alt+F8', secs: 0 },
       { action: 'overlay.menu', keys: '', secs: 0 },
     ],
-    overlay: { mode: 'minimal', sound: true, notification: false, corner: 'top-right', seconds: 3, recording_dot: true },
+    overlay: {
+      mode: 'minimal',
+      sound: true,
+      notification: false,
+      corner: 'top-right',
+      seconds: 3,
+      recording_dot: true,
+    },
     storage: { cap_gb: 50, over_cap: 'trash', low_disk_gb: 10 },
     export: { discord_limit_mb: 10 },
-    appearance: { theme: 'system', custom_theme: null, accent: null, density: 'comfortable', text_size: 'default', motion: 'system' },
-    games: { buffer: 'games', detect_stores: true, user_games: [{ exe: 'MyIndieGame.exe', name: 'My Indie Game' }], never: [], profiles: {} },
+    appearance: {
+      theme: 'system',
+      custom_theme: null,
+      accent: null,
+      density: 'comfortable',
+      text_size: 'default',
+      motion: 'system',
+    },
+    games: {
+      buffer: 'games',
+      detect_stores: true,
+      user_games: [{ exe: 'MyIndieGame.exe', name: 'My Indie Game' }],
+      never: [],
+      profiles: {},
+    },
   };
 
   /** RFC 7396 merge patch. */
@@ -145,12 +188,17 @@ export function mockBackend() {
         case 'settings.set': {
           const next = merge(settings, args) as Settings;
           if (next.recording.buffer_secs < 5 || next.recording.buffer_secs > 1800) {
-            throw new CommandError('bad_args', `recording.buffer_secs: ${next.recording.buffer_secs} is outside 5–1800`);
+            throw new CommandError(
+              'bad_args',
+              `recording.buffer_secs: ${next.recording.buffer_secs} is outside 5–1800`,
+            );
           }
           const keys = next.hotkeys.map((h) => h.keys).filter(Boolean);
           const dup = keys.findIndex((k, i) => keys.indexOf(k) !== i);
           if (dup >= 0) {
-            const i = next.hotkeys.findIndex((h, j) => h.keys === keys[dup] && j > next.hotkeys.findIndex((x) => x.keys === keys[dup]));
+            const i = next.hotkeys.findIndex(
+              (h, j) => h.keys === keys[dup] && j > next.hotkeys.findIndex((x) => x.keys === keys[dup]),
+            );
             throw new CommandError('bad_args', `hotkeys[${i}].keys: ${keys[dup]} is already used by another action`);
           }
           settings = next;
@@ -159,9 +207,16 @@ export function mockBackend() {
         }
         case 'recording.estimate': {
           const d = (args ?? settings) as Settings;
-          const kbps = { low: 8000, balanced: 20000, high: 40000, custom: d.recording.quality.custom.bitrate_kbps }[d.recording.quality.preset];
+          const kbps = { low: 8000, balanced: 20000, high: 40000, custom: d.recording.quality.custom.bitrate_kbps }[
+            d.recording.quality.preset
+          ];
           const audio = d.audio.bitrate_kbps * (d.audio.mic ? 3 : 2);
-          return { bytes: ((kbps + audio) * 1000 / 8) * 1.5 * (d.recording.buffer_secs + 1), video_kbps: kbps, audio_kbps: audio, fps: 60 };
+          return {
+            bytes: (((kbps + audio) * 1000) / 8) * 1.5 * (d.recording.buffer_secs + 1),
+            video_kbps: kbps,
+            audio_kbps: audio,
+            fps: 60,
+          };
         }
         case 'encoders.list':
           await new Promise((r) => setTimeout(r, 900));
@@ -218,7 +273,14 @@ export function mockBackend() {
         case 'clip.save': {
           need();
           const last = (args as { last_ms?: number } | null)?.last_ms ?? 30_000;
-          const clip = { path: 'C:\\clips\\Scout_2026-10-09.mp4', duration_ms: last, bytes: last * 2600, frames: last * 0.06, save_ms: 9, bookmarks: 0 };
+          const clip = {
+            path: 'C:\\clips\\Scout_2026-10-09.mp4',
+            duration_ms: last,
+            bytes: last * 2600,
+            frames: last * 0.06,
+            save_ms: 9,
+            bookmarks: 0,
+          };
           emit({ event: 'clip_saved', game: game.name, window: game.window, clip });
           return clip;
         }

@@ -47,7 +47,14 @@ interface LibClip {
   name: string;
   bytes: number;
   thumbs: { poster: number | null; strip: number | null };
-  info: { codec: string | null; width: number; height: number; fps: number | null; duration_ms: number | null; audio_tracks: number } | null;
+  info: {
+    codec: string | null;
+    width: number;
+    height: number;
+    fps: number | null;
+    duration_ms: number | null;
+    audio_tracks: number;
+  } | null;
 }
 
 interface ExportEnd {
@@ -77,7 +84,14 @@ function mb(bytes: number): string {
 
 /** The report's text. */
 export function reportText(steps: Step[], info: SelfTestDeps['info'], startedIso: string, ms: number): string {
-  const icon: Record<StepStatus, string> = { pending: '…', running: '…', ok: 'OK  ', warn: 'WARN', fail: 'FAIL', skip: 'SKIP' };
+  const icon: Record<StepStatus, string> = {
+    pending: '…',
+    running: '…',
+    ok: 'OK  ',
+    warn: 'WARN',
+    fail: 'FAIL',
+    skip: 'SKIP',
+  };
   const lines = [
     `Scout self-test, ${startedIso}`,
     `Scout ${info.version}, full logs ${info.full_logs ? 'on' : 'off'}, bundled GStreamer ${info.bundled_gstreamer ? 'yes' : 'no'}`,
@@ -118,7 +132,9 @@ export async function runSelfTest(
   let original: { buffer: string; encoder: string | null } | null = null;
   try {
     const st = await deps.call<Record<string, unknown>>('engine.status');
-    const s = await deps.call<{ settings: { games: { buffer: string }; recording: { encoder: string | null; quality: unknown } } }>('settings.get');
+    const s = await deps.call<{
+      settings: { games: { buffer: string }; recording: { encoder: string | null; quality: unknown } };
+    }>('settings.get');
     original = { buffer: s.settings.games.buffer, encoder: s.settings.recording.encoder };
     let audio = '';
     try {
@@ -133,10 +149,14 @@ export async function runSelfTest(
       'ok',
       [
         `buffer mode ${original.buffer}, encoder ${original.encoder ?? 'automatic'}, quality ${JSON.stringify(s.settings.recording.quality)}`,
-        game ? `game running: ${game} (the recording test records it)` : 'no game running (the recording test records the screen)',
+        game
+          ? `game running: ${game} (the recording test records it)`
+          : 'no game running (the recording test records the screen)',
         st.last_error ? `last recorder error: ${String(st.last_error)}` : '',
         audio,
-      ].filter(Boolean).join('\n'),
+      ]
+        .filter(Boolean)
+        .join('\n'),
     );
   } catch (e) {
     set(system, 'fail', message(e));
@@ -152,7 +172,9 @@ export async function runSelfTest(
       const r = await deps.call<EncodersResult>('encoders.list', { codec, fresh: true });
       const tested = r.tested ?? [];
       const lines = tested.map((t) =>
-        t.ok ? `${t.element}: works (${t.probe_ms ?? '?'} ms)` : `${t.element}: ${t.ok === null ? 'not tested' : 'fails'}${t.error ? ` (${t.error})` : ''}`,
+        t.ok
+          ? `${t.element}: works (${t.probe_ms ?? '?'} ms)`
+          : `${t.element}: ${t.ok === null ? 'not tested' : 'fails'}${t.error ? ` (${t.error})` : ''}`,
       );
       if (i === 0) lines.unshift(`GPUs: ${r.gpus.map((g) => `${g.name} (${g.vendor})`).join(', ') || 'none found'}`);
       lines.push(`chosen: ${r.chosen ?? 'none'}${r.error ? ` (${r.error})` : ''}; ${r.took_ms} ms`);
@@ -251,7 +273,11 @@ export async function runSelfTest(
     set(frame, 'running');
     try {
       const t0 = deps.now();
-      const f = await deps.call<{ width: number; height: number; jpeg?: string }>('editor.frame', { path: c.path, out_ms: 1000, width: 640 });
+      const f = await deps.call<{ width: number; height: number; jpeg?: string }>('editor.frame', {
+        path: c.path,
+        out_ms: 1000,
+        width: 640,
+      });
       set(frame, f.jpeg ? 'ok' : 'fail', `${f.width}×${f.height} in ${deps.now() - t0} ms`);
     } catch (e) {
       set(frame, 'fail', message(e));

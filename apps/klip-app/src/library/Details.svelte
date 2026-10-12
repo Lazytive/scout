@@ -105,7 +105,9 @@
     {#if lib.renameError}<p class="error">{lib.renameError}</p>{/if}
     {#if discord.job?.key === one.key}
       <div class="job" role="status">
-        <span>Making a Discord copy{discord.job.pass > 1 ? ` (pass ${discord.job.pass})` : ''}… {discord.job.pct} %</span>
+        <span
+          >Making a Discord copy{discord.job.pass > 1 ? ` (pass ${discord.job.pass})` : ''}… {discord.job.pct} %</span
+        >
         <button class="flat" onclick={() => void cancelDiscord()}>Cancel</button>
         <div class="bar"><div style:width="{discord.job.pct}%"></div></div>
       </div>
@@ -116,8 +118,9 @@
       <button class="primary" onclick={() => openEditor(one)}>Edit</button>
       <button onclick={() => openClip(one)}>Open</button>
       <button onclick={() => openClip(one, true)}>Show in folder</button>
-      <button onclick={() => void copyClips([one])} title="Copy the file: paste it in Discord, a chat or a folder (Ctrl+C)"
-        >Copy</button
+      <button
+        onclick={() => void copyClips([one])}
+        title="Copy the file: paste it in Discord, a chat or a folder (Ctrl+C)">Copy</button
       >
       <button
         onclick={() => void discordClip(one)}
@@ -140,12 +143,7 @@
     </div>
 
     <h3>Tags</h3>
-    <ListEditor
-      items={one.tags}
-      label="Tags"
-      placeholder="Add a tag"
-      onchange={(tags) => setTags(one, tags)}
-    />
+    <ListEditor items={one.tags} label="Tags" placeholder="Add a tag" onchange={(tags) => setTags(one, tags)} />
     {#if lib.tagError}<p class="error">{lib.tagError}</p>{/if}
 
     <h3>Info</h3>
@@ -162,12 +160,19 @@
     </div>
   {:else if clips.length > 1}
     <p class="big">{clips.length} clips selected</p>
-    <p class="muted">{formatBytes(total)} · {formatDuration(clips.reduce((s, c) => s + (c.info?.duration_ms ?? 0), 0))}</p>
+    <p class="muted">
+      {formatBytes(total)} · {formatDuration(clips.reduce((s, c) => s + (c.info?.duration_ms ?? 0), 0))}
+    </p>
     <div class="actions column">
       <button onclick={() => void copyClips(clips)}>Copy {clips.length} files</button>
       <button onclick={() => setStar(clips, !allStarred)}>{allStarred ? 'Unstar all' : 'Star all'}</button>
-      <button class="danger" onclick={() => askDelete(clips.map((c) => c.key), false)}
-        >Move {clips.length} clips to the {trashName}…</button
+      <button
+        class="danger"
+        onclick={() =>
+          askDelete(
+            clips.map((c) => c.key),
+            false,
+          )}>Move {clips.length} clips to the {trashName}…</button
       >
     </div>
   {:else if lib.listing}

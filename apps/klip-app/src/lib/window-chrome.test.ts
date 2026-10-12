@@ -4,7 +4,15 @@ import { customChrome, dragsWindow } from './window-chrome';
 
 /** A stand-in for an element: `closest` finds a match when one of `inside` is in the selector list. */
 const at = (...inside: string[]) => ({
-  closest: (selector: string) => (inside.some((s) => selector.split(',').map((x) => x.trim()).includes(s)) ? {} : null),
+  closest: (selector: string) =>
+    inside.some((s) =>
+      selector
+        .split(',')
+        .map((x) => x.trim())
+        .includes(s),
+    )
+      ? {}
+      : null,
 });
 
 describe('own title bar (M11.3)', () => {

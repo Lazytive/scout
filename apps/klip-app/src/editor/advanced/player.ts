@@ -14,7 +14,15 @@
 
 import type { Source } from '../../lib/advanced';
 import type { Composition, Layer } from '../../lib/compose';
-import { layerActive, layerOpacityAt, layerRateAt, layerSourceMs, layerTransformAt, layerVolumeAt, visibleAt } from '../../lib/compose';
+import {
+  layerActive,
+  layerOpacityAt,
+  layerRateAt,
+  layerSourceMs,
+  layerTransformAt,
+  layerVolumeAt,
+  visibleAt,
+} from '../../lib/compose';
 import type { Placement } from '../../lib/keyframes';
 import { fitted, place, visible } from '../../lib/keyframes';
 import type { Volumes } from '../../lib/timeline';
@@ -131,7 +139,8 @@ export class Player {
     this.scratch = document.createElement('canvas');
     // Elements live in the document (some engines pause detached ones), out of sight.
     this.host = document.createElement('div');
-    this.host.style.cssText = 'position:fixed;left:-10px;top:-10px;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none';
+    this.host.style.cssText =
+      'position:fixed;left:-10px;top:-10px;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none';
     document.body.appendChild(this.host);
   }
 
@@ -535,7 +544,9 @@ export class Player {
         picRect = { x: 0, y: 0, w: native[0], h: native[1] };
       } else {
         native = [m.width, m.height];
-        picRect = main ? { x: crop.x, y: crop.y, w: crop.width, h: crop.height } : { x: 0, y: 0, w: m.width, h: m.height };
+        picRect = main
+          ? { x: crop.x, y: crop.y, w: crop.width, h: crop.height }
+          : { x: 0, y: 0, w: m.width, h: m.height };
         const s = this.slots.get(slotKey(l));
         const v = s?.video;
         if (v && v.readyState >= 2 && v.videoWidth > 0) {
@@ -562,7 +573,17 @@ export class Player {
       const [s, d] = vis;
       ctx.globalAlpha = layerOpacityAt(l, t);
       if (ctx.globalAlpha <= 0) continue;
-      ctx.drawImage(pic, (picRect.x + s.x) * kx, (picRect.y + s.y) * ky, s.width * kx, s.height * ky, d.x, d.y, d.width, d.height);
+      ctx.drawImage(
+        pic,
+        (picRect.x + s.x) * kx,
+        (picRect.y + s.y) * ky,
+        s.width * kx,
+        s.height * ky,
+        d.x,
+        d.y,
+        d.width,
+        d.height,
+      );
     }
     ctx.globalAlpha = 1;
     if (graded) {

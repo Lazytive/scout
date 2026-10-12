@@ -108,7 +108,8 @@ describe('placing clips', () => {
     expect(second).toBeGreaterThan(id);
     const after = compose(p, SOURCE, info);
     expect(after.duration_ms).toBe(before.duration_ms);
-    const top = (c: typeof before, t: number) => c.layers.filter((l) => l.track !== 0).find((l) => t >= l.at_ms && t < l.end_ms)!;
+    const top = (c: typeof before, t: number) =>
+      c.layers.filter((l) => l.track !== 0).find((l) => t >= l.at_ms && t < l.end_ms)!;
     for (let t = 500; t < before.duration_ms; t += 50) {
       const a = top(before, t);
       const b = top(after, t);
@@ -168,7 +169,9 @@ describe('keys, speed, transitions', () => {
     expect(readAdvanced(p).transitions).toEqual([{ track: 1, after_clip: a, kind: 'crossfade', ms: 500 }]);
     // The timeline draws the clip where compose places it: pulled under the one before.
     const b = readAdvanced(p).tracks[0]!.clips[1]!;
-    const layer = compose(p, SOURCE, [['b', { ...SOURCE, duration_ms: 4000 }]]).layers.find((l) => l.track !== 0 && l.src_out_ms === 4000 && l.at_ms > 0)!;
+    const layer = compose(p, SOURCE, [['b', { ...SOURCE, duration_ms: 4000 }]]).layers.find(
+      (l) => l.track !== 0 && l.src_out_ms === 4000 && l.at_ms > 0,
+    )!;
     expect(layer.at_ms).toBe(b.at_ms - overlapOf(readAdvanced(p), readAdvanced(p).tracks[0]!, b));
     expect(overlapOf(readAdvanced(p), readAdvanced(p).tracks[0]!, b)).toBe(500);
     setTransition(p, a, 'cut', 0);
@@ -256,21 +259,30 @@ describe('selections, razor and rolling (M9.8)', () => {
     // Right: a's source ends at 3200 (srcMax), so b gives back what a couldn't take.
     rollCut(p, a, 5000, 3200);
     expect([at(p, a).out_ms, clipEnd(at(p, a)), at(p, b).at_ms]).toEqual([3200, 2200, 2200]);
-    expect(readAdvanced(p).transitions).toEqual([{ track: findClip(readAdvanced(p), a)!.track.id, after_clip: a, kind: 'dip', ms: 400 }]);
+    expect(readAdvanced(p).transitions).toEqual([
+      { track: findClip(readAdvanced(p), a)!.track.id, after_clip: a, kind: 'dip', ms: 400 },
+    ]);
   });
 });
 
-describe('track locks and Main\'s switches (M9.8.10–11)', () => {
+describe("track locks and Main's switches (M9.8.10–11)", () => {
   it('reads a lock and the switches, off when missing or not a boolean', () => {
     const p = project();
-    p.advanced = { tracks: [{ id: 1, kind: 'video', name: 'V', locked: true, clips: [] }, { id: 2, kind: 'audio', name: 'A', locked: 'yes', clips: [] }], main_muted: true, main_hidden: 1 };
+    p.advanced = {
+      tracks: [
+        { id: 1, kind: 'video', name: 'V', locked: true, clips: [] },
+        { id: 2, kind: 'audio', name: 'A', locked: 'yes', clips: [] },
+      ],
+      main_muted: true,
+      main_hidden: 1,
+    };
     const a = readAdvanced(p);
     expect(a.tracks.map((t) => t.locked)).toEqual([true, false]);
     expect([a.main_muted, a.main_hidden]).toEqual([true, false]);
     expect(readAdvanced(project()).main_muted).toBe(false);
   });
 
-  it('locks a track (not V1, whose lock is the editor\'s) and keeps its clips out of reach', () => {
+  it("locks a track (not V1, whose lock is the editor's) and keeps its clips out of reach", () => {
     const p = project();
     const a1 = addClip(p, 'video', lib('a'), 0, 4000, 0);
     const b1 = addClip(p, 'audio', { kind: 'file', path: 'x.mp3' }, 0, 4000, 0);

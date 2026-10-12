@@ -111,7 +111,15 @@ export interface Advanced {
 export const DEFAULT_DUCKING: Ducking = { enabled: true, duck_db: -12, attack_ms: 100, release_ms: 600 };
 
 export function emptyAdvanced(): Advanced {
-  return { tracks: [], transitions: [], colour: { ...IDENTITY_COLOUR }, markers: [], ducking: { ...DEFAULT_DUCKING }, main_muted: false, main_hidden: false };
+  return {
+    tracks: [],
+    transitions: [],
+    colour: { ...IDENTITY_COLOUR },
+    markers: [],
+    ducking: { ...DEFAULT_DUCKING },
+    main_muted: false,
+    main_hidden: false,
+  };
 }
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -268,9 +276,19 @@ function sortClips(track: Track): void {
 const TRACK_NAMES: Record<TrackKind, string> = { video: 'Video', text: 'Text', audio: 'Sound', music: 'Music' };
 
 function newTrack(a: Advanced, kind: TrackKind, base = TRACK_NAMES[kind]): Track {
-  if (a.tracks.length >= MAX_TRACKS) throw new EditError('too_many_pieces', `A project has at most ${MAX_TRACKS} tracks`);
+  if (a.tracks.length >= MAX_TRACKS)
+    throw new EditError('too_many_pieces', `A project has at most ${MAX_TRACKS} tracks`);
   const n = a.tracks.filter((t) => t.name.startsWith(base)).length + 1;
-  const track: Track = { id: nextTrackId(a), kind, name: n === 1 ? base : `${base} ${n}`, muted: false, hidden: false, main: false, locked: false, clips: [] };
+  const track: Track = {
+    id: nextTrackId(a),
+    kind,
+    name: n === 1 ? base : `${base} ${n}`,
+    muted: false,
+    hidden: false,
+    main: false,
+    locked: false,
+    clips: [],
+  };
   a.tracks.push(track);
   return track;
 }
@@ -287,7 +305,15 @@ function dropEmptyTracks(a: Advanced): void {
  * Place `source` (`inMs..outMs` of it) at `atMs`: on `trackId` when given, else on the
  * first track of `kind` with room, else on a new track. Returns the clip's id.
  */
-export function addClip(p: Project, kind: TrackKind, source: Source, inMs: number, outMs: number, atMs: number, trackId?: number): number {
+export function addClip(
+  p: Project,
+  kind: TrackKind,
+  source: Source,
+  inMs: number,
+  outMs: number,
+  atMs: number,
+  trackId?: number,
+): number {
   const a = advancedOf(p);
   if (!fitsTrack(source, kind)) throw new EditError('bad_range', 'That doesn’t go on this kind of track');
   const start = ms(inMs);
@@ -296,14 +322,28 @@ export function addClip(p: Project, kind: TrackKind, source: Source, inMs: numbe
   const at = ms(atMs);
   const len = end - start;
   let track = trackId === undefined ? undefined : a.tracks.find((t) => t.id === trackId);
-  if (track && (track.kind !== kind || track.locked || !fitsOn(source, track) || overlaps(track, at, at + len, null))) track = undefined;
+  if (track && (track.kind !== kind || track.locked || !fitsOn(source, track) || overlaps(track, at, at + len, null)))
+    track = undefined;
   // Pictures go on picture tracks (over the video), videos on video tracks.
   const picture = source.kind === 'image';
   const sameSort = (t: Track) => t.clips.length > 0 && t.clips.every((c) => (c.source.kind === 'image') === picture);
-  track ??= a.tracks.find((t) => t.kind === kind && !t.main && !t.locked && sameSort(t) && !overlaps(t, at, at + len, null)) ?? newTrack(a, kind, picture ? 'Stickers' : undefined);
-  if (track.clips.length >= MAX_CLIPS) throw new EditError('too_many_pieces', `A track holds at most ${MAX_CLIPS} clips`);
+  track ??=
+    a.tracks.find((t) => t.kind === kind && !t.main && !t.locked && sameSort(t) && !overlaps(t, at, at + len, null)) ??
+    newTrack(a, kind, picture ? 'Stickers' : undefined);
+  if (track.clips.length >= MAX_CLIPS)
+    throw new EditError('too_many_pieces', `A track holds at most ${MAX_CLIPS} clips`);
   const id = nextClipId(a);
-  track.clips.push({ id, source, in_ms: start, out_ms: end, at_ms: at, transform: [], opacity: [], volume: [], speed: [] });
+  track.clips.push({
+    id,
+    source,
+    in_ms: start,
+    out_ms: end,
+    at_ms: at,
+    transform: [],
+    opacity: [],
+    volume: [],
+    speed: [],
+  });
   sortClips(track);
   return id;
 }
@@ -330,7 +370,8 @@ export function moveClip(p: Project, clipId: number, atMs: number, trackId?: num
   clip.at_ms = at;
   if (target !== track) {
     track.clips = track.clips.filter((c) => c.id !== clip.id);
-    if (target.clips.length >= MAX_CLIPS) throw new EditError('too_many_pieces', `A track holds at most ${MAX_CLIPS} clips`);
+    if (target.clips.length >= MAX_CLIPS)
+      throw new EditError('too_many_pieces', `A track holds at most ${MAX_CLIPS} clips`);
     target.clips.push(clip);
     a.transitions = a.transitions.filter((t) => !(t.track === track.id && t.after_clip === clip.id));
   }
@@ -339,7 +380,12 @@ export function moveClip(p: Project, clipId: number, atMs: number, trackId?: num
 }
 
 /** Keys of one lane moved by `-shift` ms of clip time, cut to `0..len`, with the values at the cut ends kept. */
-function shiftKeys<T extends { at_ms: number }>(keys: T[], shift: number, len: number, at: (t: number) => T | null): T[] {
+function shiftKeys<T extends { at_ms: number }>(
+  keys: T[],
+  shift: number,
+  len: number,
+  at: (t: number) => T | null,
+): T[] {
   if (keys.length === 0) return keys;
   const out: T[] = [];
   const first = at(shift);
@@ -404,7 +450,9 @@ export function trimClipStart(p: Project, clipId: number, atMs: number): void {
   const end = clipEnd(clip);
   let at = Math.min(ms(atMs), end - 1);
   // Not over the previous clip of the track.
-  const prev = track.clips.filter((c) => c.id !== clip.id && clipEnd(c) <= clip.at_ms).reduce((m, c) => Math.max(m, clipEnd(c)), 0);
+  const prev = track.clips
+    .filter((c) => c.id !== clip.id && clipEnd(c) <= clip.at_ms)
+    .reduce((m, c) => Math.max(m, clipEnd(c)), 0);
   at = Math.max(at, prev);
   const delta = at - clip.at_ms;
   if (delta === 0) return;
@@ -448,7 +496,9 @@ export function trimClipEnd(p: Project, clipId: number, endMs: number, srcMax: n
   const found = findClip(a, clipId);
   if (!found) return;
   const { clip, track } = found;
-  const next = track.clips.filter((c) => c.id !== clip.id && c.at_ms >= clipEnd(clip)).reduce((m, c) => Math.min(m, c.at_ms), MAX_SOURCE_MS);
+  const next = track.clips
+    .filter((c) => c.id !== clip.id && c.at_ms >= clipEnd(clip))
+    .reduce((m, c) => Math.min(m, c.at_ms), MAX_SOURCE_MS);
   const end = Math.min(Math.max(ms(endMs), clip.at_ms + 1), next);
   const len = end - clip.at_ms;
   if (isPicture(clip)) clip.out_ms = clip.in_ms + len;
@@ -472,10 +522,13 @@ export function splitClip(p: Project, clipId: number, atMs: number): number | nu
   const local = Math.round(atMs) - clip.at_ms;
   const len = clipLength(clip);
   if (local <= 0 || local >= len) throw new EditError('bad_range', 'Put the playhead inside the clip to split it');
-  if (track.clips.length >= MAX_CLIPS) throw new EditError('too_many_pieces', `A track holds at most ${MAX_CLIPS} clips`);
+  if (track.clips.length >= MAX_CLIPS)
+    throw new EditError('too_many_pieces', `A track holds at most ${MAX_CLIPS} clips`);
   const second: PlacedClip = JSON.parse(JSON.stringify(clip)) as PlacedClip;
   second.id = nextClipId(a);
-  const srcCut = isPicture(clip) ? clip.in_ms + local : Math.min(clip.out_ms - 1, clip.in_ms + sourceOffset(clip.speed, local));
+  const srcCut = isPicture(clip)
+    ? clip.in_ms + local
+    : Math.min(clip.out_ms - 1, clip.in_ms + sourceOffset(clip.speed, local));
   second.in_ms = srcCut;
   second.at_ms = clip.at_ms + local;
   moveLanes(second, local, len - local);
@@ -510,7 +563,9 @@ export function removeClip(p: Project, clipId: number): void {
   const { track, index } = found;
   const prev = track.clips[index - 1];
   track.clips.splice(index, 1);
-  a.transitions = a.transitions.filter((t) => !(t.track === track.id && (t.after_clip === clipId || t.after_clip === prev?.id)));
+  a.transitions = a.transitions.filter(
+    (t) => !(t.track === track.id && (t.after_clip === clipId || t.after_clip === prev?.id)),
+  );
   dropEmptyTracks(a);
 }
 
@@ -530,7 +585,8 @@ export function moveClips(p: Project, ids: number[], deltaMs: number): void {
   for (const { track, clip } of found) {
     const at = clip.at_ms + d;
     const end = at + clipLength(clip);
-    if (track.clips.some((c) => !moving.has(c.id) && at < clipEnd(c) && end > c.at_ms)) throw new EditError('bad_range', 'Clips can’t overlap on one track');
+    if (track.clips.some((c) => !moving.has(c.id) && at < clipEnd(c) && end > c.at_ms))
+      throw new EditError('bad_range', 'Clips can’t overlap on one track');
   }
   for (const { clip } of found) clip.at_ms = ms(clip.at_ms + d);
   for (const t of a.tracks) sortClips(t);
@@ -665,7 +721,8 @@ export function setLane(p: Project, clipId: number, lane: Lane, t: number, value
     const current = transformAt(clip.transform, at) ?? { zoom: 1, x: 0, y: 0 };
     const existing = clip.transform.find((k) => k.at_ms === at);
     if (existing) existing.value = { ...existing.value, [lane]: v };
-    else clip.transform = tidy([...clip.transform, { at_ms: at, value: { ...current, [lane]: v }, ease }], MAX_KEYFRAMES);
+    else
+      clip.transform = tidy([...clip.transform, { at_ms: at, value: { ...current, [lane]: v }, ease }], MAX_KEYFRAMES);
     return;
   }
   if (clip[lane].length === 0) {
@@ -771,7 +828,8 @@ export function setTransition(p: Project, clipId: number, kind: TransitionKind, 
   const trackId = found.track.id;
   a.transitions = a.transitions.filter((t) => !(t.track === trackId && t.after_clip === clipId));
   if (kind === 'cut') return;
-  if (!nextOnTrack(a, clipId)) throw new EditError('bad_range', 'A transition needs a clip after this one on the track');
+  if (!nextOnTrack(a, clipId))
+    throw new EditError('bad_range', 'A transition needs a clip after this one on the track');
   if (a.transitions.length >= MAX_TRANSITIONS) throw new EditError('too_many_pieces', 'Too many transitions');
   a.transitions.push({ track: trackId, after_clip: clipId, kind, ms: Math.round(clamp(msLen, 1, MAX_TRANSITION_MS)) });
 }
@@ -788,7 +846,9 @@ export function setTransitionAt(p: Project, trackId: number, after: number, kind
 
 /** The crossfade into the track's first clip from below, if any. */
 export function fromBelow(a: Advanced, trackId: number): Transition | null {
-  return a.transitions.find((t) => t.track === trackId && t.after_clip === FROM_BELOW && t.kind === 'crossfade') ?? null;
+  return (
+    a.transitions.find((t) => t.track === trackId && t.after_clip === FROM_BELOW && t.kind === 'crossfade') ?? null
+  );
 }
 
 /** Crossfade into `clipId` (the first clip of its track) from what is below it; `msLen` null removes it. */
@@ -801,7 +861,12 @@ export function setFromBelow(p: Project, clipId: number, msLen: number | null): 
   if (msLen === null) return;
   if (found.index !== 0) throw new EditError('bad_range', 'Only the first clip of a track can fade in from below');
   if (a.transitions.length >= MAX_TRANSITIONS) throw new EditError('too_many_pieces', 'Too many transitions');
-  a.transitions.push({ track: trackId, after_clip: FROM_BELOW, kind: 'crossfade', ms: Math.round(clamp(msLen, 1, MAX_TRANSITION_MS)) });
+  a.transitions.push({
+    track: trackId,
+    after_clip: FROM_BELOW,
+    kind: 'crossfade',
+    ms: Math.round(clamp(msLen, 1, MAX_TRANSITION_MS)),
+  });
 }
 
 export function addMarker(p: Project, atMs: number, title: string): void {
@@ -829,7 +894,11 @@ export function removeMarker(p: Project, i: number): void {
 export function setColour(p: Project, patch: Partial<Colour>): void {
   const a = advancedOf(p);
   const c = { ...a.colour, ...patch };
-  a.colour = { brightness: clamp(c.brightness, -1, 1), contrast: clamp(c.contrast, 0, 2), saturation: clamp(c.saturation, 0, 2) };
+  a.colour = {
+    brightness: clamp(c.brightness, -1, 1),
+    contrast: clamp(c.contrast, 0, 2),
+    saturation: clamp(c.saturation, 0, 2),
+  };
 }
 
 export function setDucking(p: Project, patch: Partial<Ducking>): void {
@@ -843,7 +912,11 @@ export function setDucking(p: Project, patch: Partial<Ducking>): void {
   };
 }
 
-export function setTrack(p: Project, trackId: number, patch: Partial<Pick<Track, 'name' | 'muted' | 'hidden' | 'locked'>>): void {
+export function setTrack(
+  p: Project,
+  trackId: number,
+  patch: Partial<Pick<Track, 'name' | 'muted' | 'hidden' | 'locked'>>,
+): void {
   const t = advancedOf(p).tracks.find((x) => x.id === trackId);
   if (!t) return;
   if (patch.name !== undefined) t.name = cleanTitle(patch.name);
@@ -925,7 +998,8 @@ export function arrangeMain(p: Project): number[] {
   const a = advancedOf(p);
   const have = mainTrackOf(a);
   if (have) return have.clips.map((c) => c.id);
-  if (a.tracks.length >= MAX_TRACKS) throw new EditError('too_many_pieces', `A project has at most ${MAX_TRACKS} tracks`);
+  if (a.tracks.length >= MAX_TRACKS)
+    throw new EditError('too_many_pieces', `A project has at most ${MAX_TRACKS} tracks`);
   const first = nextClipId(a);
   const clips: PlacedClip[] = segments(p).map((s, i) => ({
     id: first + i,
@@ -939,7 +1013,16 @@ export function arrangeMain(p: Project): number[] {
     speed: s.speed === 1 ? [] : [{ at_ms: 0, rate_pct: s.speed === 0.5 ? 50 : 200 }],
   }));
   // Main's switches go with it (back again in `useSimpleCut`).
-  a.tracks.unshift({ id: nextTrackId(a), kind: 'video', name: 'Main', muted: a.main_muted, hidden: a.main_hidden, main: true, locked: false, clips });
+  a.tracks.unshift({
+    id: nextTrackId(a),
+    kind: 'video',
+    name: 'Main',
+    muted: a.main_muted,
+    hidden: a.main_hidden,
+    main: true,
+    locked: false,
+    clips,
+  });
   a.main_muted = false;
   a.main_hidden = false;
   return clips.map((c) => c.id);

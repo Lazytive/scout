@@ -49,7 +49,18 @@
     trimClipStart,
   } from '../../lib/advanced';
   import type { Composition } from '../../lib/compose';
-  import { MAIN_LOCKED, TRACK_LOCKED, beginGesture, ed, edit, endGesture, gesture, seek, selectClips, selectedClips } from '../../lib/editor.svelte';
+  import {
+    MAIN_LOCKED,
+    TRACK_LOCKED,
+    beginGesture,
+    ed,
+    edit,
+    endGesture,
+    gesture,
+    seek,
+    selectClips,
+    selectedClips,
+  } from '../../lib/editor.svelte';
   import { formatTimecode } from '../../lib/format';
   import type { Project } from '../../lib/timeline';
   import { segments, split } from '../../lib/timeline';
@@ -134,7 +145,14 @@
     ...joins(adv, Math.max(1, (2 / pps) * 1000)),
     // A video track's first clip can crossfade in from whatever is below it.
     ...adv.tracks
-      .filter((t) => (t.kind === 'video' || t.kind === 'text') && !t.main && t.clips[0] && t.clips[0].at_ms > 0 && !fromBelow(adv, t.id))
+      .filter(
+        (t) =>
+          (t.kind === 'video' || t.kind === 'text') &&
+          !t.main &&
+          t.clips[0] &&
+          t.clips[0].at_ms > 0 &&
+          !fromBelow(adv, t.id),
+      )
       .map((t) => ({ track: t.id, after: FROM_BELOW, next: t.clips[0]!.id, at: t.clips[0]!.at_ms })),
   ]);
   const lastVideo = $derived(rows.findIndex((r) => r.kind === 'main' || (r.kind === 'track' && r.track.main)));
@@ -405,7 +423,10 @@
         gesture((p) => moveClips(p, d.group, at - d.at));
         return;
       }
-      const target = Math.abs(e.clientY - d.y) > rowH({ kind: 'main', label: '', group: 'video' }) / 2 ? trackUnder(e, d.clip) : null;
+      const target =
+        Math.abs(e.clientY - d.y) > rowH({ kind: 'main', label: '', group: 'video' }) / 2
+          ? trackUnder(e, d.clip)
+          : null;
       dropTrack = target;
       gesture((p) => moveClip(p, d.clip.id, at, target === null ? undefined : target));
     } else if (d.zone === 'start') {
@@ -430,7 +451,16 @@
   }
 
   // Marquee: a drag over empty lane space selects the clips it touches.
-  type Marquee = { x: number; y: number; x1: number; y1: number; additive: boolean; base: number[]; lane: DOMRect; started: boolean };
+  type Marquee = {
+    x: number;
+    y: number;
+    x1: number;
+    y1: number;
+    additive: boolean;
+    base: number[];
+    lane: DOMRect;
+    started: boolean;
+  };
   let marquee = $state<Marquee | null>(null);
 
   function laneDown(e: PointerEvent, main: boolean) {
@@ -438,11 +468,21 @@
     const lane = (e.currentTarget as HTMLElement).getBoundingClientRect();
     if (ed.tool === 'razor') {
       // The razor cuts Main where clicked (Shift: every track); empty space does nothing.
-      if (main || e.shiftKey) razor(snap(msAt(e.clientX - lane.left), snapTargets(null), e.altKey), e.shiftKey ? 'all' : 'main');
+      if (main || e.shiftKey)
+        razor(snap(msAt(e.clientX - lane.left), snapTargets(null), e.altKey), e.shiftKey ? 'all' : 'main');
       return;
     }
     const additive = e.shiftKey || e.ctrlKey || e.metaKey;
-    marquee = { x: e.clientX, y: e.clientY, x1: e.clientX, y1: e.clientY, additive, base: additive ? selectedClips() : [], lane, started: false };
+    marquee = {
+      x: e.clientX,
+      y: e.clientY,
+      x1: e.clientX,
+      y1: e.clientY,
+      additive,
+      base: additive ? selectedClips() : [],
+      lane,
+      started: false,
+    };
     follow(marqueeMove, marqueeUp);
   }
 
@@ -500,18 +540,35 @@
     const ids = what === 'all' ? unlockedClipIds(adv, ed.mainLocked) : what === 'main' ? mainIds : [what];
     const clips = cutsAt(adv, ids, t);
     // Normal mode's cut, while V1 isn't arranged.
-    const main = !mt && !ed.mainLocked && (what === 'main' || what === 'all') && segs.some((s) => t > s.out_start_ms && t < s.out_end_ms);
+    const main =
+      !mt &&
+      !ed.mainLocked &&
+      (what === 'main' || what === 'all') &&
+      segs.some((s) => t > s.out_start_ms && t < s.out_end_ms);
     if (clips.length === 0 && !main) return;
-    edit((p) => {
-      splitClipsAt(p, ids, t);
-      if (main) split(p, t);
-    }, what === 'all' ? 'Cut every track' : what === 'main' ? 'Cut Main' : 'Cut a clip');
+    edit(
+      (p) => {
+        splitClipsAt(p, ids, t);
+        if (main) split(p, t);
+      },
+      what === 'all' ? 'Cut every track' : what === 'main' ? 'Cut Main' : 'Cut a clip',
+    );
   }
 
   // ---- Main (V1/A1): locked by default. Unlocked, a piece of the simple cut selects;
   // the first drag (move or trim) arranges V1 (M9.8.9): the cut's pieces become clips of
   // a main track that move like any clip. ----
-  type MPress = { i: number; zone: 'move' | 'start' | 'end'; x: number; y: number; at: number; end: number; targets: number[]; started: boolean; id: number | null };
+  type MPress = {
+    i: number;
+    zone: 'move' | 'start' | 'end';
+    x: number;
+    y: number;
+    at: number;
+    end: number;
+    targets: number[];
+    started: boolean;
+    id: number | null;
+  };
   let mpress: MPress | null = null;
   const MAIN_SOURCE = { source: { kind: 'main' }, out_ms: 0 } as PlacedClip;
 
@@ -525,7 +582,17 @@
     ed.mainSel = i;
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const zone = clipZone(e.clientX - r.left, r.width);
-    mpress = { i, zone, x: e.clientX, y: e.clientY, at: s.out_start_ms, end: s.out_end_ms, targets: snapTargets(null), started: false, id: null };
+    mpress = {
+      i,
+      zone,
+      x: e.clientX,
+      y: e.clientY,
+      at: s.out_start_ms,
+      end: s.out_end_ms,
+      targets: snapTargets(null),
+      started: false,
+      id: null,
+    };
     follow(mainMove, mainUp);
   }
   function mainMove(e: PointerEvent) {
@@ -537,13 +604,22 @@
       beginGesture();
     }
     const dms = ((e.clientX - m.x) / pps) * 1000;
-    const target = m.zone === 'move' && Math.abs(e.clientY - m.y) > rowH({ kind: 'main', label: '', group: 'video' }) / 2 ? trackUnder(e, MAIN_SOURCE) : null;
+    const target =
+      m.zone === 'move' && Math.abs(e.clientY - m.y) > rowH({ kind: 'main', label: '', group: 'video' }) / 2
+        ? trackUnder(e, MAIN_SOURCE)
+        : null;
     dropTrack = target;
     gesture((p) => {
       const id = arrangeMain(p)[m.i];
       if (id === undefined) return;
       m.id = id;
-      if (m.zone === 'move') moveClip(p, id, Math.max(0, snapMove(Math.round(m.at + dms), m.end - m.at, m.targets, e.altKey)), target ?? undefined);
+      if (m.zone === 'move')
+        moveClip(
+          p,
+          id,
+          Math.max(0, snapMove(Math.round(m.at + dms), m.end - m.at, m.targets, e.altKey)),
+          target ?? undefined,
+        );
       else if (m.zone === 'start') trimClipStart(p, id, snap(Math.round(m.at + dms), m.targets, e.altKey));
       else trimClipEnd(p, id, snap(Math.round(m.end + dms), m.targets, e.altKey), sourceMs(MAIN_SOURCE));
     });
@@ -567,7 +643,15 @@
 
   // ---- transitions ----
   const KIND_LABEL: Record<TransitionKind, string> = { cut: 'Cut', crossfade: 'Crossfade', dip: 'Dip to black' };
-  type TPress = { box: TransitionBox; edge: 'start' | 'end' | 'middle'; x: number; y: number; cut: number; targets: number[]; started: boolean };
+  type TPress = {
+    box: TransitionBox;
+    edge: 'start' | 'end' | 'middle';
+    x: number;
+    y: number;
+    cut: number;
+    targets: number[];
+    started: boolean;
+  };
   let tpress: TPress | null = null;
 
   function selectTransition(b: TransitionBox) {
@@ -583,7 +667,15 @@
     // The middle of a transition from below has no cut to roll.
     if (edge === 'middle' && b.after === FROM_BELOW) return;
     const next = findClip(adv, b.next)?.clip;
-    tpress = { box: b, edge, x: e.clientX, y: e.clientY, cut: next?.at_ms ?? 0, targets: snapTargets([b.after, b.next]), started: false };
+    tpress = {
+      box: b,
+      edge,
+      x: e.clientX,
+      y: e.clientY,
+      cut: next?.at_ms ?? 0,
+      targets: snapTargets([b.after, b.next]),
+      started: false,
+    };
     follow(transMove, transUp);
   }
   function transMove(e: PointerEvent) {
@@ -623,12 +715,17 @@
   }
   function setKind(b: TransitionBox, kind: TransitionKind) {
     menu = null;
-    edit((p) => setTransitionAt(p, b.track, b.after, kind, b.ms), kind === 'cut' ? 'Remove a transition' : KIND_LABEL[kind]);
+    edit(
+      (p) => setTransitionAt(p, b.track, b.after, kind, b.ms),
+      kind === 'cut' ? 'Remove a transition' : KIND_LABEL[kind],
+    );
     if (kind === 'cut') ed.transitionSel = null;
   }
   function addCrossfade(j: { track: number; after: number; next: number }) {
     const change = (p: Project) =>
-      j.after === FROM_BELOW ? setFromBelow(p, j.next, DEFAULT_TRANSITION_MS) : setTransitionAt(p, j.track, j.after, 'crossfade', DEFAULT_TRANSITION_MS);
+      j.after === FROM_BELOW
+        ? setFromBelow(p, j.next, DEFAULT_TRANSITION_MS)
+        : setTransitionAt(p, j.track, j.after, 'crossfade', DEFAULT_TRANSITION_MS);
     if (edit(change, j.after === FROM_BELOW ? 'Crossfade in from below' : 'Add a crossfade')) {
       selectClips([]);
       ed.transitionSel = { track: j.track, after: j.after };
@@ -731,7 +828,13 @@
   });
 
   const rowKey = (r: TimelineRow) => (r.kind === 'track' ? `t${r.track.id}` : r.kind);
-  const pressGroup = $derived(press?.started && press.zone === 'move' ? (press.track.kind === 'audio' || press.track.kind === 'music' ? 'sound' : 'video') : null);
+  const pressGroup = $derived(
+    press?.started && press.zone === 'move'
+      ? press.track.kind === 'audio' || press.track.kind === 'music'
+        ? 'sound'
+        : 'video'
+      : null,
+  );
 </script>
 
 <svelte:window
@@ -744,27 +847,64 @@
 />
 
 <div class="timeline" class:razor={ed.tool === 'razor'}>
-  <div class="scroll" id="timeline-scroll" bind:this={scroller} use:observe use:wheelZoom onscroll={(e) => (scrollX = (e.currentTarget as HTMLElement).scrollLeft)}>
+  <div
+    class="scroll"
+    id="timeline-scroll"
+    bind:this={scroller}
+    use:observe
+    use:wheelZoom
+    onscroll={(e) => (scrollX = (e.currentTarget as HTMLElement).scrollLeft)}
+  >
     <div class="grid" style:width="{HEADER_W + contentW}px">
       <div class="top" style:height="{TOP_H}px">
         <div class="corner" style:width="{HEADER_W}px">
           <span class="tc mono" title="Playhead">{formatTimecode(ed.playhead)}</span>
           <div class="tools">
-            <button class="tool" class:on={ed.tool === 'select'} aria-pressed={ed.tool === 'select'} title="Selection tool (V)" onclick={() => (ed.tool = 'select')}>
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M4 1.8v11.4l2.9-2.7 1.9 4.2 1.8-.8-1.9-4.1 3.9-.3z" /></svg>
+            <button
+              class="tool"
+              class:on={ed.tool === 'select'}
+              aria-pressed={ed.tool === 'select'}
+              title="Selection tool (V)"
+              onclick={() => (ed.tool = 'select')}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true"
+                ><path class="fill" d="M4 1.8v11.4l2.9-2.7 1.9 4.2 1.8-.8-1.9-4.1 3.9-.3z" /></svg
+              >
             </button>
-            <button class="tool" class:on={ed.tool === 'razor'} aria-pressed={ed.tool === 'razor'} title="Razor tool (C): click a clip to cut it there; Shift cuts every track" onclick={() => (ed.tool = 'razor')}>
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13" /><rect class="fill" x="4.5" y="3" width="7" height="4.5" rx="1" /></svg>
+            <button
+              class="tool"
+              class:on={ed.tool === 'razor'}
+              aria-pressed={ed.tool === 'razor'}
+              title="Razor tool (C): click a clip to cut it there; Shift cuts every track"
+              onclick={() => (ed.tool = 'razor')}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true"
+                ><path d="M8 1.5v13" /><rect class="fill" x="4.5" y="3" width="7" height="4.5" rx="1" /></svg
+              >
             </button>
             <span class="tool-gap"></span>
-            <button class="tool" class:on={snapping} aria-pressed={snapping} title="Snap to the playhead, clip edges and markers (hold Alt to not snap)" onclick={() => (snapping = !snapping)}>
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v5.5a4.5 4.5 0 0 0 9 0V2.5h-3v5.5a1.5 1.5 0 0 1-3 0V2.5z" /></svg>
+            <button
+              class="tool"
+              class:on={snapping}
+              aria-pressed={snapping}
+              title="Snap to the playhead, clip edges and markers (hold Alt to not snap)"
+              onclick={() => (snapping = !snapping)}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true"
+                ><path d="M3.5 2.5v5.5a4.5 4.5 0 0 0 9 0V2.5h-3v5.5a1.5 1.5 0 0 1-3 0V2.5z" /></svg
+              >
             </button>
-            <button class="tool" title="Add a marker at the playhead (M)" onclick={() => edit((p) => addMarker(p, ed.playhead, ''), 'Add a marker')}>
+            <button
+              class="tool"
+              title="Add a marker at the playhead (M)"
+              onclick={() => edit((p) => addMarker(p, ed.playhead, ''), 'Add a marker')}
+            >
               <svg viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M4 2.5h8v8.5l-4 3-4-3z" /></svg>
             </button>
             <button class="tool" title="Fit the whole edit (\, or double-click the zoom bar)" onclick={fitAll}>
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h13M1.5 8l3-3M1.5 8l3 3M14.5 8l-3-3M14.5 8l-3 3" /></svg>
+              <svg viewBox="0 0 16 16" aria-hidden="true"
+                ><path d="M1.5 8h13M1.5 8l3-3M1.5 8l3 3M14.5 8l-3-3M14.5 8l-3 3" /></svg
+              >
             </button>
           </div>
         </div>
@@ -781,7 +921,11 @@
           onpointercancel={rulerUp}
         >
           {#each comp.markers as m, i (i)}
-            <span class="flag {m.kind}" style:left="{px(m.at_ms)}px" title="{m.title || 'Marker'} · {formatTimecode(m.at_ms)}"></span>
+            <span
+              class="flag {m.kind}"
+              style:left="{px(m.at_ms)}px"
+              title="{m.title || 'Marker'} · {formatTimecode(m.at_ms)}"
+            ></span>
           {/each}
           {#each ticks.list as t (t)}
             <span class="tick" style:left="{px(t)}px">{tickLabel(t)}</span>
@@ -819,16 +963,49 @@
 
       {#snippet lockButton(on: boolean, title: string, onclick: () => void)}
         <button class="icon lock" class:open={!on} aria-pressed={on} {title} {onclick}>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1" />{#if on}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />{:else}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0" />{/if}</svg>
+          <svg viewBox="0 0 16 16" aria-hidden="true"
+            ><rect x="3.5" y="7" width="9" height="6.5" rx="1" />{#if on}<path
+                d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"
+              />{:else}<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0" />{/if}</svg
+          >
         </button>
       {/snippet}
       {#snippet eyeButton(hidden: boolean, frozen: boolean, onclick: () => void, what = 'the track')}
-        <button class="icon" class:off={hidden} aria-pressed={hidden} disabled={frozen} title={frozen ? `Unlock ${what} to ${hidden ? 'show' : 'hide'} it` : hidden ? `Show ${what}` : `Hide ${what} (its picture)`} {onclick}>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle class="fill" cx="8" cy="8" r="2" />{#if hidden}<path d="M2.5 13.5l11-11" />{/if}</svg>
+        <button
+          class="icon"
+          class:off={hidden}
+          aria-pressed={hidden}
+          disabled={frozen}
+          title={frozen
+            ? `Unlock ${what} to ${hidden ? 'show' : 'hide'} it`
+            : hidden
+              ? `Show ${what}`
+              : `Hide ${what} (its picture)`}
+          {onclick}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true"
+            ><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle
+              class="fill"
+              cx="8"
+              cy="8"
+              r="2"
+            />{#if hidden}<path d="M2.5 13.5l11-11" />{/if}</svg
+          >
         </button>
       {/snippet}
       {#snippet muteButton(muted: boolean, frozen: boolean, onclick: () => void, what = 'the track')}
-        <button class="icon" class:off={muted} aria-pressed={muted} disabled={frozen} title={frozen ? `Unlock ${what} to ${muted ? 'unmute' : 'mute'} it` : muted ? `Unmute ${what}` : `Mute ${what} (its sound)`} {onclick}>M</button>
+        <button
+          class="icon"
+          class:off={muted}
+          aria-pressed={muted}
+          disabled={frozen}
+          title={frozen
+            ? `Unlock ${what} to ${muted ? 'unmute' : 'mute'} it`
+            : muted
+              ? `Unmute ${what}`
+              : `Mute ${what} (its sound)`}
+          {onclick}>M</button
+        >
       {/snippet}
 
       {#snippet clipBlock(t: Track, c: PlacedClip)}
@@ -852,20 +1029,43 @@
             if (e.key === 'Enter') select(c.id);
           }}
         >
-          {@render body(t.kind === 'audio' || t.kind === 'music' ? 'sound' : 'video', c.source, px(c.at_ms - under), Math.max(6, px(clipLength(c))), t.kind === 'audio' || t.kind === 'music' ? heights.sound : heights.video, c.in_ms, c.out_ms)}
+          {@render body(
+            t.kind === 'audio' || t.kind === 'music' ? 'sound' : 'video',
+            c.source,
+            px(c.at_ms - under),
+            Math.max(6, px(clipLength(c))),
+            t.kind === 'audio' || t.kind === 'music' ? heights.sound : heights.video,
+            c.in_ms,
+            c.out_ms,
+          )}
           <span class="name">{sourceLabel(c.source, mainName, names)}</span>
           {#if c.speed.length > 1}<span class="badge">ramp</span>{/if}
         </div>
       {/snippet}
 
-      {#snippet body(kind: 'video' | 'sound', src: Source, left: number, w: number, h: number, from: number, to: number)}
+      {#snippet body(
+        kind: 'video' | 'sound',
+        src: Source,
+        left: number,
+        w: number,
+        h: number,
+        from: number,
+        to: number,
+      )}
         {@const vis = visibleSpan(left, w, scrollX, viewW)}
         {#if kind === 'video'}
           {@const strip = thumbs(src)}
           {#if strip}
             <span class="thumbs">
               {#each thumbSlots(w, h, from, to, strip.tiles, strip.duration_ms, vis.a, vis.b) as sl (sl.x)}
-                <span class="thumb" style:left="{sl.x}px" style:width="{sl.w}px" style:background-image="url('{strip.url}')" style:background-size="{Math.round(((h - 18) * 16) / 9)}px {strip.tiles * 100}%" style:background-position-y={stripPosition(sl.tile, strip.tiles)}></span>
+                <span
+                  class="thumb"
+                  style:left="{sl.x}px"
+                  style:width="{sl.w}px"
+                  style:background-image="url('{strip.url}')"
+                  style:background-size="{Math.round(((h - 18) * 16) / 9)}px {strip.tiles * 100}%"
+                  style:background-position-y={stripPosition(sl.tile, strip.tiles)}
+                ></span>
               {/each}
             </span>
           {/if}
@@ -890,7 +1090,13 @@
             <span class="chip" class:main={r.kind !== 'track' || r.track.main}>{r.label}</span>
             {#if r.kind === 'track' && !r.track.main}
               {@const t = r.track}
-              {@render lockButton(t.locked, t.locked ? 'The track is locked: click to unlock it' : 'Lock the track: its clips can’t be selected, moved, trimmed, cut or deleted', () => lock(t))}
+              {@render lockButton(
+                t.locked,
+                t.locked
+                  ? 'The track is locked: click to unlock it'
+                  : 'Lock the track: its clips can’t be selected, moved, trimmed, cut or deleted',
+                () => lock(t),
+              )}
               {#if r.group === 'video'}
                 {@render eyeButton(t.hidden, t.locked, () => hide(t))}
               {/if}
@@ -908,10 +1114,21 @@
                   onblur={(e) => rename(t, (e.currentTarget as HTMLInputElement).value)}
                 />
               {:else}
-                <span class="name" role="presentation" title="{t.name || 'Track'} (double-click to rename)" ondblclick={() => (renaming = t.id)}>{t.name || 'Track'}</span>
+                <span
+                  class="name"
+                  role="presentation"
+                  title="{t.name || 'Track'} (double-click to rename)"
+                  ondblclick={() => (renaming = t.id)}>{t.name || 'Track'}</span
+                >
               {/if}
             {:else}
-              {@render lockButton(ed.mainLocked, ed.mainLocked ? 'Main is locked: click to unlock it and move, trim, cut, delete, hide or mute it' : 'Main is unlocked: click to lock it again', toggleLock)}
+              {@render lockButton(
+                ed.mainLocked,
+                ed.mainLocked
+                  ? 'Main is locked: click to unlock it and move, trim, cut, delete, hide or mute it'
+                  : 'Main is unlocked: click to lock it again',
+                toggleLock,
+              )}
               {#if r.kind === 'main-sound'}
                 {@render muteButton(mainSw.muted, ed.mainLocked, mainMute, 'Main')}
               {:else}
@@ -932,7 +1149,20 @@
           </div>
           {#if r.kind === 'track'}
             {@const t = r.track}
-            <div class="lane" class:drop={dropTrack === t.id} class:locked={!t.main && t.locked} data-locked={(!t.main && t.locked) || undefined} data-track={t.id} data-kind={r.group} data-pps={pps} style:width="{contentW}px" role="presentation" onpointerdown={(e) => laneDown(e, t.main)} onpointermove={(e) => razorMove(e, rowKey(r))} onpointerleave={() => (razorHover = null)}>
+            <div
+              class="lane"
+              class:drop={dropTrack === t.id}
+              class:locked={!t.main && t.locked}
+              data-locked={(!t.main && t.locked) || undefined}
+              data-track={t.id}
+              data-kind={r.group}
+              data-pps={pps}
+              style:width="{contentW}px"
+              role="presentation"
+              onpointerdown={(e) => laneDown(e, t.main)}
+              onpointermove={(e) => razorMove(e, rowKey(r))}
+              onpointerleave={() => (razorHover = null)}
+            >
               {@render razorLine(rowKey(r))}
               {#each t.clips as c (c.id)}
                 {@render clipBlock(t, c)}
@@ -945,7 +1175,9 @@
                   style:width="{Math.max(8, px(b.end - b.start))}px"
                   role="button"
                   tabindex="-1"
-                  title="{KIND_LABEL[b.kind]} · {(b.ms / 1000).toFixed(2)} s (drag an end to change the length, the middle to move the cut; right-click for more)"
+                  title="{KIND_LABEL[b.kind]} · {(b.ms / 1000).toFixed(
+                    2,
+                  )} s (drag an end to change the length, the middle to move the cut; right-click for more)"
                   onpointerdown={(e) => transDown(e, b, 'middle')}
                   onclick={(e) => e.stopPropagation()}
                   oncontextmenu={(e) => transMenu(e, b)}
@@ -959,16 +1191,29 @@
                 </div>
               {/each}
               {#each locked(t) ? [] : touching.filter((j) => j.track === t.id) as j (j.after)}
-                <button class="join" style:left="{px(j.at)}px" title={j.after === FROM_BELOW ? 'Crossfade in from what is below' : 'Add a crossfade here'} onpointerdown={(e) => e.stopPropagation()} onclick={(e) => {
-                  e.stopPropagation();
-                  addCrossfade(j);
-                }}>+</button>
+                <button
+                  class="join"
+                  style:left="{px(j.at)}px"
+                  title={j.after === FROM_BELOW ? 'Crossfade in from what is below' : 'Add a crossfade here'}
+                  onpointerdown={(e) => e.stopPropagation()}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    addCrossfade(j);
+                  }}>+</button
+                >
               {/each}
             </div>
           {:else if r.kind === 'main-sound' && r.track}
             <!-- A1 of an arranged V1: its clips' sound (same clips, same handling). -->
             {@const t = r.track}
-            <div class="lane" style:width="{contentW}px" role="presentation" onpointerdown={(e) => laneDown(e, true)} onpointermove={(e) => razorMove(e, rowKey(r))} onpointerleave={() => (razorHover = null)}>
+            <div
+              class="lane"
+              style:width="{contentW}px"
+              role="presentation"
+              onpointerdown={(e) => laneDown(e, true)}
+              onpointermove={(e) => razorMove(e, rowKey(r))}
+              onpointerleave={() => (razorHover = null)}
+            >
               {@render razorLine(rowKey(r))}
               {#each t.clips as c (c.id)}
                 {@const left = px(c.at_ms - overlapOf(adv, t, c))}
@@ -991,7 +1236,14 @@
               {/each}
             </div>
           {:else}
-            <div class="lane" style:width="{contentW}px" role="presentation" onpointerdown={(e) => laneDown(e, true)} onpointermove={(e) => razorMove(e, rowKey(r))} onpointerleave={() => (razorHover = null)}>
+            <div
+              class="lane"
+              style:width="{contentW}px"
+              role="presentation"
+              onpointerdown={(e) => laneDown(e, true)}
+              onpointermove={(e) => razorMove(e, rowKey(r))}
+              onpointerleave={() => (razorHover = null)}
+            >
               {@render razorLine(rowKey(r))}
               {#each segs as s, i (i)}
                 <div
@@ -1005,7 +1257,15 @@
                   style:width="{Math.max(4, px(s.out_end_ms - s.out_start_ms))}px"
                   title="{mainName} · {formatTimecode(s.src_start_ms)}–{formatTimecode(s.src_end_ms)}"
                 >
-                  {@render body(r.kind === 'main' ? 'video' : 'sound', { kind: 'main' }, px(s.out_start_ms), Math.max(4, px(s.out_end_ms - s.out_start_ms)), h, s.src_start_ms, s.src_end_ms)}
+                  {@render body(
+                    r.kind === 'main' ? 'video' : 'sound',
+                    { kind: 'main' },
+                    px(s.out_start_ms),
+                    Math.max(4, px(s.out_end_ms - s.out_start_ms)),
+                    h,
+                    s.src_start_ms,
+                    s.src_end_ms,
+                  )}
                   <span class="name">{mainName}</span>
                   {#if s.speed !== 1}<span class="badge">{s.speed}x</span>{/if}
                 </div>
@@ -1048,8 +1308,22 @@
         onpointerup={barUp}
         onpointercancel={barUp}
       >
-        <span class="zb-end l" role="presentation" onpointerdown={(e) => barDown(e, 'l')} onpointermove={barMove} onpointerup={barUp} onpointercancel={barUp}></span>
-        <span class="zb-end r" role="presentation" onpointerdown={(e) => barDown(e, 'r')} onpointermove={barMove} onpointerup={barUp} onpointercancel={barUp}></span>
+        <span
+          class="zb-end l"
+          role="presentation"
+          onpointerdown={(e) => barDown(e, 'l')}
+          onpointermove={barMove}
+          onpointerup={barUp}
+          onpointercancel={barUp}
+        ></span>
+        <span
+          class="zb-end r"
+          role="presentation"
+          onpointerdown={(e) => barDown(e, 'r')}
+          onpointermove={barMove}
+          onpointerup={barUp}
+          onpointercancel={barUp}
+        ></span>
       </div>
     </div>
   </div>
@@ -1066,12 +1340,26 @@
     onclick={(e) => e.stopPropagation()}
     onkeydown={(e) => e.key === 'Escape' && (menu = null)}
   >
-    <button class="flat item" class:on={b.kind === 'crossfade'} role="menuitemradio" aria-checked={b.kind === 'crossfade'} onclick={() => setKind(b, 'crossfade')}>Crossfade</button>
+    <button
+      class="flat item"
+      class:on={b.kind === 'crossfade'}
+      role="menuitemradio"
+      aria-checked={b.kind === 'crossfade'}
+      onclick={() => setKind(b, 'crossfade')}>Crossfade</button
+    >
     {#if b.after !== FROM_BELOW}
-      <button class="flat item" class:on={b.kind === 'dip'} role="menuitemradio" aria-checked={b.kind === 'dip'} onclick={() => setKind(b, 'dip')}>Dip to black</button>
+      <button
+        class="flat item"
+        class:on={b.kind === 'dip'}
+        role="menuitemradio"
+        aria-checked={b.kind === 'dip'}
+        onclick={() => setKind(b, 'dip')}>Dip to black</button
+      >
     {/if}
     <hr />
-    <button class="flat item bad" role="menuitem" onclick={() => setKind(b, 'cut')}>Remove transition<kbd>Del</kbd></button>
+    <button class="flat item bad" role="menuitem" onclick={() => setKind(b, 'cut')}
+      >Remove transition<kbd>Del</kbd></button
+    >
   </div>
 {/if}
 
@@ -1306,7 +1594,11 @@
   }
   /* A locked track (M9.8.10): hatched; its clips act as empty space. */
   .lane.locked {
-    background-image: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--text-muted) 14%, transparent) 7px 8px);
+    background-image: repeating-linear-gradient(
+      135deg,
+      transparent 0 7px,
+      color-mix(in srgb, var(--text-muted) 14%, transparent) 7px 8px
+    );
   }
   .lane.locked > .clip {
     opacity: 0.8;
@@ -1438,9 +1730,7 @@
     top: 1px;
     bottom: 1px;
     z-index: 2;
-    background:
-      repeating-linear-gradient(135deg, rgb(217 217 217 / 45%) 0 1px, transparent 1px 4px),
-      rgb(0 0 0 / 35%);
+    background: repeating-linear-gradient(135deg, rgb(217 217 217 / 45%) 0 1px, transparent 1px 4px), rgb(0 0 0 / 35%);
     border: 1px solid #ebebeb;
     cursor: pointer;
     touch-action: none;

@@ -160,7 +160,13 @@
       <feColorMatrix type="matrix" values={matrix} />
     </filter>
   </svg>
-  <div class="frame" style:width="{frame.w}px" style:height="{frame.h}px" style:left="{frame.left}px" style:top="{frame.top}px">
+  <div
+    class="frame"
+    style:width="{frame.w}px"
+    style:height="{frame.h}px"
+    style:left="{frame.left}px"
+    style:top="{frame.top}px"
+  >
     <canvas bind:this={canvas} aria-label="Preview"></canvas>
     {#if box && !playing}
       <div

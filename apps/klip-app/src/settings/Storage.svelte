@@ -12,7 +12,11 @@
   const st = $derived(app.storage);
 </script>
 
-<Row label="Clip folder" hint="Clips are plain MP4 files: open, move or back them up like any file." error={fieldError('clips.folder')}>
+<Row
+  label="Clip folder"
+  hint="Clips are plain MP4 files: open, move or back them up like any file."
+  error={fieldError('clips.folder')}
+>
   <FolderField
     label="clip folder"
     value={s.clips.folder}
@@ -26,7 +30,11 @@
   />
 </Row>
 
-<Row label="Recordings folder" hint="Full-session recordings (Record button or hotkey)." error={fieldError('clips.recordings_folder')}>
+<Row
+  label="Recordings folder"
+  hint="Full-session recordings (Record button or hotkey)."
+  error={fieldError('clips.recordings_folder')}
+>
   <FolderField
     label="recordings folder"
     value={s.clips.recordings_folder}

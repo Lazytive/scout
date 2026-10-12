@@ -41,10 +41,7 @@ let backend: Promise<Backend> | null = null;
 
 function getBackend(): Promise<Backend> {
   if (!backend) {
-    backend =
-      inTauri || !import.meta.env.DEV
-        ? tauriBackend()
-        : import('./mock').then((m) => m.mockBackend());
+    backend = inTauri || !import.meta.env.DEV ? tauriBackend() : import('./mock').then((m) => m.mockBackend());
   }
   return backend;
 }
@@ -264,7 +261,9 @@ export async function editorFiles(path: string): Promise<ProjectFile[]> {
     ? await viaTauri<{ files: ProjectFile[] }>(path, 'files')
     : await call<{ files: ProjectFile[] }>('editor.files', { path });
   const files = Array.isArray(r?.files) ? r.files : [];
-  return Promise.all(files.map(async (f) => ({ ...f, url: f.ok ? ((await fileUrl(f.path)) ?? undefined) : undefined })));
+  return Promise.all(
+    files.map(async (f) => ({ ...f, url: f.ok ? ((await fileUrl(f.path)) ?? undefined) : undefined })),
+  );
 }
 
 /** What this build is (the Debug page; tester builds have `full_logs`). */

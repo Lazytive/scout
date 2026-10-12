@@ -72,12 +72,13 @@ export class EditError extends Error {
     message?: string,
   ) {
     super(
-      message ?? {
-        unknown_duration: "the clip's length isn't known yet",
-        bad_range: 'the range is empty or outside the edit',
-        nothing_left: 'that would remove the whole clip',
-        too_many_pieces: `too many pieces (at most ${MAX_PIECES})`,
-      }[kind],
+      message ??
+        {
+          unknown_duration: "the clip's length isn't known yet",
+          bad_range: 'the range is empty or outside the edit',
+          nothing_left: 'that would remove the whole clip',
+          too_many_pieces: `too many pieces (at most ${MAX_PIECES})`,
+        }[kind],
     );
   }
 }

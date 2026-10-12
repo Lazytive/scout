@@ -55,14 +55,19 @@
   function setMode(mode: 'normal' | 'advanced') {
     if (!project || project.mode === mode) return;
     ed.playing = false;
-    edit((p) => {
-      p.mode = mode;
-    }, mode === 'advanced' ? 'Advanced mode' : 'Normal mode');
+    edit(
+      (p) => {
+        p.mode = mode;
+      },
+      mode === 'advanced' ? 'Advanced mode' : 'Normal mode',
+    );
   }
 
   // Text cues as the engine draws them, re-rendered when a layer or the format changes.
   let renderTimer: ReturnType<typeof setTimeout> | null = null;
-  const renderKey = $derived(project && source ? JSON.stringify([project.text, project.format, source.width, source.height]) : '');
+  const renderKey = $derived(
+    project && source ? JSON.stringify([project.text, project.format, source.width, source.height]) : '',
+  );
   $effect(() => {
     const key = renderKey;
     if (!key || !clip || !project || !source) {
@@ -180,7 +185,10 @@
     </dl>
     {#if ed.clips.some((c) => c.status !== 'ok')}
       <p class="error" role="alert">
-        Missing: {ed.clips.filter((c) => c.status !== 'ok').map((c) => c.name).join(', ')}. Put them back (or remove them) to export.
+        Missing: {ed.clips
+          .filter((c) => c.status !== 'ok')
+          .map((c) => c.name)
+          .join(', ')}. Put them back (or remove them) to export.
       </p>
     {/if}
     <button class="primary wide" onclick={() => (ed.exportOpen = true)}>Export…</button>
@@ -210,7 +218,10 @@
               <button class="flat" onclick={() => setMode('advanced')}>Advanced</button>
             </div>
             {#if badge}
-              <p class="badge" title="Tracks, keyframes, a montage, colour or markers made in Advanced mode. They are kept and exported; switch to Advanced to see them.">
+              <p
+                class="badge"
+                title="Tracks, keyframes, a montage, colour or markers made in Advanced mode. They are kept and exported; switch to Advanced to see them."
+              >
                 Advanced edits
               </p>
             {:else}
@@ -226,7 +237,9 @@
     <div class="center">
       <Panel tabs={[clip?.name ?? 'Editor']}>
         {#snippet actions()}
-          {#if badge}<span class="badge small" title="This project has Advanced-mode edits; they are kept and exported">Advanced edits</span>{/if}
+          {#if badge}<span class="badge small" title="This project has Advanced-mode edits; they are kept and exported"
+              >Advanced edits</span
+            >{/if}
           <button class="flat" onclick={closeEditor}>← Library</button>
         {/snippet}
         {#if clip && project && source}
@@ -254,8 +267,12 @@
               <span class="grow"></span>
               {#if ed.media.status === 'making'}<span class="muted">Making a preview…</span>{/if}
               {#if ed.saving}<span class="muted">Saving…</span>{:else if ed.dirty}<span class="muted">Edited</span>{/if}
-              <button class="flat" disabled={ed.undo.length === 0} onclick={() => undo()} title="Undo (Ctrl+Z)">Undo</button>
-              <button class="flat" disabled={ed.redo.length === 0} onclick={() => redo()} title="Redo (Ctrl+Y)">Redo</button>
+              <button class="flat" disabled={ed.undo.length === 0} onclick={() => undo()} title="Undo (Ctrl+Z)"
+                >Undo</button
+              >
+              <button class="flat" disabled={ed.redo.length === 0} onclick={() => redo()} title="Redo (Ctrl+Y)"
+                >Redo</button
+              >
             </div>
             <Filmstrip
               {strip}

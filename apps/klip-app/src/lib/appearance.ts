@@ -62,16 +62,7 @@ export const DEFAULT_FONT =
   "'Segoe UI Variable Text', 'Segoe UI', 'Inter', system-ui, -apple-system, 'Noto Sans', 'Cantarell', sans-serif";
 
 /** Accent swatches offered next to the colour picker. */
-export const ACCENT_SWATCHES = [
-  '#1f6fe0',
-  '#7c4dff',
-  '#c2338f',
-  '#cc3a2f',
-  '#e0601f',
-  '#e6b800',
-  '#2e9e5b',
-  '#0d7f89',
-];
+export const ACCENT_SWATCHES = ['#1f6fe0', '#7c4dff', '#c2338f', '#cc3a2f', '#e0601f', '#e6b800', '#2e9e5b', '#0d7f89'];
 
 /** Surfaces that turn translucent over a background picture (the picture itself shows
     in the gutters; raised surfaces and inputs stay opaque). */
@@ -107,7 +98,11 @@ function rgb(hex: string): [number, number, number] {
 
 function hex([r, g, b]: number[]): string {
   return `#${[r, g, b]
-    .map((c) => Math.round(Math.min(255, Math.max(0, c ?? 0))).toString(16).padStart(2, '0'))
+    .map((c) =>
+      Math.round(Math.min(255, Math.max(0, c ?? 0)))
+        .toString(16)
+        .padStart(2, '0'),
+    )
     .join('')}`;
 }
 
@@ -187,8 +182,7 @@ export function resolveLook(
   preview: CustomTheme | null = null,
 ): Look {
   const s = { ...defaultAppearance, ...(a ?? {}) };
-  const ct =
-    preview ?? (s.theme === 'custom' ? (custom.find((t) => t.id === s.custom_theme) ?? null) : null);
+  const ct = preview ?? (s.theme === 'custom' ? (custom.find((t) => t.id === s.custom_theme) ?? null) : null);
   let id: string;
   let scheme: 'dark' | 'light';
   let tokens: Tokens;

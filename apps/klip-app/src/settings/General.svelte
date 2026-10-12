@@ -8,11 +8,7 @@
 </script>
 
 <Row label="Start">
-  <Toggle
-    label="Start Scout with Windows"
-    checked={s.app.autostart}
-    onchange={(v) => save(['app', 'autostart'], v)}
-  />
+  <Toggle label="Start Scout with Windows" checked={s.app.autostart} onchange={(v) => save(['app', 'autostart'], v)} />
   <Toggle
     label="Open in the tray (no window)"
     checked={s.app.start_minimized}
@@ -27,7 +23,6 @@
     onchange={(v) => save(['app', 'close_to_tray'], v)}
   />
 </Row>
-
 
 <Row
   label="Control from scripts"

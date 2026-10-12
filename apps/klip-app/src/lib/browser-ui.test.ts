@@ -12,8 +12,10 @@ const key = (k: string, mods: Partial<{ ctrl: boolean; shift: boolean; alt: bool
 
 describe('browser UI', () => {
   it('cancels the browser accelerators', () => {
-    for (const k of ['p', 'S', 'f', 'g', 'r', 'u', 'j', 'h', 'o']) expect(browserKey(key(k, { ctrl: true })), `Ctrl+${k}`).toBe(true);
-    for (const k of ['I', 'J', 'C', 'R']) expect(browserKey(key(k, { ctrl: true, shift: true })), `Ctrl+Shift+${k}`).toBe(true);
+    for (const k of ['p', 'S', 'f', 'g', 'r', 'u', 'j', 'h', 'o'])
+      expect(browserKey(key(k, { ctrl: true })), `Ctrl+${k}`).toBe(true);
+    for (const k of ['I', 'J', 'C', 'R'])
+      expect(browserKey(key(k, { ctrl: true, shift: true })), `Ctrl+Shift+${k}`).toBe(true);
     for (const k of ['F3', 'F5', 'F7', 'F12']) expect(browserKey(key(k)), k).toBe(true);
     expect(browserKey(key('ArrowLeft', { alt: true }))).toBe(true);
   });
@@ -40,7 +42,8 @@ describe('browser UI', () => {
   it('cancels the defaults in the page, nothing else', () => {
     const win = new EventTarget();
     const stop = blockBrowserUi(win as unknown as Window);
-    const ev = (type: string, init: Record<string, unknown>) => Object.assign(new Event(type, { cancelable: true }), init);
+    const ev = (type: string, init: Record<string, unknown>) =>
+      Object.assign(new Event(type, { cancelable: true }), init);
     const print = ev('keydown', key('p', { ctrl: true }));
     const undo = ev('keydown', key('z', { ctrl: true }));
     const menu = ev('contextmenu', {});

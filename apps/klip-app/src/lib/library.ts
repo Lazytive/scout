@@ -113,8 +113,7 @@ const DEFAULT_NAME = /^(?:Scout|Klip)(_Recording)?_(\d{4})-(\d{2})-(\d{2})_(\d{2
 /** What `share.discord` answers (M11.5): copied as is, or an export making a copy that
  *  fits (it goes on the clipboard when done). */
 export type DiscordResult =
-  | { action: 'copied' }
-  | { action: 'export'; id: number; out: string; reason: string; running?: boolean };
+  { action: 'copied' } | { action: 'export'; id: number; out: string; reason: string; running?: boolean };
 
 /** The toast once a clip is on the clipboard for Discord. */
 export function discordReadyText(asIs: boolean): string {

@@ -34,7 +34,13 @@
   let { project, mainName, names }: { project: Project; mainName: string; names: Map<string, string> } = $props();
 
   const adv = $derived(readAdvanced(project));
-  const selTrans = $derived(ed.transitionSel ? (adv.transitions.find((x) => x.track === ed.transitionSel?.track && x.after_clip === ed.transitionSel.after && x.kind !== 'cut') ?? null) : null);
+  const selTrans = $derived(
+    ed.transitionSel
+      ? (adv.transitions.find(
+          (x) => x.track === ed.transitionSel?.track && x.after_clip === ed.transitionSel.after && x.kind !== 'cut',
+        ) ?? null)
+      : null,
+  );
   const found = $derived.by(() => {
     for (const t of adv.tracks) {
       const c = t.clips.find((x) => x.id === ed.clipId);
@@ -73,15 +79,30 @@
       {formatTimecode(from)} – {formatTimecode(from + clipLength(c))} · {t.name || 'Track'}
     </p>
     <div class="row">
-      <button title="Split at the playhead (S)" onclick={() => edit((p) => void splitClip(p, c.id, c.at_ms + at), 'Split clip')}>Split</button>
-      <button class="danger" title="Remove (Delete)" onclick={() => {
-        edit((p) => removeClip(p, c.id), 'Remove clip');
-        ed.clipId = null;
-      }}>Remove</button>
+      <button
+        title="Split at the playhead (S)"
+        onclick={() => edit((p) => void splitClip(p, c.id, c.at_ms + at), 'Split clip')}>Split</button
+      >
+      <button
+        class="danger"
+        title="Remove (Delete)"
+        onclick={() => {
+          edit((p) => removeClip(p, c.id), 'Remove clip');
+          ed.clipId = null;
+        }}>Remove</button
+      >
     </div>
     <div class="grid">
       <span>Starts at</span>
-      <NumberField label="Starts at" value={c.at_ms / 1000} min={0} max={86_400} step={0.001} unit="s" onchange={(v) => edit((p) => moveClip(p, c.id, v * 1000), 'Move clip')} />
+      <NumberField
+        label="Starts at"
+        value={c.at_ms / 1000}
+        min={0}
+        max={86_400}
+        step={0.001}
+        unit="s"
+        onchange={(v) => edit((p) => moveClip(p, c.id, v * 1000), 'Move clip')}
+      />
     </div>
   </section>
 
@@ -93,13 +114,25 @@
         label="Into this clip"
         value={fb ? 'crossfade' : 'cut'}
         options={TRANSITIONS.filter((x) => x.value !== 'dip')}
-        onchange={(k) => edit((p) => setFromBelow(p, c.id, k === 'cut' ? null : (fb?.ms ?? 500)), k === 'cut' ? 'Remove transition' : 'Crossfade in from below')}
+        onchange={(k) =>
+          edit(
+            (p) => setFromBelow(p, c.id, k === 'cut' ? null : (fb?.ms ?? 500)),
+            k === 'cut' ? 'Remove transition' : 'Crossfade in from below',
+          )}
       />
       <p class="hint muted">Fades this clip in over whatever plays below it (Main, or a lower track).</p>
       {#if fb}
         <div class="lane">
           <span class="name">Length</span>
-          <NumberField label="Crossfade length" value={fb.ms} min={1} max={MAX_TRANSITION_MS} step={50} unit="ms" onchange={(v) => edit((p) => setFromBelow(p, c.id, v), 'Crossfade in from below')} />
+          <NumberField
+            label="Crossfade length"
+            value={fb.ms}
+            min={1}
+            max={MAX_TRANSITION_MS}
+            step={50}
+            unit="ms"
+            onchange={(v) => edit((p) => setFromBelow(p, c.id, v), 'Crossfade in from below')}
+          />
         </div>
       {/if}
     </section>
@@ -112,7 +145,8 @@
         label="Transition"
         value={tr?.kind ?? 'cut'}
         options={TRANSITIONS}
-        onchange={(k) => edit((p) => setTransition(p, c.id, k, tr?.ms ?? 500), k === 'cut' ? 'Remove transition' : 'Set transition')}
+        onchange={(k) =>
+          edit((p) => setTransition(p, c.id, k, tr?.ms ?? 500), k === 'cut' ? 'Remove transition' : 'Set transition')}
       />
       {#if tr?.kind === 'dip'}
         <p class="hint muted">Fades to black and back in, whatever plays below.</p>
@@ -120,7 +154,15 @@
       {#if tr}
         <div class="lane">
           <span class="name">Length</span>
-          <NumberField label="Transition length" value={tr.ms} min={1} max={MAX_TRANSITION_MS} step={50} unit="ms" onchange={(v) => edit((p) => setTransition(p, c.id, tr.kind, v), 'Set transition')} />
+          <NumberField
+            label="Transition length"
+            value={tr.ms}
+            min={1}
+            max={MAX_TRANSITION_MS}
+            step={50}
+            unit="ms"
+            onchange={(v) => edit((p) => setTransition(p, c.id, tr.kind, v), 'Set transition')}
+          />
         </div>
       {/if}
     </section>
@@ -133,30 +175,52 @@
       value={t.name}
       maxlength="120"
       aria-label="Track name"
-      onchange={(e) => edit((p) => setTrack(p, t.id, { name: (e.currentTarget as HTMLInputElement).value }), 'Rename track')}
+      onchange={(e) =>
+        edit((p) => setTrack(p, t.id, { name: (e.currentTarget as HTMLInputElement).value }), 'Rename track')}
     />
     <div class="row wrap">
       {#if t.kind === 'video' || t.kind === 'text'}
-        <button class:on={t.hidden} aria-pressed={t.hidden} title="Hide the track's picture (its sound stays)" onclick={() => edit((p) => setTrack(p, t.id, { hidden: !t.hidden }), t.hidden ? 'Show a track' : 'Hide a track')}>
+        <button
+          class:on={t.hidden}
+          aria-pressed={t.hidden}
+          title="Hide the track's picture (its sound stays)"
+          onclick={() =>
+            edit((p) => setTrack(p, t.id, { hidden: !t.hidden }), t.hidden ? 'Show a track' : 'Hide a track')}
+        >
           {t.hidden ? 'Show' : 'Hide'}
         </button>
       {/if}
-      <button class:on={t.muted} aria-pressed={t.muted} onclick={() => edit((p) => setTrack(p, t.id, { muted: !t.muted }), t.muted ? 'Unmute a track' : 'Mute a track')}>
+      <button
+        class:on={t.muted}
+        aria-pressed={t.muted}
+        onclick={() => edit((p) => setTrack(p, t.id, { muted: !t.muted }), t.muted ? 'Unmute a track' : 'Mute a track')}
+      >
         {t.muted ? 'Unmute' : 'Mute'}
       </button>
       {#if t.main}
         <!-- V1 arranged: always at the bottom; "removing" it goes back to the simple cut. -->
-        <button title="V1 plays Normal mode's cut again; the moves on V1 go (Ctrl+Z brings them back)" onclick={() => {
-          edit((p) => removeTrack(p, t.id), 'Back to the simple cut');
-          ed.clipId = null;
-        }}>Back to the simple cut</button>
+        <button
+          title="V1 plays Normal mode's cut again; the moves on V1 go (Ctrl+Z brings them back)"
+          onclick={() => {
+            edit((p) => removeTrack(p, t.id), 'Back to the simple cut');
+            ed.clipId = null;
+          }}>Back to the simple cut</button
+        >
       {:else}
-        <button title="Draw this track above the next one" onclick={() => edit((p) => moveTrack(p, t.id, 1), 'Move track')}>Up</button>
-        <button title="Draw this track below" onclick={() => edit((p) => moveTrack(p, t.id, -1), 'Move track')}>Down</button>
-        <button class="danger" onclick={() => {
-          edit((p) => removeTrack(p, t.id), 'Remove track');
-          ed.clipId = null;
-        }}>Remove track</button>
+        <button
+          title="Draw this track above the next one"
+          onclick={() => edit((p) => moveTrack(p, t.id, 1), 'Move track')}>Up</button
+        >
+        <button title="Draw this track below" onclick={() => edit((p) => moveTrack(p, t.id, -1), 'Move track')}
+          >Down</button
+        >
+        <button
+          class="danger"
+          onclick={() => {
+            edit((p) => removeTrack(p, t.id), 'Remove track');
+            ed.clipId = null;
+          }}>Remove track</button
+        >
       {/if}
     </div>
   </section>
@@ -167,25 +231,41 @@
     <Segmented
       label="Transition"
       value={st.kind}
-      options={TRANSITIONS.filter((x) => x.value !== 'cut' && (st.after_clip !== FROM_BELOW || x.value === 'crossfade'))}
+      options={TRANSITIONS.filter(
+        (x) => x.value !== 'cut' && (st.after_clip !== FROM_BELOW || x.value === 'crossfade'),
+      )}
       onchange={(k) => edit((p) => setTransitionAt(p, st.track, st.after_clip, k, st.ms), 'Set transition')}
     />
     <div class="lane">
       <span class="name">Length</span>
-      <NumberField label="Transition length" value={st.ms} min={1} max={MAX_TRANSITION_MS} step={50} unit="ms" onchange={(v) => edit((p) => setTransitionAt(p, st.track, st.after_clip, st.kind, v), 'Set transition')} />
+      <NumberField
+        label="Transition length"
+        value={st.ms}
+        min={1}
+        max={MAX_TRANSITION_MS}
+        step={50}
+        unit="ms"
+        onchange={(v) => edit((p) => setTransitionAt(p, st.track, st.after_clip, st.kind, v), 'Set transition')}
+      />
     </div>
     <p class="hint muted">Drag its ends on the timeline to change the length.</p>
     <div class="row">
-      <button class="danger" title="Remove (Delete)" onclick={() => {
-        edit((p) => setTransitionAt(p, st.track, st.after_clip, 'cut', 0), 'Remove a transition');
-        ed.transitionSel = null;
-      }}>Remove</button>
+      <button
+        class="danger"
+        title="Remove (Delete)"
+        onclick={() => {
+          edit((p) => setTransitionAt(p, st.track, st.after_clip, 'cut', 0), 'Remove a transition');
+          ed.transitionSel = null;
+        }}>Remove</button
+      >
     </div>
   </section>
 {:else}
-  <p class="muted hint">Select a clip or a transition on the timeline to change it here. A click selects; drag a clip to move it, drag its ends to trim; the + between two touching clips adds a crossfade.</p>
+  <p class="muted hint">
+    Select a clip or a transition on the timeline to change it here. A click selects; drag a clip to move it, drag its
+    ends to trim; the + between two touching clips adds a crossfade.
+  </p>
 {/if}
-
 
 <style>
   section {

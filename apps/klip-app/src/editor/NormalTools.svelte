@@ -67,15 +67,24 @@
   <section>
     <h3>Cut</h3>
     {#if mainArranged(project)}
-      <p class="hint muted">Your clip is arranged on V1: its pieces move like any clip there. Normal mode's simple cut is set aside (and Normal mode with it).</p>
+      <p class="hint muted">
+        Your clip is arranged on V1: its pieces move like any clip there. Normal mode's simple cut is set aside (and
+        Normal mode with it).
+      </p>
       <div class="row">
-        <button onclick={() => edit((p) => useSimpleCut(p), 'Back to the simple cut')} title="V1 plays Normal mode's cut again; the moves on V1 go (Ctrl+Z brings them back)">Back to the simple cut</button>
+        <button
+          onclick={() => edit((p) => useSimpleCut(p), 'Back to the simple cut')}
+          title="V1 plays Normal mode's cut again; the moves on V1 go (Ctrl+Z brings them back)"
+          >Back to the simple cut</button
+        >
       </div>
     {:else}
       <div class="row">
         <button onclick={splitAtPlayhead} title="Split the main clip at the playhead">Split main</button>
       </div>
-      <p class="hint muted">V1 is this cut. Trim and cut it in Normal mode, or unlock V1 on the timeline to move its pieces like any clip.</p>
+      <p class="hint muted">
+        V1 is this cut. Trim and cut it in Normal mode, or unlock V1 on the timeline to move its pieces like any clip.
+      </p>
     {/if}
   </section>
 {/if}
@@ -101,13 +110,27 @@
         options={TEXT_PRESETS.map((t) => ({ value: t.id, label: t.label }))}
         onchange={(v) => updateText(selectedText.id, { preset: String(v) })}
       />
-      <Segmented value={selectedText.position} options={POSITIONS} label="Position" onchange={(v) => updateText(selectedText.id, { position: v })} />
+      <Segmented
+        value={selectedText.position}
+        options={POSITIONS}
+        label="Position"
+        onchange={(v) => updateText(selectedText.id, { position: v })}
+      />
       <p class="hint muted mono">{formatTimecode(selectedText.start_ms)} – {formatTimecode(selectedText.end_ms)}</p>
       <div class="row">
-        <button onclick={() => updateText(selectedText.id, { start_ms: ed.playhead, end_ms: ed.playhead + (selectedText.end_ms - selectedText.start_ms) })}>
+        <button
+          onclick={() =>
+            updateText(selectedText.id, {
+              start_ms: ed.playhead,
+              end_ms: ed.playhead + (selectedText.end_ms - selectedText.start_ms),
+            })}
+        >
           Start here
         </button>
-        <button onclick={() => updateText(selectedText.id, { end_ms: Math.max(ed.playhead + 1, selectedText.start_ms + 1) })}>End here</button>
+        <button
+          onclick={() => updateText(selectedText.id, { end_ms: Math.max(ed.playhead + 1, selectedText.start_ms + 1) })}
+          >End here</button
+        >
         <button class="danger" onclick={() => removeText(selectedText.id)}>Remove</button>
       </div>
     </div>
@@ -125,8 +148,24 @@
 </section>
 <section>
   <h3>Sound</h3>
-  <Slider label="Game" value={project.volumes.game} min={0} max={2} step={0.05} format={(v) => `${Math.round(v * 100)} %`} onchange={(v) => setVolumes(v, project.volumes.mic)} />
-  <Slider label="Mic" value={project.volumes.mic} min={0} max={2} step={0.05} format={(v) => `${Math.round(v * 100)} %`} onchange={(v) => setVolumes(project.volumes.game, v)} />
+  <Slider
+    label="Game"
+    value={project.volumes.game}
+    min={0}
+    max={2}
+    step={0.05}
+    format={(v) => `${Math.round(v * 100)} %`}
+    onchange={(v) => setVolumes(v, project.volumes.mic)}
+  />
+  <Slider
+    label="Mic"
+    value={project.volumes.mic}
+    min={0}
+    max={2}
+    step={0.05}
+    format={(v) => `${Math.round(v * 100)} %`}
+    onchange={(v) => setVolumes(project.volumes.game, v)}
+  />
 </section>
 {#if !advanced}
   <section>

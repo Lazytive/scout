@@ -117,6 +117,7 @@ pub fn build(root: &Path) -> Result<()> {
 pub fn gates(root: &Path) -> Result<()> {
     install(root)?;
     for (name, script) in [
+        ("prettier", "fmt:check"),
         ("eslint", "lint"),
         ("svelte-check", "check"),
         ("vitest", "test"),

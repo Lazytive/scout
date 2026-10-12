@@ -90,8 +90,7 @@
             class="flat chip"
             class:on={q.tag?.toLowerCase() === t.name.toLowerCase()}
             aria-pressed={q.tag?.toLowerCase() === t.name.toLowerCase()}
-            onclick={() =>
-              setQuery({ tag: q.tag?.toLowerCase() === t.name.toLowerCase() ? null : t.name })}
+            onclick={() => setQuery({ tag: q.tag?.toLowerCase() === t.name.toLowerCase() ? null : t.name })}
           >
             {t.name}<span class="n mono">{t.count}</span>
           </button>

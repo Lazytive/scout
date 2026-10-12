@@ -20,12 +20,7 @@
   }
 </script>
 
-<select
-  aria-label={label}
-  {disabled}
-  value={String(value)}
-  onchange={(e) => pick(e.currentTarget.value)}
->
+<select aria-label={label} {disabled} value={String(value)} onchange={(e) => pick(e.currentTarget.value)}>
   {#each options as o (o.value)}
     <option value={String(o.value)}>{o.label}</option>
   {/each}
@@ -44,7 +39,8 @@
     max-width: 100%;
     align-self: flex-start;
     appearance: none;
-    background-image: linear-gradient(45deg, transparent 50%, var(--text) 50%),
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--text) 50%),
       linear-gradient(135deg, var(--text) 50%, transparent 50%);
     background-position:
       calc(100% - 15px) 50%,

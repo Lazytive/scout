@@ -9,7 +9,14 @@ function fakeEngine() {
   let recorder: string | null = null;
   const listeners: ((e: KlipEvent) => void)[] = [];
   const emit = (e: KlipEvent) => setTimeout(() => listeners.splice(0).forEach((l) => l(e)), 1);
-  const clips: { key: string; path: string; name: string; bytes: number; thumbs: { poster: number | null; strip: number | null }; info: unknown }[] = [];
+  const clips: {
+    key: string;
+    path: string;
+    name: string;
+    bytes: number;
+    thumbs: { poster: number | null; strip: number | null };
+    info: unknown;
+  }[] = [];
   const deleted: string[] = [];
   let exportId = 0;
   let last: unknown = null;
@@ -36,7 +43,12 @@ function fakeEngine() {
             took_ms: 3000,
           };
         }
-        return { gpus: [], tested: [{ element: `amf${args.codec}enc`, ok: args.codec === 'h265', probe_ms: 1 }], chosen: null, took_ms: 1 };
+        return {
+          gpus: [],
+          tested: [{ element: `amf${args.codec}enc`, ok: args.codec === 'h265', probe_ms: 1 }],
+          chosen: null,
+          took_ms: 1,
+        };
       }
       case 'settings.set': {
         if (args.games?.buffer) settings.games.buffer = args.games.buffer;
@@ -44,14 +56,35 @@ function fakeEngine() {
         if (settings.games.buffer === 'off') recorder = null;
         else if (settings.games.buffer === 'always' && !recorder) {
           recorder = settings.recording.encoder;
-          emit({ event: 'recorder_started', game: null, encoder: recorder, width: 2560, height: 1440, fps: 144, buffer_ms: 120000, clip_dir: 'C:/v' });
+          emit({
+            event: 'recorder_started',
+            game: null,
+            encoder: recorder,
+            width: 2560,
+            height: 1440,
+            fps: 144,
+            buffer_ms: 120000,
+            clip_dir: 'C:/v',
+          });
         }
         return {};
       }
       case 'clip.save': {
         const path = `C:/v/Desktop/Scout_${clips.length}.mp4`;
-        clips.push({ key: `Desktop/${clips.length}`, path, name: 'x', bytes: 5e6, thumbs: { poster: null, strip: null }, info: { codec: 'H.264', width: 2560, height: 1440, fps: 144, duration_ms: 4000, audio_tracks: 3 } });
-        emit({ event: 'clip_saved', game: null, window: null, clip: { path, duration_ms: 4000, bytes: 5e6, frames: 576, save_ms: 80, bookmarks: 0 } });
+        clips.push({
+          key: `Desktop/${clips.length}`,
+          path,
+          name: 'x',
+          bytes: 5e6,
+          thumbs: { poster: null, strip: null },
+          info: { codec: 'H.264', width: 2560, height: 1440, fps: 144, duration_ms: 4000, audio_tracks: 3 },
+        });
+        emit({
+          event: 'clip_saved',
+          game: null,
+          window: null,
+          clip: { path, duration_ms: 4000, bytes: 5e6, frames: 576, save_ms: 80, bookmarks: 0 },
+        });
         return {};
       }
       case 'library.list':
@@ -63,7 +96,13 @@ function fakeEngine() {
         return { width: 640, height: 360, jpeg: 'abc' };
       case 'export.start':
         exportId += 1;
-        last = { id: exportId, ok: true, error: null, path: `C:/v/Desktop/out-${args.preset}.mp4`, summary: { width: 1920, height: 1080, bytes: 3e6, passes: args.preset === 'discord' ? 2 : 1 } };
+        last = {
+          id: exportId,
+          ok: true,
+          error: null,
+          path: `C:/v/Desktop/out-${args.preset}.mp4`,
+          summary: { width: 1920, height: 1080, bytes: 3e6, passes: args.preset === 'discord' ? 2 : 1 },
+        };
         return { id: exportId, out: '' };
       case 'export.status':
         return { active: null, last };
@@ -109,7 +148,11 @@ describe('the Debug self-test', () => {
     });
     expect(r.failed).toBe(0);
     expect(settings).toEqual({ games: { buffer: 'games' }, recording: { encoder: null, quality: 'balanced' } });
-    expect(deleted).toEqual(['C:/v/Desktop/Scout_0.mp4', 'C:/v/Desktop/out-youtube.mp4', 'C:/v/Desktop/out-discord.mp4']);
+    expect(deleted).toEqual([
+      'C:/v/Desktop/Scout_0.mp4',
+      'C:/v/Desktop/out-youtube.mp4',
+      'C:/v/Desktop/out-discord.mp4',
+    ]);
     expect(r.report).toContain('[OK  ] Recording with amfh264enc');
     expect(r.report).toContain('mfh264enc: fails (no device)');
     expect(r.report).toContain('recorded 2560×1440 at 144 fps, encoder amfh264enc, screen');

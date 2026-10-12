@@ -58,7 +58,11 @@ export function mockThemes(
     const args = (raw ?? {}) as Record<string, unknown>;
     switch (cmd) {
       case 'theme.list':
-        return { dir: 'C:/Users/You/AppData/Roaming/Scout/themes', themes: structuredClone([...themes.values()]), issues: [] };
+        return {
+          dir: 'C:/Users/You/AppData/Roaming/Scout/themes',
+          themes: structuredClone([...themes.values()]),
+          issues: [],
+        };
       case 'theme.save': {
         const t = args.theme as Partial<CustomTheme> | undefined;
         if (!t || typeof t !== 'object') throw new CommandError('bad_args', 'theme: a theme must be a JSON object');
@@ -75,7 +79,12 @@ export function mockThemes(
           else {
             const url = PICTURES[p.file ?? ''] ?? (p.file?.startsWith('data:') ? p.file : undefined);
             if (!url) throw new CommandError('bad_args', "the picture isn't a PNG, JPEG or WebP file");
-            background = { path: url, dim: background?.dim ?? 50, opacity: background?.opacity ?? 85, version: ++version };
+            background = {
+              path: url,
+              dim: background?.dim ?? 50,
+              opacity: background?.opacity ?? 85,
+              version: ++version,
+            };
           }
         } else if (background && old?.background) {
           background = { ...background, path: old.background.path };

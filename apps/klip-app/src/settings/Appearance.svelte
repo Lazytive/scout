@@ -2,13 +2,7 @@
      density, motion and the contrast check; custom themes are made, imported, exported
      and deleted here, and edited in ThemeEditor. -->
 <script lang="ts">
-  import {
-    ACCENT_SWATCHES,
-    resolveLook,
-    type Appearance,
-    type CustomTheme,
-    type Look,
-  } from '../lib/appearance';
+  import { ACCENT_SWATCHES, resolveLook, type Appearance, type CustomTheme, type Look } from '../lib/appearance';
   import { pictureUrl } from '../lib/api';
   import Row from '../lib/forms/Row.svelte';
   import Segmented from '../lib/forms/Segmented.svelte';
@@ -129,14 +123,17 @@
               <span class="half"></span>
             {/if}
             <span class="m-bar"></span>
-            <span class="m-panel"><span class="m-line"></span><span class="m-line short"></span><span class="m-dot"></span></span>
+            <span class="m-panel"
+              ><span class="m-line"></span><span class="m-line short"></span><span class="m-dot"></span></span
+            >
           </span>
           <span class="name">{c.label}</span>
         </button>
       {/each}
     </div>
     <div class="actions">
-      <button onclick={newTheme} title={custom ? 'A copy of this theme' : 'A theme based on this one'}>New theme</button>
+      <button onclick={newTheme} title={custom ? 'A copy of this theme' : 'A theme based on this one'}>New theme</button
+      >
       <button onclick={doImport}>Import…</button>
       {#if custom}
         <button onclick={() => (editing = custom)}>Edit</button>
@@ -164,7 +161,9 @@
     {/if}
     {#if app.themeIssues.length > 0}
       <p class="hint">
-        {app.themeIssues.length === 1 ? 'A theme file had a problem' : `Theme files had ${app.themeIssues.length} problems`}
+        {app.themeIssues.length === 1
+          ? 'A theme file had a problem'
+          : `Theme files had ${app.themeIssues.length} problems`}
         (fixed while loading): {app.themeIssues
           .slice(0, 3)
           .map((i) => `${i.id}${i.path ? ` ${i.path}` : ''}: ${i.message}`)

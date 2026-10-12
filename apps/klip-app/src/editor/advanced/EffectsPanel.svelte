@@ -21,55 +21,123 @@
 </script>
 
 {#if part === 'effects'}
-<section>
-  <h3>Colour</h3>
-  <Slider label="Brightness" value={adv.colour.brightness} min={-1} max={1} step={0.01} format={signed} onchange={(v) => liveEdit((p) => setColour(p, { brightness: v }), 'Brightness')} />
-  <Slider label="Contrast" value={adv.colour.contrast} min={0} max={2} step={0.01} format={pct} onchange={(v) => liveEdit((p) => setColour(p, { contrast: v }), 'Contrast')} />
-  <Slider label="Saturation" value={adv.colour.saturation} min={0} max={2} step={0.01} format={pct} onchange={(v) => liveEdit((p) => setColour(p, { saturation: v }), 'Saturation')} />
-  <button class="flat" onclick={() => edit((p) => setColour(p, { brightness: 0, contrast: 1, saturation: 1 }), 'Reset colour')}>Reset</button>
-</section>
+  <section>
+    <h3>Colour</h3>
+    <Slider
+      label="Brightness"
+      value={adv.colour.brightness}
+      min={-1}
+      max={1}
+      step={0.01}
+      format={signed}
+      onchange={(v) => liveEdit((p) => setColour(p, { brightness: v }), 'Brightness')}
+    />
+    <Slider
+      label="Contrast"
+      value={adv.colour.contrast}
+      min={0}
+      max={2}
+      step={0.01}
+      format={pct}
+      onchange={(v) => liveEdit((p) => setColour(p, { contrast: v }), 'Contrast')}
+    />
+    <Slider
+      label="Saturation"
+      value={adv.colour.saturation}
+      min={0}
+      max={2}
+      step={0.01}
+      format={pct}
+      onchange={(v) => liveEdit((p) => setColour(p, { saturation: v }), 'Saturation')}
+    />
+    <button
+      class="flat"
+      onclick={() => edit((p) => setColour(p, { brightness: 0, contrast: 1, saturation: 1 }), 'Reset colour')}
+      >Reset</button
+    >
+  </section>
 
-<section>
-  <h3>Music under voices</h3>
-  <Toggle label="Duck the music while someone speaks" checked={adv.ducking.enabled} onchange={(v) => edit((p) => setDucking(p, { enabled: v }), v ? 'Ducking on' : 'Ducking off')} />
-  <Slider label="Drop" value={adv.ducking.duck_db} min={-40} max={0} step={1} format={(v) => `${Math.round(v)} dB`} disabled={!adv.ducking.enabled} onchange={(v) => liveEdit((p) => setDucking(p, { duck_db: v }), 'Ducking')} />
-  <Slider label="Attack" value={adv.ducking.attack_ms} min={0} max={1000} step={10} format={(v) => `${Math.round(v)} ms`} disabled={!adv.ducking.enabled} onchange={(v) => liveEdit((p) => setDucking(p, { attack_ms: v }), 'Ducking')} />
-  <Slider label="Release" value={adv.ducking.release_ms} min={0} max={3000} step={50} format={(v) => `${Math.round(v)} ms`} disabled={!adv.ducking.enabled} onchange={(v) => liveEdit((p) => setDucking(p, { release_ms: v }), 'Ducking')} />
-</section>
+  <section>
+    <h3>Music under voices</h3>
+    <Toggle
+      label="Duck the music while someone speaks"
+      checked={adv.ducking.enabled}
+      onchange={(v) => edit((p) => setDucking(p, { enabled: v }), v ? 'Ducking on' : 'Ducking off')}
+    />
+    <Slider
+      label="Drop"
+      value={adv.ducking.duck_db}
+      min={-40}
+      max={0}
+      step={1}
+      format={(v) => `${Math.round(v)} dB`}
+      disabled={!adv.ducking.enabled}
+      onchange={(v) => liveEdit((p) => setDucking(p, { duck_db: v }), 'Ducking')}
+    />
+    <Slider
+      label="Attack"
+      value={adv.ducking.attack_ms}
+      min={0}
+      max={1000}
+      step={10}
+      format={(v) => `${Math.round(v)} ms`}
+      disabled={!adv.ducking.enabled}
+      onchange={(v) => liveEdit((p) => setDucking(p, { attack_ms: v }), 'Ducking')}
+    />
+    <Slider
+      label="Release"
+      value={adv.ducking.release_ms}
+      min={0}
+      max={3000}
+      step={50}
+      format={(v) => `${Math.round(v)} ms`}
+      disabled={!adv.ducking.enabled}
+      onchange={(v) => liveEdit((p) => setDucking(p, { release_ms: v }), 'Ducking')}
+    />
+  </section>
 {:else}
-<section>
-  <h3>Markers</h3>
-  {#if adv.markers.length === 0 && others.length === 0}
-    <p class="hint muted">Press M to mark the playhead.</p>
-  {/if}
-  <ul>
-    {#each adv.markers as m, i (i)}
-      <li>
-        <button class="flat tiny mono" onclick={() => {
-          ed.playing = false;
-          seek(m.at_ms);
-        }}>{formatTimecode(m.at_ms)}</button>
-        <input
-          class="text"
-          value={m.title}
-          maxlength="120"
-          aria-label="Marker title"
-          onchange={(e) => edit((p) => updateMarker(p, i, { title: (e.currentTarget as HTMLInputElement).value }), 'Rename marker')}
-        />
-        <button class="flat tiny" title="Remove" onclick={() => edit((p) => removeMarker(p, i), 'Remove marker')}>×</button>
-      </li>
-    {/each}
-    {#each others as m, i (`o${i}`)}
-      <li class="other">
-        <button class="flat tiny mono" onclick={() => {
-          ed.playing = false;
-          seek(m.at_ms);
-        }}>{formatTimecode(m.at_ms)}</button>
-        <span class="title {m.kind}">{m.title}</span>
-      </li>
-    {/each}
-  </ul>
-</section>
+  <section>
+    <h3>Markers</h3>
+    {#if adv.markers.length === 0 && others.length === 0}
+      <p class="hint muted">Press M to mark the playhead.</p>
+    {/if}
+    <ul>
+      {#each adv.markers as m, i (i)}
+        <li>
+          <button
+            class="flat tiny mono"
+            onclick={() => {
+              ed.playing = false;
+              seek(m.at_ms);
+            }}>{formatTimecode(m.at_ms)}</button
+          >
+          <input
+            class="text"
+            value={m.title}
+            maxlength="120"
+            aria-label="Marker title"
+            onchange={(e) =>
+              edit((p) => updateMarker(p, i, { title: (e.currentTarget as HTMLInputElement).value }), 'Rename marker')}
+          />
+          <button class="flat tiny" title="Remove" onclick={() => edit((p) => removeMarker(p, i), 'Remove marker')}
+            >×</button
+          >
+        </li>
+      {/each}
+      {#each others as m, i (`o${i}`)}
+        <li class="other">
+          <button
+            class="flat tiny mono"
+            onclick={() => {
+              ed.playing = false;
+              seek(m.at_ms);
+            }}>{formatTimecode(m.at_ms)}</button
+          >
+          <span class="title {m.kind}">{m.title}</span>
+        </li>
+      {/each}
+    </ul>
+  </section>
 {/if}
 
 <style>

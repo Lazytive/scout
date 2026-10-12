@@ -9,7 +9,13 @@ import { asProject } from './timeline';
 
 const dir = new URL('../../../../crates/klip-edit/fixtures/advanced/', import.meta.url);
 const fx = JSON.parse(readFileSync(new URL('compose.json', dir), 'utf8')) as {
-  cases: { name: string; source: SourceInfo; clips: [string, SourceInfo][]; project: unknown; expect: Record<string, unknown> }[];
+  cases: {
+    name: string;
+    source: SourceInfo;
+    clips: [string, SourceInfo][];
+    project: unknown;
+    expect: Record<string, unknown>;
+  }[];
 };
 
 /** JSON round trip: what both sides would write. */

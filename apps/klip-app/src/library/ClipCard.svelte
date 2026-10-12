@@ -49,9 +49,12 @@
   const strip = $derived(clip.thumbs.strip ? thumbUrl('strip', clip.key, clip.thumbs.strip) : null);
   const scrubbing = $derived(hover && strip !== null && stripLoaded === strip);
   const time = $derived(
-    new Date(clip.date_ms).toLocaleString([], showDay
-      ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
-      : { hour: '2-digit', minute: '2-digit' }),
+    new Date(clip.date_ms).toLocaleString(
+      [],
+      showDay
+        ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
+        : { hour: '2-digit', minute: '2-digit' },
+    ),
   );
   const title = $derived(displayName(clip.name));
   // A title made from the clip's time already says when: show its quality instead.
@@ -143,7 +146,14 @@
       <span class="badge mono">{formatTimecode(duration)}</span>
     {/if}
     {#if progress !== null}
-      <div class="job" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} title="Making a Discord copy">
+      <div
+        class="job"
+        role="progressbar"
+        aria-valuenow={progress}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        title="Making a Discord copy"
+      >
         <div style:width="{progress}%"></div>
       </div>
     {/if}
@@ -155,7 +165,9 @@
       class:on={clip.starred}
       aria-label={clip.starred ? 'Unstar' : 'Star'}
       aria-pressed={clip.starred}
-      title={clip.starred ? 'Starred: never removed to stay under the storage cap' : 'Star (keeps it from the storage cap)'}
+      title={clip.starred
+        ? 'Starred: never removed to stay under the storage cap'
+        : 'Star (keeps it from the storage cap)'}
       onclick={(e) => {
         e.stopPropagation();
         onstar();
