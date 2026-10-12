@@ -1,0 +1,64 @@
+# Linux check: every gate of `cargo xtask ci` (npm gates, fmt, clippy -D warnings, tests,
+# cargo deny, layers, audit) on Fedora 44, the same base as the `klip-dev` distrobox.
+# No GPU, display, portal or PipeWire daemon here: the hardware tests stay in
+# `cargo xtask e2e` and the Bazzite pass.
+name: Linux
+
+on:
+  push:
+    branches: [main, "ci/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: cargo xtask ci (Fedora 44)
+    runs-on: ubuntu-latest
+    container: fedora:44
+    timeout-minutes: 75
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: System packages
+        run: |
+          dnf -y install \
+            https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
+          dnf -y install --allowerasing --enablerepo=fedora-cisco-openh264 \
+            git gcc gcc-c++ make clang clang-devel pkgconf-pkg-config xz \
+            gstreamer1-devel gstreamer1-plugins-base-devel gstreamer1-plugins-base \
+            gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugin-libav \
+            gstreamer1-plugin-openh264 pipewire-devel pipewire-gstreamer \
+            alsa-lib-devel dbus-devel \
+            webkit2gtk4.1-devel gtk3-devel libsoup3-devel javascriptcoregtk4.1-devel \
+            libappindicator-gtk3-devel librsvg2-devel libxdo-devel openssl-devel \
+            wayland-devel libxkbcommon-devel \
+            ffmpeg
+          git config --global --add safe.directory '*'
+
+      - uses: actions/checkout@v5
+
+      - name: Rust (from rust-toolchain.toml)
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustup" toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/klip-app/package-lock.json
+
+      - name: cargo xtask ci
+        run: cargo xtask ci
