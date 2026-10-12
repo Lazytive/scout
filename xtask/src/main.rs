@@ -248,14 +248,21 @@ fn bench() -> Result<()> {
     run_step("benchmark", c)
 }
 
-/// The Windows installer with Scout's own GStreamer (M13 start, `bundle.rs`).
-fn bundle_installer() -> Result<()> {
+/// The Windows installer with Scout's own GStreamer (M13 start, `bundle.rs`);
+/// `--full-logs`: a tester build that logs everything (`klip-app`'s `full-logs`).
+fn bundle_installer(full_logs: bool) -> Result<()> {
     if !cfg!(windows) {
         bail!("bundle builds the Windows installer; run it on Windows");
     }
     npm::build(&root())?;
+    let features: &[&str] = if full_logs {
+        &["--features", "full-logs"]
+    } else {
+        &[]
+    };
     let mut c = cargo();
-    c.args(["build", "--release", "-p", "klip-app"]);
+    c.args(["build", "--release", "-p", "klip-app"])
+        .args(features);
     run_step("release build", c)?;
     let exe = root().join("target").join("release").join("klip-app.exe");
     bundle::run(&root(), &exe)?;
@@ -268,9 +275,26 @@ fn bundle_installer() -> Result<()> {
         "build",
         "--config",
         "src-tauri/tauri.bundle.conf.json",
-    ]);
+    ])
+    .args(features);
     run_step("installer (tauri build)", c)?;
-    println!("bundle: installer in target/release/bundle/nsis/");
+    if full_logs {
+        let nsis = root()
+            .join("target")
+            .join("release")
+            .join("bundle")
+            .join("nsis");
+        let name = format!("Scout_{}_x64-setup.exe", env!("CARGO_PKG_VERSION"));
+        let tester = format!(
+            "Scout_{}_x64-setup-full-logs.exe",
+            env!("CARGO_PKG_VERSION")
+        );
+        std::fs::rename(nsis.join(&name), nsis.join(&tester))
+            .with_context(|| format!("naming {tester}"))?;
+        println!("bundle: tester installer target/release/bundle/nsis/{tester}");
+    } else {
+        println!("bundle: installer in target/release/bundle/nsis/");
+    }
     Ok(())
 }
 
@@ -283,7 +307,7 @@ fn run() -> Result<()> {
         "audit" => audit::run(&root()),
         "e2e" => e2e(),
         "bench" => bench(),
-        "bundle" => bundle_installer(),
+        "bundle" => bundle_installer(std::env::args().any(|a| a == "--full-logs")),
         _ => {
             eprintln!("usage: cargo xtask <ci|layers|audit|e2e|bench|bundle>");
             bail!("unknown task {task:?}")

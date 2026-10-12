@@ -5,6 +5,13 @@ reason)`.
 
 ## Unreleased
 
+- M13 — Log files: every copy of Scout (app, recorder, media and encoder-probe workers)
+  logs to `%LOCALAPPDATA%\Scout\logs\scout-<kind>.<date>.log` (7 days kept, the home
+  folder written as `~`, panics logged); `apps/klip-app/src-tauri/src/logging.rs`. A
+  tester build, `cargo xtask bundle --full-logs` → `Scout_<v>_x64-setup-full-logs.exe`,
+  logs Scout at debug and GStreamer's own log (AMF at debug) per process; never a
+  release. (Claude Opus 5.5: the user, "get a full logged build", for their AMD tester)
+
 - M13 (start) — The Windows installer carries its own GStreamer: `cargo xtask bundle`
   (35 audited plugins + the DLLs they import + the MSVC runtime + licences, 34 MB;
   installer 12 MB, `target/release/bundle/nsis/Scout_0.0.1_x64-setup.exe`), a check

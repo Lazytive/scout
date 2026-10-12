@@ -45,3 +45,14 @@ pub fn use_bundled_gstreamer() -> bool {
     }
     true
 }
+
+/// Set environment variables at start-up (a tester build's GStreamer log). Call first
+/// thing in `main`, before any thread starts (child processes inherit them).
+#[allow(unsafe_code)] // Setting environment variables; the block says why it is sound.
+pub fn set_env_before_threads(vars: &[(&str, std::ffi::OsString)]) {
+    for (key, value) in vars {
+        // SAFETY: called at the start of `main`, before this process starts any thread,
+        // so nothing reads or writes the environment at the same time.
+        unsafe { std::env::set_var(key, value) };
+    }
+}

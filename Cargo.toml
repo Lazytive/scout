@@ -69,6 +69,7 @@ arboard = { version = "3.6", default-features = false, features = ["wayland-data
 trash = { version = "5.2", default-features = false, features = ["coinit_apartmentthreaded"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 wgpu = "30"
 windows = "0.62"
 # The `implement` macro (COM callbacks in klip-platform) expands to `windows_core` paths.

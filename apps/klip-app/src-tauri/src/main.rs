@@ -16,6 +16,7 @@
 
 mod cue;
 mod ipc;
+mod logging;
 mod overlay;
 mod thumb_scheme;
 mod tray;
@@ -374,6 +375,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn main() -> ExitCode {
     // An installed Scout carries its own GStreamer (cargo xtask bundle); before any thread.
     let bundled_gstreamer = klip_platform::use_bundled_gstreamer();
+    let kind = logging::kind();
+    klip_platform::set_env_before_threads(&logging::gstreamer_env(kind));
+    // Every copy of the exe logs to a file (logging.rs); workers to the file only.
+    logging::init(kind);
+    if kind == "app" {
+        logging::prune();
+        tracing::info!(
+            version = env!("CARGO_PKG_VERSION"),
+            full_logs = logging::FULL,
+            bundled_gstreamer,
+            logs = %logging::dir().map(|d| d.display().to_string()).unwrap_or_default(),
+            "Scout starting"
+        );
+    }
     // Encoder probes run in a fresh copy of this executable (klip_probe::isolated).
     if let Some(code) = klip_probe::worker_main() {
         return ExitCode::from(u8::try_from(code).unwrap_or(1));
@@ -381,16 +396,6 @@ fn main() -> ExitCode {
     // Library thumbnails too (klip_engine::media_worker): hostile files can't crash us.
     if let Some(code) = klip_engine::media_worker::worker_main() {
         return ExitCode::from(u8::try_from(code).unwrap_or(1));
-    }
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
-    if bundled_gstreamer {
-        tracing::info!("using the GStreamer beside the exe");
     }
     // The engine's recorder runs in a copy of this executable too (ADR 0016).
     if let Some(code) = klip_engine::worker_main() {
