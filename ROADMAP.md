@@ -16,7 +16,7 @@ Last updated: 2026-10-12 (M11 done; human checklists up to M11.5 passed; Linux g
 | M9 | Editor, Advanced mode (incl. montage) | **done on Windows** (ADR 0018 accepted): schema v2, the composition renderer (montages, transitions, zoom, stickers, colour, ducking, Custom export; 10-minute montage 10.3x realtime, < 800 MB), `editor.frame`/montage projects, the Advanced workspace with a canvas preview and Web Audio sound (≥ 39.9 dB vs the export), e2e `m9_montage.rs`; human checklist passed; Linux not yet run |
 | M10 | Themes v1 | **done on Windows** (session 16): accent colour, text size, density, reduced motion, custom theme files (colours, corners, font, background picture) with import/export, editor with live preview and a contrast warning; the overlay follows. Human checklist passed (2026-10-12); Linux not yet run |
 | M11 | Sharing | **done on Windows** (human checklist passed 2026-10-12; Linux gates green in CI, the app not yet run on Linux): copy clips as files, drag out, "Discord" (fits as is, else a Discord export, then copied); the self-hostable share server `scout-share` + Docker exist and are tested, but Scout doesn't upload to it (parked: the user doesn't want to host) |
-| M12 | Auto-clip via official integrations | |
+| M12 | Auto-clip via official integrations | **dropped** (2026-10-12, the user: "Forget the auto clipping"; they play none of CS2, Dota 2, League). Hotkeys only |
 | M13 | Release 0.1 | |
 
 ## What works (measured)

@@ -5,6 +5,9 @@ reason)`.
 
 ## Unreleased
 
+- M12 — Auto-clip dropped: the user doesn't play CS2, Dota 2 or League ("Forget the
+  auto clipping tbh"). Clips stay hotkey-only. (Claude Opus 5.5)
+
 - M11.10 — M11 Sharing done: the human checklist for copy, drag out and Discord passed
   (7/7, 2026-10-12). (Claude Opus 5.5)
 
