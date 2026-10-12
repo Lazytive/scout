@@ -241,7 +241,10 @@ pub fn process_usage(pid: u32) -> Result<crate::ProcessUsage, PlatformError> {
     let resident = pages.get(1).copied().unwrap_or(0).saturating_mul(page);
     let shared = pages.get(2).copied().unwrap_or(0).saturating_mul(page);
     Ok(crate::ProcessUsage {
-        cpu_ns: ticks.saturating_mul(1_000_000_000).checked_div(hz).unwrap_or(0),
+        cpu_ns: ticks
+            .saturating_mul(1_000_000_000)
+            .checked_div(hz)
+            .unwrap_or(0),
         resident_bytes: resident,
         private_bytes: resident.saturating_sub(shared),
     })
