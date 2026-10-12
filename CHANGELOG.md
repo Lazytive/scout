@@ -5,6 +5,12 @@ reason)`.
 
 ## Unreleased
 
+- Tested — AMD (the user's tester, RX 9070 XT + Ryzen graphics, tester build v3): the
+  self-test passed 13/13 in 71 s: 17 encoders work (AMF H.264/HEVC/AV1, D3D12, Media
+  Foundation), recordings at 2560×1440 / 144 fps with AMF and D3D12 (3 audio tracks,
+  saved in 71–84 ms), thumbnails, preview, YouTube and Discord exports. Windows lists the
+  RX 9070 XT twice (two adapters, same device). (Claude Opus 5.5)
+
 - M13 — Settings → Debug (tester builds only, `full-logs`): a self-test of Scout's real
   paths (`src/lib/selftest.ts`): fresh probes of every H.264/HEVC/AV1 encoder (engine
   `encoders.list {fresh: true}` now re-probes them all and returns `tested` with each

@@ -7,7 +7,7 @@ Last updated: 2026-10-12 (M11 done; human checklists up to M11.5 passed; Linux g
 | M0 | Repo, rules, gates | **done** |
 | M1 | Recorder CLI (Windows, NVENC) | **done**: acceptance passes |
 | M2 | Audio (game/per-app/mic tracks, A/V sync ≤ 1 frame) | **done**: acceptance passes |
-| M3 | All GPUs + fallbacks, HDR tone-mapping | **done** (AMD/Intel unverified, see below) |
+| M3 | All GPUs + fallbacks, HDR tone-mapping | **done**; AMD verified 2026-10-12 by the user's tester (RX 9070 XT + Ryzen graphics, the Debug self-test: AMF H.264/HEVC/AV1, D3D12 and Media Foundation encoders all work, 1440p144 recordings, exports); Intel unverified |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
 | M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
 | M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
@@ -17,7 +17,7 @@ Last updated: 2026-10-12 (M11 done; human checklists up to M11.5 passed; Linux g
 | M10 | Themes v1 | **done on Windows** (session 16): accent colour, text size, density, reduced motion, custom theme files (colours, corners, font, background picture) with import/export, editor with live preview and a contrast warning; the overlay follows. Human checklist passed (2026-10-12); Linux not yet run |
 | M11 | Sharing | **done on Windows** (human checklist passed 2026-10-12; Linux gates green in CI, the app not yet run on Linux): copy clips as files, drag out, "Discord" (fits as is, else a Discord export, then copied); the self-hostable share server `scout-share` + Docker exist and are tested, but Scout doesn't upload to it (parked: the user doesn't want to host) |
 | M12 | Auto-clip via official integrations | **dropped** (2026-10-12, the user: "Forget the auto clipping"; they play none of CS2, Dota 2, League). Hotkeys only |
-| M13 | Release 0.1 | **started**: Windows installer with its own GStreamer (`cargo xtask bundle`, NSIS, unsigned), tested from the extracted installer without a system GStreamer on NVIDIA; AMD/Intel encoders bundled but unverified; no Flatpak, updater or README screenshots yet |
+| M13 | Release 0.1 | **started**: Windows installer with its own GStreamer (`cargo xtask bundle`, NSIS, unsigned), tested from the extracted installer without a system GStreamer on NVIDIA and, by the user's tester, on AMD (RX 9070 XT: self-test 13/13 OK); Intel unverified; tester builds have Settings → Debug → self-test; no Flatpak, updater or README screenshots yet |
 
 ## What works (measured)
 
