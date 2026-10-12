@@ -15,6 +15,7 @@ use klip_library::{Library, ThumbKind};
 use serde_json::{Value, json};
 
 use super::{Inner, lock};
+use crate::atomic::write_atomic;
 use crate::config;
 use crate::events::Event;
 use crate::media_worker::{MediaWorker, ThumbJob};
@@ -28,15 +29,6 @@ const MAX_POSTER: u64 = 8 * 1024 * 1024;
 
 /// Unique names for posters on their way from the worker.
 static POSTER_SEQ: AtomicU64 = AtomicU64::new(0);
-
-fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("jpg.tmp");
-    std::fs::write(&tmp, data)?;
-    std::fs::rename(&tmp, path)
-}
 
 impl Inner {
     /// Make the clip's thumbnail on a job thread; emits `thumbnail` when done.

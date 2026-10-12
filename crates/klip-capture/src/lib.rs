@@ -902,7 +902,7 @@ fn watch_portal(
     let spawned = std::thread::Builder::new()
         .name("klip-portal-watch".into())
         .spawn(move || {
-            let _ = catch_unwind(AssertUnwindSafe(|| {
+            let r = catch_unwind(AssertUnwindSafe(|| {
                 while !stop.load(Ordering::Relaxed) {
                     if portal.0.is_closed() {
                         stats.errors.fetch_add(1, Ordering::Relaxed);
@@ -912,6 +912,9 @@ fn watch_portal(
                     std::thread::sleep(std::time::Duration::from_millis(250));
                 }
             }));
+            if r.is_err() {
+                tracing::error!("the screen-cast watcher panicked");
+            }
         });
     if let Err(e) = spawned {
         tracing::warn!(error = %e, "cannot watch the screen-cast session");
@@ -1519,7 +1522,7 @@ impl CaptureSession {
         let bus_thread = std::thread::Builder::new()
             .name("klip-capture-bus".into())
             .spawn(move || {
-                let _ = catch_unwind(AssertUnwindSafe(|| {
+                let r = catch_unwind(AssertUnwindSafe(|| {
                     while !thread_stop.load(Ordering::Relaxed) {
                         let Some(msg) = bus.timed_pop_filtered(
                             gst::ClockTime::from_mseconds(100),
@@ -1551,6 +1554,13 @@ impl CaptureSession {
                         }
                     }
                 }));
+                if r.is_err() {
+                    // Capture errors would go unseen from here on: say so, so the
+                    // recorder restarts the capture.
+                    tracing::error!("the capture bus thread panicked");
+                    thread_stats.errors.fetch_add(1, Ordering::Relaxed);
+                    sink.on_error("the capture watcher failed".into());
+                }
             })
             .map_err(|e| CaptureError::Gst(format!("cannot start bus thread: {e}")))?;
         let session = CaptureSession {

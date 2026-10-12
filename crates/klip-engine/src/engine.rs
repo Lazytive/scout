@@ -140,6 +140,9 @@ pub(crate) struct Inner {
     settings_path: PathBuf,
     isolation: Isolation,
     settings: Mutex<Settings>,
+    /// Serialises settings changes (patch, save, swap), so readers of `settings` never
+    /// wait for the file write.
+    settings_write: Mutex<()>,
     load_status: LoadStatus,
     load_issues: Vec<Issue>,
     bus: Bus,
@@ -203,6 +206,7 @@ impl Engine {
             settings_path: opts.settings_path.clone(),
             isolation: opts.isolation.clone(),
             settings: Mutex::new(loaded.settings),
+            settings_write: Mutex::new(()),
             load_status: loaded.status,
             load_issues: loaded.issues,
             bus: Bus::default(),
@@ -541,7 +545,6 @@ impl Inner {
                 status,
                 attempts: _,
             }) => {
-                self.check_disk(true);
                 st.current = Some(Current {
                     recorder: Arc::new(handle),
                     clip_dir: clip_dir.clone(),
@@ -549,6 +552,9 @@ impl Inner {
                 st.retry_at = None;
                 st.last_error = None;
                 drop(st);
+                // Not under the `state` lock: the free-space query can be slow on a
+                // network drive and `status()` or a hotkey save would wait for it.
+                self.check_disk(true);
                 self.emit(&Event::RecorderStarted {
                     game: name,
                     encoder: status.get("encoder").cloned().unwrap_or(Value::Null),
@@ -729,14 +735,16 @@ impl Inner {
 
     fn set_settings(&self, patch: &Value) -> Result<Value, CommandError> {
         let (new, old) = {
-            let mut s = lock(&self.settings);
-            let new = s.apply_patch(patch).map_err(|e| match e {
+            let _writer = lock(&self.settings_write);
+            let new = self.settings().apply_patch(patch).map_err(|e| match e {
                 SettingsError::Invalid(i) => CommandError::bad_args(i.to_string()),
                 other => CommandError::new("failed", other.to_string()),
             })?;
+            // Saved before the swap, outside the `settings` lock: `tick()` and every
+            // reader go on while the file is written (and fsynced).
             klip_settings::save(&self.settings_path, &new)
                 .map_err(|e| CommandError::new("failed", format!("saving the settings: {e}")))?;
-            let old = std::mem::replace(&mut *s, new.clone());
+            let old = std::mem::replace(&mut *lock(&self.settings), new.clone());
             (new, old)
         };
         if new.hotkeys != old.hotkeys {

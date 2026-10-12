@@ -185,19 +185,7 @@ pub struct ExportReply {
     pub summary: Option<ExportSummary>,
 }
 
-pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".tmp");
-    let tmp = PathBuf::from(tmp);
-    let r = std::fs::write(&tmp, data).and_then(|()| std::fs::rename(&tmp, path));
-    if r.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    r
-}
+pub(crate) use crate::atomic::write_atomic;
 
 /// Do a job in this process. Both pictures are tried; errors are joined.
 pub fn run_job(job: &ThumbJob) -> Result<(), String> {

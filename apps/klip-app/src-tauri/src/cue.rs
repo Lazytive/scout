@@ -33,7 +33,7 @@ pub fn play() {
     let spawned = std::thread::Builder::new()
         .name("klip-cue".into())
         .spawn(|| {
-            if let Err(e) = run() {
+            if let Some(Err(e)) = crate::guard::guarded("clip sound", run) {
                 tracing::debug!(error = %e, "clip sound");
             }
         });

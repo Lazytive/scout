@@ -5,6 +5,25 @@ reason)`.
 
 ## Unreleased
 
+- Improvements I.1–I.5 — Bug risks from the 2026-10-09 review, each with a test: the
+  free-space check after a recorder start no longer runs under the engine's state lock;
+  a clean-up that isn't a save's own (at start, a changed cap, `storage.cleanup`) never
+  removes the newest clip (it could take the clip just saved when it alone was over the
+  cap); settings are saved outside the readers' lock, a writer lock keeps concurrent
+  changes in order (40 changes from 4 threads, none lost, file = memory); one fsynced
+  atomic write for posters, overlay thumbnails and the portal token (a crash could leave
+  a 0-byte poster cached as valid). App: the engine-events loop, overlay timers, the clip
+  sound and tray actions catch panics (one panic used to stop every later UI event).
+  Recorder/capture: a panicking video supervisor, capture bus or screen-cast watcher is
+  logged (the bus one reports a capture error so the recorder restarts it) instead of
+  ending silently. Front end: estimate / encoder replies apply only if they are the
+  newest (`lib/latest.ts`), failures are caught; Star / Unstar goes through the whole
+  selection when one clip fails and says which in a toast. New tests: config builder
+  (`plan_with`, `audio_config`), e2e export through the media worker (progress never
+  backwards, frames = plan; a cancelled second job leaves no file), export with the
+  recorder's real track layouts (`Mix` + `Game` + `Microphone`, `Mix` alone). (Claude
+  Opus 5.5: `plan/IMPROVEMENTS.md` B/C/E/G, the user's "go ahead with scout improvements")
+
 - Tested — AMD (the user's tester, RX 9070 XT + Ryzen graphics, tester build v3): the
   self-test passed 13/13 in 71 s: 17 encoders work (AMF H.264/HEVC/AV1, D3D12, Media
   Foundation), recordings at 2560×1440 / 144 fps with AMF and D3D12 (3 audio tracks,

@@ -231,6 +231,82 @@ fn storage_cap_removes_the_oldest_unstarred_clips() {
     engine.shutdown();
 }
 
+/// Regression (IMPROVEMENTS B2): a clean-up that isn't a save's own (at start, a
+/// changed cap, `storage.cleanup`) used to protect nothing, so the clip just saved went
+/// when it alone was over the cap.
+#[test]
+fn storage_cap_never_removes_the_newest_clip() {
+    let dir = tempfile::tempdir().unwrap();
+    if klip_platform::free_disk_space(dir.path()).unwrap() < 3 << 30 {
+        eprintln!("skipped: needs 3 GiB free for the test files");
+        return;
+    }
+    let clips = dir.path().join("clips");
+    let old = clips.join("G/old.mp4");
+    let new = clips.join("G/new.mp4");
+    big_clip(&old, 300, 600);
+    big_clip(&new, 1200, 10);
+    let path = dir.path().join("settings.json");
+    let s = json!({
+        "app": {"control_channel": false},
+        "clips": {"folder": clips},
+        "hotkeys": [],
+        "games": {"buffer": "off"},
+        "storage": {"cap_gb": 1, "over_cap": "delete", "low_disk_gb": 0},
+    });
+    std::fs::write(&path, s.to_string()).unwrap();
+    let (engine, rx) = start(path);
+    let cleaned = next(&rx, "storage_cleaned");
+    assert_eq!(cleaned["report"]["removed"], 1, "{cleaned}");
+    assert!(!old.exists() && new.exists());
+    let r = engine.handle("storage.cleanup", &Value::Null).unwrap();
+    assert_eq!(r["removed"], 0, "{r}");
+    assert!(new.exists());
+    engine.shutdown();
+}
+
+/// Settings changes from many threads at once: none is lost, and the file matches what
+/// the engine holds (IMPROVEMENTS B3 moved the save out of the readers' lock).
+#[test]
+fn concurrent_settings_changes_are_all_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = quiet_settings(dir.path());
+    let (engine, _rx) = start(path.clone());
+    let engine = std::sync::Arc::new(engine);
+    let threads: Vec<_> = (0..4)
+        .map(|t| {
+            let e = engine.clone();
+            std::thread::spawn(move || {
+                for i in 0..10u32 {
+                    let patch = match t {
+                        0 => json!({"storage": {"cap_gb": 10 + i}}),
+                        1 => json!({"storage": {"low_disk_gb": 20 + i}}),
+                        2 => json!({"recording": {"buffer_secs": 30 + i}}),
+                        _ => json!({"app": {"start_minimized": i % 2 == 0}}),
+                    };
+                    e.handle("settings.set", &patch).unwrap();
+                    let _ = e.handle("engine.status", &Value::Null).unwrap();
+                }
+            })
+        })
+        .collect();
+    for t in threads {
+        t.join().unwrap();
+    }
+    let got = engine.handle("settings.get", &Value::Null).unwrap();
+    let s = &got["settings"];
+    assert_eq!(s["storage"]["cap_gb"], 19, "{s}");
+    assert_eq!(s["storage"]["low_disk_gb"], 29);
+    assert_eq!(s["recording"]["buffer_secs"], 39);
+    assert_eq!(s["app"]["start_minimized"], false);
+    let file: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(&file, s);
+    match std::sync::Arc::try_unwrap(engine) {
+        Ok(e) => e.shutdown(),
+        Err(_) => panic!("engine still shared"),
+    }
+}
+
 #[test]
 fn setup_commands() {
     let dir = tempfile::tempdir().unwrap();

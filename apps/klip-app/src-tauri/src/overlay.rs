@@ -370,7 +370,7 @@ impl Overlay {
             .name("klip-overlay-timer".into())
             .spawn(move || {
                 std::thread::sleep(d);
-                f();
+                crate::guard::guarded("overlay timer", f);
             });
         if let Err(e) = spawned {
             tracing::warn!(error = %e, "overlay timer");

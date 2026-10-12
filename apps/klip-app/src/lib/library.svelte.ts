@@ -155,10 +155,24 @@ async function act(fn: () => Promise<unknown>): Promise<boolean> {
   }
 }
 
+/** Star or unstar every clip; one that fails doesn't stop the rest (a toast says which). */
 export async function setStar(clips: LibClip[], starred: boolean): Promise<void> {
-  await act(async () => {
-    for (const c of clips) await call('clip.star', { path: c.path, starred });
-  });
+  lib.error = null;
+  const failed: { clip: LibClip; error: unknown }[] = [];
+  for (const c of clips) {
+    try {
+      await call('clip.star', { path: c.path, starred });
+    } catch (error) {
+      failed.push({ clip: c, error });
+    }
+  }
+  const first = failed[0];
+  if (first) {
+    const verb = starred ? 'star' : 'unstar';
+    const what = clips.length === 1 ? 'the clip' : `${failed.length} of ${clips.length} clips`;
+    toast(`Couldn't ${verb} ${what}: ${message(first.error)}`, 'error');
+  }
+  await refreshLibrary();
 }
 
 /** Rename a clip; on success it stays selected under its new key. */

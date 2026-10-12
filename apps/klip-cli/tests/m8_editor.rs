@@ -167,7 +167,7 @@ fn editor_project_and_discord_export_over_a_real_clip() {
             "a second export must be refused while one runs"
         );
     }
-    let mut progress_seen = 0;
+    let mut progress = Vec::new();
     let done = loop {
         let e = events.wait_for(Duration::from_secs(180), |e| {
             (e["event"] == "export_progress" || e["event"] == "export_done") && e["id"] == id
@@ -175,8 +175,13 @@ fn editor_project_and_discord_export_over_a_real_clip() {
         if e["event"] == "export_done" {
             break e;
         }
-        progress_seen += 1;
+        progress.push((
+            e["pass"].as_u64().unwrap(),
+            e["frames_done"].as_u64().unwrap(),
+            e["frames_total"].as_u64().unwrap(),
+        ));
     };
+    let progress_seen = progress.len();
     println!(
         "export: {:?}, {progress_seen} progress events, {}",
         started_at.elapsed(),
@@ -232,6 +237,21 @@ fn editor_project_and_discord_export_over_a_real_clip() {
     let report = klip_testkit::continuity::analyze(&out_counters);
     assert_eq!(report.backwards, 0, "{report}");
 
+    // The worker's progress lines (IMPROVEMENTS G3): never backwards within a pass, and
+    // every pass counts the frames the plan has.
+    assert!(progress_seen > 0, "no progress from the media worker");
+    for w in progress.windows(2) {
+        let ((p0, d0, _), (p1, d1, _)) = (w[0], w[1]);
+        assert!(
+            p1 > p0 || (p1 == p0 && d1 >= d0),
+            "progress went back: {w:?}"
+        );
+    }
+    for (pass, done_frames, total) in &progress {
+        assert_eq!(*total, render.frame_count(fps), "pass {pass}");
+        assert!(done_frames <= total, "pass {pass}: {done_frames}/{total}");
+    }
+
     // The Library lists the export beside its clip, with its info.
     events.wait_for(Duration::from_secs(10), |e| {
         e["event"] == "library_changed" && e["reason"] == "exported"
@@ -251,6 +271,27 @@ fn editor_project_and_discord_export_over_a_real_clip() {
     events.wait_for(Duration::from_secs(60), |e| {
         e["event"] == "thumbs_ready" && e["key"] == key.as_str()
     });
+
+    // A second job on the same media worker, cancelled at its first progress line: an
+    // error, and neither the file nor its part file is left (IMPROVEMENTS G3).
+    let started = call(
+        &discovery,
+        "export.start",
+        json!({"path": clip_s, "preset": "youtube"}),
+    );
+    let id2 = started["id"].as_u64().unwrap();
+    let out2 = PathBuf::from(started["out"].as_str().unwrap());
+    let first = events.wait_for(Duration::from_secs(120), |e| {
+        (e["event"] == "export_progress" || e["event"] == "export_done") && e["id"] == id2
+    });
+    assert_eq!(first["event"], "export_progress", "{first}");
+    call(&discovery, "export.cancel", json!({"id": id2}));
+    let done2 = events.wait_for(Duration::from_secs(60), |e| {
+        e["event"] == "export_done" && e["id"] == id2
+    });
+    assert_eq!(done2["ok"], false, "{done2}");
+    assert!(!out2.exists(), "a cancelled export left {}", out2.display());
+    assert!(!out2.with_extension("mp4.part").exists());
 
     // The project follows a rename; delete removes both.
     let r = call(

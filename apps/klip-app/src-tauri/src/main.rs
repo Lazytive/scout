@@ -15,6 +15,7 @@
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
 mod cue;
+mod guard;
 mod ipc;
 mod logging;
 mod overlay;
@@ -302,14 +303,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .name("klip-events".into())
                 .spawn(move || {
                     let mut autostart: Option<bool> = None;
-                    for e in rx {
-                        tray::update(&tray, &tray_state, &e);
-                        overlay.on_event(&e);
-                        if let klip_engine::Event::SettingsChanged { settings } = &e {
+                    guard::pump(rx, "engine event", |e| {
+                        tray::update(&tray, &tray_state, e);
+                        overlay.on_event(e);
+                        if let klip_engine::Event::SettingsChanged { settings } = e {
                             sync_autostart(&handle, settings, &mut autostart);
                         }
                         let _ = handle.emit("klip://event", e.to_json());
-                    }
+                    });
                 })?;
 
             // `app.quit` / `recorder.stop` from the control channel ends the app.

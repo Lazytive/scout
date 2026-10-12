@@ -11,6 +11,7 @@
   import Segmented from './lib/forms/Segmented.svelte';
   import Select from './lib/forms/Select.svelte';
   import Toggle from './lib/forms/Toggle.svelte';
+  import { latestOnly } from './lib/latest';
   import { presets, type Settings } from './lib/settings';
   import { app, fieldError, meter, save } from './lib/store.svelte';
 
@@ -30,16 +31,25 @@
     .catch((e) => (hw = { gpus: [], encoders: [], error: e instanceof Error ? e.message : String(e) }));
 
   let estimate = $state<number | null>(null);
+  const takeEstimate = latestOnly();
   $effect(() => {
     const draft = { recording: s.recording, audio: s.audio };
-    void call<{ bytes: number }>('recording.estimate', draft).then((r) => (estimate = r.bytes));
+    takeEstimate(
+      call<{ bytes: number }>('recording.estimate', draft),
+      (r) => (estimate = r.bytes),
+      () => (estimate = null),
+    );
   });
 
   let inputs = $state<{ id: string; name: string }[]>([]);
   let testing = $state(false);
   $effect(() => {
     if (step === 3 && inputs.length === 0) {
-      void call<{ inputs: typeof inputs }>('audio.devices').then((r) => (inputs = r.inputs));
+      // On failure the list stays empty (no reassignment, so this effect doesn't loop);
+      // coming back to this step asks again.
+      void call<{ inputs: typeof inputs }>('audio.devices')
+        .then((r) => (inputs = r.inputs))
+        .catch(() => undefined);
     }
     if (step !== 3 && testing) {
       testing = false;
@@ -78,8 +88,8 @@
       {#if step === 0}
         <h3>Scout keeps the last moments of your games</h3>
         <p class="muted">
-          While a game runs, Scout keeps the last minutes in memory. Press your hotkey and the moment
-          is saved as a clip. Nothing is uploaded, and there is no account.
+          While a game runs, Scout keeps the last minutes in memory. Press your hotkey and the moment is saved as a
+          clip. Nothing is uploaded, and there is no account.
         </p>
         <div class="hw">
           {#if !hw}
@@ -116,7 +126,9 @@
             onchange={(v) => save(['recording', 'buffer_secs'], v)}
           />
           {#if estimate !== null}
-            <span class="muted">· about <span class="mono accent">{formatBytes(estimate)}</span> of memory while a game runs</span>
+            <span class="muted"
+              >· about <span class="mono accent">{formatBytes(estimate)}</span> of memory while a game runs</span
+            >
           {/if}
         </div>
       {:else if step === 2}
@@ -135,12 +147,19 @@
         {#if fieldError('hotkeys')}<p class="bad">{fieldError('hotkeys')}</p>{/if}
       {:else if step === 3}
         <h3>Microphone</h3>
-        <Toggle label="Record my microphone in clips" checked={s.audio.mic} onchange={(v) => save(['audio', 'mic'], v)} />
+        <Toggle
+          label="Record my microphone in clips"
+          checked={s.audio.mic}
+          onchange={(v) => save(['audio', 'mic'], v)}
+        />
         <div class="line">
           <Select
             label="Microphone"
             value={s.audio.mic_device ?? ''}
-            options={[{ value: '', label: 'Default microphone' }, ...inputs.map((d) => ({ value: d.id, label: d.name }))]}
+            options={[
+              { value: '', label: 'Default microphone' },
+              ...inputs.map((d) => ({ value: d.id, label: d.name })),
+            ]}
             onchange={(v) => save(['audio', 'mic_device'], v || null)}
           />
           <button
@@ -159,7 +178,11 @@
           fallback={app.storage?.folder ?? 'Videos\\Scout'}
           onchange={(v) => save(['clips', 'folder'], v)}
         />
-        <Toggle label="A folder per game" checked={s.clips.per_game_folders} onchange={(v) => save(['clips', 'per_game_folders'], v)} />
+        <Toggle
+          label="A folder per game"
+          checked={s.clips.per_game_folders}
+          onchange={(v) => save(['clips', 'per_game_folders'], v)}
+        />
         {#if fieldError('clips')}<p class="bad">{fieldError('clips')}</p>{/if}
       {:else}
         <h3>When a clip is saved</h3>

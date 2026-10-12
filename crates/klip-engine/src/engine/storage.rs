@@ -26,7 +26,11 @@ impl Inner {
     }
 
     /// Bring the clip folder under the cap. `protect`: never removed (the clip just
-    /// saved).
+    /// saved); nor is the newest clip, so a clean-up that runs before a save's own one
+    /// (`storage.cleanup`, a changed cap) can't take the clip just saved either.
+    ///
+    /// `library_lock` stays held while files go to the trash: a clip starred or renamed
+    /// meanwhile must not be removed on a stale decision (never lose a clip).
     pub(super) fn cleanup(&self, protect: &[PathBuf]) -> Result<Value, CommandError> {
         let settings = self.settings();
         let lib = Self::library(&settings)?;
@@ -34,7 +38,11 @@ impl Inner {
         let _guard = lock(&self.library_lock);
         let files = lib.scan();
         let mut meta = lib.load_meta();
-        let doomed = klip_library::over_cap(&files, &meta, cap, protect);
+        let mut protect = protect.to_vec();
+        if let Some(newest) = files.iter().max_by(|a, b| a.modified.cmp(&b.modified)) {
+            protect.push(newest.path.clone());
+        }
+        let doomed = klip_library::over_cap(&files, &meta, cap, &protect);
         if doomed.is_empty() {
             return Ok(json!({ "removed": 0, "bytes": 0, "failed": [] }));
         }

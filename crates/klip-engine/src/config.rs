@@ -364,14 +364,9 @@ pub fn read_portal_token(path: &Path) -> Option<String> {
     ok.then_some(token)
 }
 
-/// Write `token` atomically (temp file + rename).
+/// Write `token` atomically (temp file, fsync, rename).
 pub fn write_portal_token(path: &Path, token: &str) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, token)?;
-    std::fs::rename(&tmp, path)
+    crate::atomic::write_atomic(path, token.as_bytes())
 }
 
 /// Open a screen-cast session: restores the stored choice, or shows the desktop's dialog.
@@ -523,4 +518,124 @@ pub fn plan_with(
         clip_dir,
         fps: q.fps,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+
+    use klip_probe::{EncoderFamily, EncoderVendor};
+
+    use super::*;
+
+    fn audio() -> AudioSettings {
+        AudioSettings {
+            desktop: DesktopAudio::Off,
+            voice: false,
+            mic: false,
+            mic_device: None,
+            ..AudioSettings::default()
+        }
+    }
+
+    #[test]
+    fn no_audio_input_is_silence() {
+        assert!(audio_config(&audio(), Some(42)).is_none());
+    }
+
+    #[test]
+    fn microphone_alone_uses_the_chosen_device_and_bitrate() {
+        let a = AudioSettings {
+            mic: true,
+            mic_device: Some("USB mic".into()),
+            bitrate_kbps: 160,
+            separate_tracks: true,
+            ..audio()
+        };
+        let c = audio_config(&a, None).unwrap();
+        assert_eq!(c.inputs.len(), 1);
+        assert_eq!(c.inputs[0].label, "Microphone");
+        assert!(matches!(
+            &c.inputs[0].source,
+            AudioSource::Device { device: Some(d) } if d == "USB mic"
+        ));
+        assert_eq!(c.bitrate, 160_000);
+        assert_eq!(c.track_labels(), ["Microphone"]);
+    }
+
+    #[test]
+    fn game_audio_follows_the_game_process_where_it_can() {
+        let a = AudioSettings {
+            desktop: DesktopAudio::Game,
+            mic: true,
+            separate_tracks: true,
+            ..audio()
+        };
+        let c = audio_config(&a, Some(4242)).unwrap();
+        let per_app = klip_capture::audio::process_loopback_supported();
+        match (&c.inputs[0].source, per_app) {
+            (AudioSource::Process { pid: 4242 }, true) => assert_eq!(c.inputs[0].label, "Game"),
+            (_, false) => assert_eq!(c.inputs[0].label, "System"),
+            (other, _) => panic!("unexpected source {other:?}"),
+        }
+        assert_eq!(c.inputs[1].label, "Microphone");
+        // Two inputs: the Mix first, then each input on its own.
+        assert_eq!(c.track_labels().len(), 3);
+        assert_eq!(c.track_labels()[0], klip_capture::audio::MIX_LABEL);
+        // No game (the desktop) or a pid of 0: all system audio.
+        for pid in [None, Some(0)] {
+            let c = audio_config(&a, pid).unwrap();
+            assert_eq!(c.inputs[0].label, "System", "{pid:?}");
+        }
+    }
+
+    fn encoder(element: &str) -> EncoderChoice {
+        EncoderChoice {
+            element: element.into(),
+            codec: Codec::H264,
+            family: EncoderFamily::Amf,
+            vendor: EncoderVendor::Amd,
+            description: String::new(),
+            rank: 0,
+            gpu: None,
+            device_index: 0,
+        }
+    }
+
+    #[test]
+    fn a_plan_needs_an_encoder() {
+        let s = Settings::default();
+        assert!(matches!(
+            plan_with(&s, None, vec![]),
+            Err(EngineError::Config(_))
+        ));
+    }
+
+    /// Linux plans open the screen-cast portal, so this runs on Windows.
+    #[cfg(windows)]
+    #[test]
+    fn plan_uses_the_first_encoder_and_keeps_the_rest_as_fallbacks() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = Settings::default();
+        s.clips.folder = Some(dir.path().to_string_lossy().into_owned());
+        s.clips.per_game_folders = true;
+        s.recording.buffer_secs = 30;
+        s.audio = audio();
+        let p = plan_with(&s, None, vec![encoder("a"), encoder("b"), encoder("c")]).unwrap();
+        assert_eq!(p.config.encode.encoder.element, "a");
+        let rest: Vec<&str> = p
+            .config
+            .encoder_fallbacks
+            .iter()
+            .map(|e| e.element.as_str())
+            .collect();
+        assert_eq!(rest, ["b", "c"]);
+        assert_eq!(p.clip_dir, dir.path().join(DESKTOP_FOLDER));
+        assert_eq!(p.config.buffer, 30 * 1000 * NANOS_PER_MILLI);
+        assert_eq!(p.fps, p.config.video.fps);
+        assert_eq!(p.config.encode.keyframe_interval, p.fps);
+        assert!(p.config.audio.is_none());
+        assert!(p.config.max_buffer_bytes > 0);
+        assert!(matches!(p.config.video.target, VideoTarget::PrimaryMonitor));
+    }
 }

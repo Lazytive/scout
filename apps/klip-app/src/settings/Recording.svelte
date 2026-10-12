@@ -6,6 +6,7 @@
   import Segmented from '../lib/forms/Segmented.svelte';
   import Select from '../lib/forms/Select.svelte';
   import Toggle from '../lib/forms/Toggle.svelte';
+  import { latestOnly } from '../lib/latest';
   import { bufferChoices, presets, ranges, type Preset, type Settings, type VideoCodec } from '../lib/settings';
   import { fieldError, save } from '../lib/store.svelte';
 
@@ -15,20 +16,33 @@
   const c = $derived(q.custom);
 
   let estimate = $state<{ bytes: number; video_kbps: number; audio_kbps: number; fps: number } | null>(null);
+  const takeEstimate = latestOnly();
   $effect(() => {
     const draft = { recording: s.recording, audio: s.audio };
-    void call<typeof estimate>('recording.estimate', draft).then((r) => (estimate = r));
+    takeEstimate(
+      call<typeof estimate>('recording.estimate', draft),
+      (r) => (estimate = r),
+      () => (estimate = null),
+    );
   });
 
   let encoders = $state<{ element: string; description: string; gpu: string | null }[]>([]);
   let detecting = $state(true);
+  const takeEncoders = latestOnly();
   $effect(() => {
     const codec = q.preset === 'custom' ? (c.codec === 'hevc' ? 'h265' : c.codec) : 'h264';
     detecting = true;
-    void call<{ encoders: typeof encoders }>('encoders.list', { codec })
-      .then((r) => (encoders = r.encoders))
-      .catch(() => (encoders = []))
-      .finally(() => (detecting = false));
+    takeEncoders(
+      call<{ encoders: typeof encoders }>('encoders.list', { codec }),
+      (r) => {
+        encoders = r.encoders;
+        detecting = false;
+      },
+      () => {
+        encoders = [];
+        detecting = false;
+      },
+    );
   });
 
   const bufferOptions = $derived(
@@ -47,13 +61,17 @@
   />
   {#if estimate}
     <p class="estimate">
-      Uses about <strong class="mono">{formatBytes(estimate.bytes)}</strong> of memory while a game runs
-      ({estimate.video_kbps / 1000} Mbit/s video, {estimate.audio_kbps} kbit/s audio).
+      Uses about <strong class="mono">{formatBytes(estimate.bytes)}</strong> of memory while a game runs ({estimate.video_kbps /
+        1000} Mbit/s video, {estimate.audio_kbps} kbit/s audio).
     </p>
   {/if}
 </Row>
 
-<Row label="Quality" hint={presets.find((p) => p.id === q.preset)?.detail ?? ''} error={fieldError('recording.quality')}>
+<Row
+  label="Quality"
+  hint={presets.find((p) => p.id === q.preset)?.detail ?? ''}
+  error={fieldError('recording.quality')}
+>
   <Segmented
     label="Quality preset"
     value={q.preset}
@@ -119,7 +137,10 @@
   </Row>
 {/if}
 
-<Row label="Encoder" hint={detecting ? 'Checking which encoders work on this PC…' : 'Automatic picks the best one that works.'}>
+<Row
+  label="Encoder"
+  hint={detecting ? 'Checking which encoders work on this PC…' : 'Automatic picks the best one that works.'}
+>
   <Select
     label="Encoder"
     value={s.recording.encoder ?? ''}

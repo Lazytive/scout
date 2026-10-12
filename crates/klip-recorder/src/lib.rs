@@ -634,10 +634,14 @@ impl Recorder {
             std::thread::Builder::new()
                 .name("klip-video-supervisor".into())
                 .spawn(move || {
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         supervise(&v, &st);
                     }));
+                    if r.is_err() {
+                        tracing::error!("the video supervisor panicked; capture isn't watched");
+                    }
                 })
+                .inspect_err(|e| tracing::error!(error = %e, "no thread for the video supervisor"))
                 .ok()
                 .map(|h| (stop, h))
         };

@@ -4,6 +4,7 @@
 
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
+mod atomic;
 pub mod config;
 mod engine;
 pub mod events;

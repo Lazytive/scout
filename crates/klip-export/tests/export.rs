@@ -40,8 +40,20 @@ const FPS: u32 = 60;
 const GAME_BEEPS: [f64; 3] = [0.5, 1.5, 2.5];
 const MIC_BEEPS: [f64; 2] = [1.0, 2.0];
 
+/// The audio tracks a clip has, as the recorder writes them.
+#[derive(Clone, Copy, PartialEq)]
+enum Layout {
+    /// `Game` + `Microphone` (the tests' usual clip).
+    GameMic,
+    /// `Mix` (game and voice) + `Game` + `Microphone`: the recorder with a microphone.
+    MixGameMic,
+    /// `Mix` alone: a recorder writing one track.
+    MixOnly,
+}
+
 /// What `make_clip` produces.
 struct ClipSpec {
+    layout: Layout,
     seconds: u32,
     kbps: u32,
     width: usize,
@@ -55,8 +67,30 @@ struct ClipSpec {
 }
 
 impl ClipSpec {
+    /// The audio tracks: name, beep onsets, enabled.
+    fn tracks(&self) -> Vec<(&'static str, Vec<f64>, bool)> {
+        let mut mix: Vec<f64> = self
+            .game_beeps
+            .iter()
+            .chain(&self.mic_beeps)
+            .copied()
+            .collect();
+        mix.sort_by(f64::total_cmp);
+        let game = ("Game", self.game_beeps.clone(), true);
+        match self.layout {
+            Layout::GameMic => vec![game, ("Microphone", self.mic_beeps.clone(), false)],
+            Layout::MixGameMic => vec![
+                ("Mix", mix, true),
+                ("Game", self.game_beeps.clone(), false),
+                ("Microphone", self.mic_beeps.clone(), false),
+            ],
+            Layout::MixOnly => vec![("Mix", mix, true)],
+        }
+    }
+
     fn hd(seconds: u32, kbps: u32) -> ClipSpec {
         ClipSpec {
+            layout: Layout::GameMic,
             seconds,
             kbps,
             width: 1280,
@@ -172,7 +206,9 @@ fn make_clip(encoder: &EncoderChoice, path: &Path, spec: &ClipSpec) {
     chain.attach(0, dyn_sink.clone(), stats.clone(), Timing::AsIs);
     let delay = audio::aac_encoder().map_or(0, audio::aac_encoder_delay);
     let mut audio_srcs = Vec::new();
-    for (track, onsets) in [(1usize, &spec.game_beeps), (2, &spec.mic_beeps)] {
+    let audio_tracks = spec.tracks();
+    for (i, (_, onsets, _)) in audio_tracks.iter().enumerate() {
+        let track = i + 1;
         let (input, appsink) = audio::build_aac_chain(&pipeline, 160_000).unwrap();
         appsink.set_property("async", false);
         let acaps = gst::Caps::builder("audio/x-raw")
@@ -254,13 +290,14 @@ fn make_clip(encoder: &EncoderChoice, path: &Path, spec: &ClipSpec) {
     let info = sink.info.lock().unwrap();
     let packets = sink.packets.lock().unwrap();
     assert_eq!(packets[0].len() as u64, frames, "every frame encoded");
-    let tracks = [
-        Mp4Track::new(info[0].as_ref().unwrap(), &packets[0]).named("Video"),
-        Mp4Track::new(info[1].as_ref().unwrap(), &packets[1]).named("Game"),
-        Mp4Track::new(info[2].as_ref().unwrap(), &packets[2])
-            .named("Microphone")
-            .enabled(false),
-    ];
+    let mut tracks = vec![Mp4Track::new(info[0].as_ref().unwrap(), &packets[0]).named("Video")];
+    for (i, (name, _, enabled)) in audio_tracks.iter().enumerate() {
+        tracks.push(
+            Mp4Track::new(info[i + 1].as_ref().unwrap(), &packets[i + 1])
+                .named(name)
+                .enabled(*enabled),
+        );
+    }
     let markers: Vec<Marker> = spec
         .markers
         .iter()
@@ -830,6 +867,46 @@ fn volumes_pick_the_tracks() {
         // A stretched attack is detected early, by a varying part of a scaletempo
         // window: 0.5x onsets came 30–52 ms early over runs (2026-10-10): 70 ms.
         assert!(close(&times, &want, 0.07), "{name}: {times:?} vs {want:?}");
+    }
+}
+
+/// IMPROVEMENTS G4: the recorder's own layouts. With `Mix` + `Game` + `Microphone`, the
+/// Mix must stay out of the export (else the game beeps come twice and the voice can't be
+/// turned down); a clip with `Mix` alone follows the game slider.
+#[test]
+#[ignore = "hardware: a GPU encoder and ffmpeg"]
+fn recorder_track_layouts_mix_the_right_tracks() {
+    let Some(enc) = setup() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let encoders = encoders(&enc);
+    let mut all: Vec<f64> = GAME_BEEPS.iter().chain(&MIC_BEEPS).copied().collect();
+    all.sort_by(f64::total_cmp);
+    for (layout, game, mic, want) in [
+        (Layout::MixGameMic, 1.0, 0.0, GAME_BEEPS.to_vec()),
+        (Layout::MixGameMic, 0.0, 1.0, MIC_BEEPS.to_vec()),
+        (Layout::MixOnly, 1.0, 0.0, all.clone()),
+        (Layout::MixOnly, 0.0, 1.0, vec![]),
+    ] {
+        let name = format!(
+            "{}-g{game}-m{mic}",
+            if layout == Layout::MixOnly {
+                "mix"
+            } else {
+                "mix+game+mic"
+            }
+        );
+        let clip = dir.path().join(format!("{name}-clip.mp4"));
+        let mut spec = ClipSpec::hd(4, 20_000);
+        spec.layout = layout;
+        make_clip(&enc, &clip, &spec);
+        let mut p = Project::new(4_000);
+        p.volumes = Volumes { game, mic };
+        let (_, comp) = plan(&p, &source_info(&clip));
+        let out = dir.path().join(format!("{name}.mp4"));
+        run(&request(Preset::Original, &clip, &comp, &out, &encoders));
+        let times = onset_times(&out);
+        println!("{name}: beeps at {times:?}");
+        assert!(close(&times, &want, 0.005), "{name}: {times:?} vs {want:?}");
     }
 }
 

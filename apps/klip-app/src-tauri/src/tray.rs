@@ -144,7 +144,9 @@ fn job(handler: &Arc<dyn Handler>, cmd: &'static str) {
     let spawned = std::thread::Builder::new()
         .name("klip-tray-job".into())
         .spawn(move || {
-            if let Err(e) = h.handle(cmd, &Value::Null) {
+            if let Some(Err(e)) =
+                crate::guard::guarded("tray action", || h.handle(cmd, &Value::Null))
+            {
                 tracing::info!(cmd, error = %e.message, "tray action");
             }
         });
