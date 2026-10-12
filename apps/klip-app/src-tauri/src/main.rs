@@ -372,6 +372,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn main() -> ExitCode {
+    // An installed Scout carries its own GStreamer (cargo xtask bundle); before any thread.
+    let bundled_gstreamer = klip_platform::use_bundled_gstreamer();
     // Encoder probes run in a fresh copy of this executable (klip_probe::isolated).
     if let Some(code) = klip_probe::worker_main() {
         return ExitCode::from(u8::try_from(code).unwrap_or(1));
@@ -387,6 +389,9 @@ fn main() -> ExitCode {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
+    if bundled_gstreamer {
+        tracing::info!("using the GStreamer beside the exe");
+    }
     // The engine's recorder runs in a copy of this executable too (ADR 0016).
     if let Some(code) = klip_engine::worker_main() {
         return ExitCode::from(u8::try_from(code).unwrap_or(1));

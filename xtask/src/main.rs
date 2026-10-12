@@ -13,6 +13,7 @@
 #![allow(clippy::arithmetic_side_effects)]
 
 mod audit;
+mod bundle;
 mod layers;
 mod npm;
 
@@ -247,6 +248,32 @@ fn bench() -> Result<()> {
     run_step("benchmark", c)
 }
 
+/// The Windows installer with Scout's own GStreamer (M13 start, `bundle.rs`).
+fn bundle_installer() -> Result<()> {
+    if !cfg!(windows) {
+        bail!("bundle builds the Windows installer; run it on Windows");
+    }
+    npm::build(&root())?;
+    let mut c = cargo();
+    c.args(["build", "--release", "-p", "klip-app"]);
+    run_step("release build", c)?;
+    let exe = root().join("target").join("release").join("klip-app.exe");
+    bundle::run(&root(), &exe)?;
+    audit::run(&root())?;
+    let mut c = npm::npm(&root());
+    c.args([
+        "run",
+        "tauri",
+        "--",
+        "build",
+        "--config",
+        "src-tauri/tauri.bundle.conf.json",
+    ]);
+    run_step("installer (tauri build)", c)?;
+    println!("bundle: installer in target/release/bundle/nsis/");
+    Ok(())
+}
+
 fn run() -> Result<()> {
     setup_env();
     let task = std::env::args().nth(1).unwrap_or_default();
@@ -256,8 +283,9 @@ fn run() -> Result<()> {
         "audit" => audit::run(&root()),
         "e2e" => e2e(),
         "bench" => bench(),
+        "bundle" => bundle_installer(),
         _ => {
-            eprintln!("usage: cargo xtask <ci|layers|audit|e2e|bench>");
+            eprintln!("usage: cargo xtask <ci|layers|audit|e2e|bench|bundle>");
             bail!("unknown task {task:?}")
         }
     }

@@ -5,6 +5,16 @@ reason)`.
 
 ## Unreleased
 
+- M13 (start) — The Windows installer carries its own GStreamer: `cargo xtask bundle`
+  (35 audited plugins + the DLLs they import + the MSVC runtime + licences, 34 MB;
+  installer 12 MB, `target/release/bundle/nsis/Scout_0.0.1_x64-setup.exe`), a check
+  that every element the code names is bundled (it caught `videocrop` and `scaletempo`,
+  without which exports failed), `klip_platform::use_bundled_gstreamer`. Tested from the
+  extracted installer with GStreamer off `PATH`: no GStreamer DLL from outside the
+  bundle; a test-game recording (H.264 1080p, 3 audio tracks), thumbnails, editor
+  frames, YouTube and Discord exports all work. ADR 0002 amended. (Claude Opus 5.5: the
+  user, "get me a fully build exe to send to a friend")
+
 - M12 — Auto-clip dropped: the user doesn't play CS2, Dota 2 or League ("Forget the
   auto clipping tbh"). Clips stay hotkey-only. (Claude Opus 5.5)
 

@@ -6,6 +6,7 @@
 
 #![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
 
+mod bundled;
 mod clipboard;
 #[cfg(windows)]
 mod gst_d3d11;
@@ -31,6 +32,7 @@ mod wgc;
 #[cfg(windows)]
 mod windows_impl;
 
+pub use bundled::{BUNDLED_PLUGIN_DIR, use_bundled_gstreamer};
 pub use clipboard::{MAX_COPY_FILES, clipboard_text, copied_files, copy_files, set_clipboard_text};
 pub use screencast::{ScreenCast, ScreenCastRequest, ScreenCastSource, ScreenCastStream};
 pub use shell::{open_file, reveal_file};

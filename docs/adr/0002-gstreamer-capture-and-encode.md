@@ -33,6 +33,18 @@ GStreamer ≥ 1.24 via `gstreamer-rs`. Windows elements, verified with `gst-insp
 
 ## Consequences
 Users on Windows need the GStreamer runtime; the installer (M13) bundles the LGPL runtime
-DLLs and an audited plugin subset, dynamically linked. WGC delivers a frame only when the
+DLLs and an audited plugin subset, dynamically linked.
+
+**Amendment (2026-10-12, the first installer, for the user to send to a friend).**
+`cargo xtask bundle` stages `dist/gstreamer/`: 35 plugins (`xtask/src/bundle.rs`
+`PLUGINS`; no GPL plugins, no `libav`/FFmpeg, no `openh264`, no gdk-pixbuf, so GIF/BMP
+stickers need a system GStreamer), the DLLs they, the scanner and the app import
+(followed with `dumpbin /dependents`), the MSVC runtime, GStreamer's licence texts. A
+check fails the bundle when product code names an element whose plugin isn't bundled.
+`tauri build --config src-tauri/tauri.bundle.conf.json` puts it all beside the exe;
+`klip_platform::use_bundled_gstreamer` (first thing in `main`) then points GStreamer at
+`gstreamer-1.0\`, the bundled scanner and a registry under `%LOCALAPPDATA%\Scout`, and
+drops other plugin paths. Decoding uses the GPU decoders (D3D11/D3D12/NVDEC) and
+`mfaacdec`; `dav1d` for AV1 in software. WGC delivers a frame only when the
 captured content changes (measured: about 1 fps on a static desktop), so streams are
 variable frame rate; see the M1 notes in `crates/klip-capture/README.md`.

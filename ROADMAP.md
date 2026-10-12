@@ -17,7 +17,7 @@ Last updated: 2026-10-12 (M11 done; human checklists up to M11.5 passed; Linux g
 | M10 | Themes v1 | **done on Windows** (session 16): accent colour, text size, density, reduced motion, custom theme files (colours, corners, font, background picture) with import/export, editor with live preview and a contrast warning; the overlay follows. Human checklist passed (2026-10-12); Linux not yet run |
 | M11 | Sharing | **done on Windows** (human checklist passed 2026-10-12; Linux gates green in CI, the app not yet run on Linux): copy clips as files, drag out, "Discord" (fits as is, else a Discord export, then copied); the self-hostable share server `scout-share` + Docker exist and are tested, but Scout doesn't upload to it (parked: the user doesn't want to host) |
 | M12 | Auto-clip via official integrations | **dropped** (2026-10-12, the user: "Forget the auto clipping"; they play none of CS2, Dota 2, League). Hotkeys only |
-| M13 | Release 0.1 | |
+| M13 | Release 0.1 | **started**: Windows installer with its own GStreamer (`cargo xtask bundle`, NSIS, unsigned), tested from the extracted installer without a system GStreamer on NVIDIA; AMD/Intel encoders bundled but unverified; no Flatpak, updater or README screenshots yet |
 
 ## What works (measured)
 

@@ -10,8 +10,11 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 
 const POLICY: &str = "crates/klip-probe/src/policy.rs";
-/// Bundled GStreamer plugins land here when installers are built (M13).
-const BUNDLE_PLUGINS: &str = "dist/gstreamer/lib/gstreamer-1.0";
+/// Bundled GStreamer plugins (`cargo xtask bundle`).
+const BUNDLE_PLUGINS: &str = "dist/gstreamer/gstreamer-1.0";
+/// Never bundled on Windows besides the GPL plugins: FFmpeg (`libav`) and a software
+/// H.264 encoder (`openh264`) (rules 5 and 6).
+const BUNDLE_DENIED: &[&str] = &["libav", "openh264"];
 
 /// String literals of `pub const <name>: &[&str] = &[ ... ];` in `src`.
 pub fn const_str_list(src: &str, name: &str) -> Result<Vec<String>> {
@@ -117,7 +120,7 @@ pub fn run(root: &Path) -> Result<()> {
             let name = e?.file_name().to_string_lossy().to_lowercase();
             let stem = name.split('.').next().unwrap_or("");
             let plugin = stem.trim_start_matches("lib").trim_start_matches("gst");
-            if denied_plugins.iter().any(|d| d == plugin) {
+            if denied_plugins.iter().any(|d| d == plugin) || BUNDLE_DENIED.contains(&plugin) {
                 errs.push(format!(
                     "{BUNDLE_PLUGINS}/{name}: GPL plugin must not be bundled"
                 ));

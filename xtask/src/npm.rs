@@ -81,7 +81,7 @@ pub fn audit(root: &Path, errs: &mut Vec<String>) -> Result<(usize, usize)> {
     Ok((shipped, dev))
 }
 
-fn npm(root: &Path) -> std::process::Command {
+pub(crate) fn npm(root: &Path) -> std::process::Command {
     let mut c = crate::command(if cfg!(windows) { "npm.cmd" } else { "npm" });
     c.current_dir(app_dir(root));
     c
