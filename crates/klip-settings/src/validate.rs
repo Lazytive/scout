@@ -152,7 +152,7 @@ fn opt_text(v: &mut Option<String>, max: usize, path: &str, issues: &mut Vec<Iss
 }
 
 /// A list of executable names: trimmed, valid, unique (ignoring case), capped.
-fn exe_list(list: &mut Vec<String>, path: &str, issues: &mut Vec<Issue>) {
+pub(crate) fn exe_list(list: &mut Vec<String>, path: &str, issues: &mut Vec<Issue>) {
     let mut seen = HashSet::new();
     let mut out = Vec::with_capacity(list.len().min(MAX_LIST));
     for (i, name) in list.iter().enumerate() {

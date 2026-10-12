@@ -225,21 +225,45 @@ pub struct AudioSettings {
     pub bitrate_kbps: u32,
 }
 
+/// Windows' default voice-chat apps.
+const WINDOWS_VOICE_APPS: &[&str] = &[
+    "Discord.exe",
+    "DiscordPTB.exe",
+    "DiscordCanary.exe",
+    "TeamSpeak.exe",
+    "ts3client_win64.exe",
+    "mumble.exe",
+];
+/// Linux's (names match ignoring case, so `Discord` covers `discord` too).
+const LINUX_VOICE_APPS: &[&str] = &["Discord", "vesktop", "teamspeak", "mumble"];
+
 /// Voice-chat apps recorded on the voice track by default.
 pub fn default_voice_apps() -> Vec<String> {
-    let names: &[&str] = if cfg!(windows) {
-        &[
-            "Discord.exe",
-            "DiscordPTB.exe",
-            "DiscordCanary.exe",
-            "TeamSpeak.exe",
-            "ts3client_win64.exe",
-            "mumble.exe",
-        ]
+    let names = if cfg!(windows) {
+        WINDOWS_VOICE_APPS
     } else {
-        &["Discord", "discord", "vesktop", "teamspeak", "mumble"]
+        LINUX_VOICE_APPS
     };
     names.iter().map(ToString::to_string).collect()
+}
+
+#[cfg(test)]
+mod voice_app_tests {
+    use super::*;
+
+    /// Both platforms' defaults survive validation unchanged (the Linux list once held
+    /// `Discord` and `discord`, which the case-insensitive dedup cut: found by the
+    /// Linux CI, 2026-10-12).
+    #[test]
+    fn default_voice_apps_are_valid_on_every_platform() {
+        for list in [WINDOWS_VOICE_APPS, LINUX_VOICE_APPS] {
+            let mut names: Vec<String> = list.iter().map(ToString::to_string).collect();
+            let mut issues = Vec::new();
+            validate::exe_list(&mut names, "audio.voice_apps", &mut issues);
+            assert!(issues.is_empty(), "{issues:?}");
+            assert_eq!(names, list, "unchanged by validation");
+        }
+    }
 }
 
 impl Default for AudioSettings {
