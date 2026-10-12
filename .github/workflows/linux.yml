@@ -24,6 +24,9 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: "0"
+      # Without debug info: the runner's disk (~14 GB free) filled up with it.
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - name: System packages
         run: |
@@ -64,3 +67,7 @@ jobs:
 
       - name: cargo xtask ci
         run: cargo xtask ci
+
+      - name: Disk use
+        if: always()
+        run: df -h / | tail -1; du -sh target 2>/dev/null || true
