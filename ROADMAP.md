@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-10 (M9 done).
+Last updated: 2026-10-12 (human checklists for M9–M11.3 passed; Linux run deferred to before M13).
 
 | | Milestone | State |
 |---|---|---|
@@ -13,8 +13,8 @@ Last updated: 2026-10-10 (M9 done).
 | M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
 | M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
 | M8 | Editor, Normal mode + export presets | **done on Windows** (ADR 0017 accepted): `klip-edit` model + text, `klip-export` pipeline, engine commands, the Editor workspace, e2e `m8_editor.rs`; Linux not yet run |
-| M9 | Editor, Advanced mode (incl. montage) | **done on Windows** (ADR 0018 accepted): schema v2, the composition renderer (montages, transitions, zoom, stickers, colour, ducking, Custom export; 10-minute montage 10.3x realtime, < 800 MB), `editor.frame`/montage projects, the Advanced workspace with a canvas preview and Web Audio sound (≥ 39.9 dB vs the export), e2e `m9_montage.rs`; human checklist steps 2–10 open; Linux not yet run |
-| M10 | Themes v1 | **done on Windows** (session 16): accent colour, text size, density, reduced motion, custom theme files (colours, corners, font, background picture) with import/export, editor with live preview and a contrast warning; the overlay follows. Human checklist owed |
+| M9 | Editor, Advanced mode (incl. montage) | **done on Windows** (ADR 0018 accepted): schema v2, the composition renderer (montages, transitions, zoom, stickers, colour, ducking, Custom export; 10-minute montage 10.3x realtime, < 800 MB), `editor.frame`/montage projects, the Advanced workspace with a canvas preview and Web Audio sound (≥ 39.9 dB vs the export), e2e `m9_montage.rs`; human checklist passed; Linux not yet run |
+| M10 | Themes v1 | **done on Windows** (session 16): accent colour, text size, density, reduced motion, custom theme files (colours, corners, font, background picture) with import/export, editor with live preview and a contrast warning; the overlay follows. Human checklist passed (2026-10-12); Linux not yet run |
 | M11 | Sharing | |
 | M12 | Auto-clip via official integrations | |
 | M13 | Release 0.1 | |
@@ -430,7 +430,7 @@ klip-edit` and `vitest`.
 
 - **Track locks (M9.8.10–11) and the Library as the start page (M11.2)**: the real app
   was driven off-screen on test clips only (the locks; M11.2 in the mock); the human
-  checklist below is owed. Normal mode's preview ignores Main's Hide/Mute like every
+  checklist below passed on 2026-10-12. Normal mode's preview ignores Main's Hide/Mute like every
   Advanced edit (the export honours them). M11.1's Home strip was folded into the Library
   the same day (the user's choice).
 
@@ -878,60 +878,60 @@ Restart Scout with `Start Scout.cmd` first.
 Restart Scout with `Start Scout.cmd` first. Everything below is in **Settings →
 Appearance** (or click the sun at the top right → **Appearance settings…**).
 
-1. **Themes.** Click the **Light** card, then **Graphite**, then **Dark**: the whole app
+1. ✅ (2026-10-12) **Themes.** Click the **Light** card, then **Graphite**, then **Dark**: the whole app
    changes at once, the title bar too. The sun menu shows the same list.
-2. **Accent colour.** Click the pink dot: buttons, the selected tab and highlights turn
+2. ✅ (2026-10-12) **Accent colour.** Click the pink dot: buttons, the selected tab and highlights turn
    pink. Try the yellow one: text on yellow buttons turns black so it stays readable.
    Click **Theme's own** to go back.
-3. **Text size.** Pick **Larger**: all text grows. Look at the Library and the editor
+3.✅ (2026-10-12) **Text size.** Pick **Larger**: all text grows. Look at the Library and the editor
    (Normal and Advanced): nothing should be cut off or overlap. Back to **Default**.
-4. **Density.** Pick **Compact**: less space, smaller bars and buttons. Back to
+4. ✅ (2026-10-12) **Density.** Pick **Compact**: less space, smaller bars and buttons. Back to
    **Comfortable**.
-5. **Motion.** Pick **Reduced**: buttons light up without fading, and the "Clip saved"
+5. ✅ (2026-10-12) **Motion.** Pick **Reduced**: buttons light up without fading, and the "Clip saved"
    pop-up (Alt+F10 in a game) appears without sliding in. Back to **System**.
-6. **Your own theme.** Click **New theme**: the editor opens on a copy called "My
+6. ✅ (2026-10-12) **Your own theme.** Click **New theme**: the editor opens on a copy called "My
    theme". Change **Panels** to a colour you like: the app changes while you pick. Move
-   **Roundness** to 0 (square corners), type a font such as `Georgia`, then **Save**.
+   ✅ (2026-10-12) **Roundness** to 0 (square corners), type a font such as `Georgia`, then **Save**.
    Click **Edit** again, change something, then **Cancel**: it goes back.
-7. **Background picture.** **Edit** → **Choose a picture…** → pick a wallpaper. It shows
+7.✅ (2026-10-12)  **Background picture.** **Edit** → **Choose a picture…** → pick a wallpaper. It shows
    behind the panels; move **Dim** and **Panel opacity**. If the **Contrast** row warns,
    it says which text is hard to read. **Save**.
-8. **Share it.** **Export…** → save it on the Desktop. **Delete** → **Delete**: Scout goes
+8. ✅ (2026-10-12) **Share it.** **Export…** → save it on the Desktop. **Delete** → **Delete**: Scout goes
    back to Follow system. **Import…** → pick the file: your theme is back, picture
    included, and in use.
-9. **Restart Scout**: it opens straight in your theme (no flash of the dark theme first).
-10. **Overlay.** With your theme in use, save a clip in a game: the "Clip saved" pop-up
+9. ✅ (2026-10-12) **Restart Scout**: it opens straight in your theme (no flash of the dark theme first).
+10.✅ (2026-10-12) **Overlay.** With your theme in use, save a clip in a game: the "Clip saved" pop-up
     uses your theme's colours and corners.
 
 ## Manual checks for the human (M9.8.10–11 and M11.2–3, locks, Library start page, title bar)
 
 Restart Scout with `Start Scout.cmd` first.
 
-1. **One bar.** Scout opens on the **Library** with a single bar at the top: Library /
+1. ✅ (2026-10-12) **One bar.** Scout opens on the **Library** with a single bar at the top: Library /
    Settings, then the recorder (Buffering / Waiting for a game, the game, the buffer
    time), Record and Save last 30 s, ⓘ, the sun, and minimize / maximize / close at the
    right end. There is no Windows title bar above it any more. Start a game: the bar
    says Buffering and the time counts up smoothly.
-2. **It behaves like a title bar.** Drag the bar by an empty part (or the game name):
+2. ✅ (2026-10-12) **It behaves like a title bar.** Drag the bar by an empty part (or the game name):
    the window moves; drag it to the top of the screen or a side: it snaps. Double-click
    an empty part: it maximizes (the window must stop at the taskbar, not cover it);
    double-click again: back. The three buttons at the right minimize, maximize/restore
    and close (close hides Scout to the tray as before). Resize the window from every
    edge and corner, and try Win+Arrow keys. (Not there: the Snap layouts menu when you
    hover maximize.)
-3. **A new clip shows up.** Press Alt+F10 in the game: within a second or two the clip
+3.✅ (2026-10-12)  **A new clip shows up.** Press Alt+F10 in the game: within a second or two the clip
    is the first card under Today. **Save last 30 s** on the bar does the same.
-4. **Details.** Click ⓘ: Record, Bookmark and every Save length, then the recorder's
+4. ✅ (2026-10-12) **Details.** Click ⓘ: Record, Bookmark and every Save length, then the recorder's
    details (encoder, resolution, frame rate) and the activity log. Click anywhere else
    and it closes. With no clip selected, the right panel shows your storage. Make the
    window narrow: the bar drops pieces instead of overflowing.
-5. **Lock a track.** Add another clip to the montage (tick it in Project → **Add**). On
+5. ✅ (2026-10-12) **Lock a track.** Add another clip to the montage (tick it in Project → **Add**). On
    its track (V2) click the new lock: the lane gets thin stripes, and clicking, dragging
    or cutting its clip does nothing (the razor says the track is locked). Ctrl+A skips
    it. The eye and M on that track are greyed until you unlock it.
-6. **The lock is kept.** Close the editor and open the clip again: V2 is still locked
+6.✅ (2026-10-12)  **The lock is kept.** Close the editor and open the clip again: V2 is still locked
    (V1 is locked again as always). Click the lock to unlock it.
-7. **Hide and mute Main.** Unlock V1. Click the eye on V1: your clip's picture goes black
+7. ✅ (2026-10-12) **Hide and mute Main.** Unlock V1. Click the eye on V1: your clip's picture goes black
    in the preview but you still hear it. Click **M** on A1: the sound goes too. Export
    it: the exported video is black and silent where Main was, like the preview. Click
    both again to bring Main back.
