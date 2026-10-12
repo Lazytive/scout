@@ -5,6 +5,10 @@ reason)`.
 
 ## Unreleased
 
+- M11 — Scout's upload client and Settings → Sharing (M11.8–9) parked: the user
+  doesn't want to host anything. The share server stays as built (M11.6–7); ADR 0021
+  amended. (Claude Opus 5.5: the user, "dont bother then i dont want to host anything")
+
 - M11.7 — The share server in Docker: a two-stage `Dockerfile` (Rust 1.99 on Debian
   trixie, then trixie-slim running as user 10001, `/data` volume, healthcheck through
   the new `scout-share health`), `.dockerignore`, `compose.yaml` (127.0.0.1 only, for

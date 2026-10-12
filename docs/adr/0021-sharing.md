@@ -45,6 +45,13 @@ so these are my calls (rule 8).
    everywhere). `ureq` + rustls with the OS's certificate store. The upload token is
    kept in its own file beside the settings (user-only), not in `settings.json`.
 
+## Amendment (2026-10-12): no hosting
+The user doesn't want to host anything (free hosts were looked at: free app hosts lose
+files and sleep; a free cloud VM or the user's old PC would work, but they declined).
+So M11 ends with decisions 1–3. The server (decision 4) stays in the repo as built and
+tested in M11.6–7, for anyone who self-hosts; Scout's upload client (decision 5,
+M11.8–9) is parked until asked for.
+
 ## Consequences
 - New dependencies: `arboard` (+ `clipboard-win`, `wl-clipboard-rs` on Linux) in
   `klip-platform`; `tauri-plugin-drag` (+ `drag`, an older `windows` crate) in the app.
