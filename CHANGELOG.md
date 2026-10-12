@@ -5,6 +5,9 @@ reason)`.
 
 ## Unreleased
 
+- M11.10 — M11 Sharing done: the human checklist for copy, drag out and Discord passed
+  (7/7, 2026-10-12). (Claude Opus 5.5)
+
 - M11 — Scout's upload client and Settings → Sharing (M11.8–9) parked: the user
   doesn't want to host anything. The share server stays as built (M11.6–7); ADR 0021
   amended. (Claude Opus 5.5: the user, "dont bother then i dont want to host anything")

@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-12 (human checklists for M9–M11.3 passed; Linux run deferred to before M13).
+Last updated: 2026-10-12 (M11 done; human checklists up to M11.5 passed; Linux gates in CI, the Bazzite run before M13).
 
 | | Milestone | State |
 |---|---|---|
@@ -15,7 +15,7 @@ Last updated: 2026-10-12 (human checklists for M9–M11.3 passed; Linux run defe
 | M8 | Editor, Normal mode + export presets | **done on Windows** (ADR 0017 accepted): `klip-edit` model + text, `klip-export` pipeline, engine commands, the Editor workspace, e2e `m8_editor.rs`; Linux not yet run |
 | M9 | Editor, Advanced mode (incl. montage) | **done on Windows** (ADR 0018 accepted): schema v2, the composition renderer (montages, transitions, zoom, stickers, colour, ducking, Custom export; 10-minute montage 10.3x realtime, < 800 MB), `editor.frame`/montage projects, the Advanced workspace with a canvas preview and Web Audio sound (≥ 39.9 dB vs the export), e2e `m9_montage.rs`; human checklist passed; Linux not yet run |
 | M10 | Themes v1 | **done on Windows** (session 16): accent colour, text size, density, reduced motion, custom theme files (colours, corners, font, background picture) with import/export, editor with live preview and a contrast warning; the overlay follows. Human checklist passed (2026-10-12); Linux not yet run |
-| M11 | Sharing | **done on Windows except the human checklist**: copy clips as files, drag out, "Discord" (fits as is, else a Discord export, then copied); the self-hostable share server `scout-share` + Docker exist and are tested, but Scout doesn't upload to it (parked: the user doesn't want to host) |
+| M11 | Sharing | **done on Windows** (human checklist passed 2026-10-12; Linux gates green in CI, the app not yet run on Linux): copy clips as files, drag out, "Discord" (fits as is, else a Discord export, then copied); the self-hostable share server `scout-share` + Docker exist and are tested, but Scout doesn't upload to it (parked: the user doesn't want to host) |
 | M12 | Auto-clip via official integrations | |
 | M13 | Release 0.1 | |
 
@@ -944,26 +944,26 @@ Restart Scout with `Start Scout.cmd` first.
 Start Scout with `Start Scout.cmd` first (Scout wasn't running when the new build was
 made, so nothing to rename).
 
-1. **Copy a clip.** In the Library click a clip, then press **Ctrl+C** (or **Copy** in
+1. ✅ (2026-10-12) **Copy a clip.** In the Library click a clip, then press **Ctrl+C** (or **Copy** in
    the right panel). A message at the bottom says "Copied…". In Discord click the
    message box and press Ctrl+V: the clip attaches like a file. Paste in an Explorer
    folder too: a copy of the file appears there.
-2. **Several at once.** Ctrl+click two clips, right-click one → **Copy 2 files**, paste
+2. ✅ (2026-10-12) **Several at once.** Ctrl+click two clips, right-click one → **Copy 2 files**, paste
    in an Explorer folder: both arrive.
-3. **Drag out.** Drag a clip card onto the desktop or an Explorer folder: a copy lands
+3. ✅ (2026-10-12) **Drag out.** Drag a clip card onto the desktop or an Explorer folder: a copy lands
    there and the clip stays in Scout. While dragging you see the clip's picture under
    the pointer. Drag one onto a Discord chat: it attaches.
-4. **Discord, small clip.** Pick a short clip under 10 MB (its size is under **Info**
+4. ✅ (2026-10-12) **Discord, small clip.** Pick a short clip under 10 MB (its size is under **Info**
    on the right). Click **Discord**: "Copied: it already fits Discord". Paste in Discord:
    it uploads and plays.
-5. **Discord, big clip.** Pick a clip over 10 MB and click **Discord**: a thin bar runs
+5. ✅ (2026-10-12) **Discord, big clip.** Pick a clip over 10 MB and click **Discord**: a thin bar runs
    along the bottom of its card and the right panel says "Making a Discord copy… %".
    When it's done: "Ready: the Discord copy is on the clipboard". Paste in Discord: it
    uploads (it's under 10 MB) and plays. The Library now has "… - Discord" too.
-6. **Cancel.** Click **Discord** on another big clip, then **Cancel** in the right panel:
+6. ✅ (2026-10-12) **Cancel.** Click **Discord** on another big clip, then **Cancel** in the right panel:
    "Discord copy cancelled", and no half-made file is left in the Library.
-7. **After an export.** Open a clip in the editor, **Export** with any preset, then click
-   **Copy file** in the export window and paste it somewhere.
+7.✅ (2026-10-12)  **After an export.** Open a clip in the editor, **Export** with any preset, then click
+  ✅ (2026-10-12)  **Copy file** in the export window and paste it somewhere.
 
 ## Known bugs
 
