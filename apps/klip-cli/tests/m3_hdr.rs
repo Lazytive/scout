@@ -37,15 +37,13 @@ struct Run {
     monitor: klip_platform::MonitorInfo,
 }
 
-/// The monitor a window is on.
+/// The monitor whose HDR settings apply to a window (the primary one when the window is
+/// off-screen, `KLIP_E2E_MONITOR=offscreen`).
 fn monitor_of(hwnd: u64) -> klip_platform::MonitorInfo {
     klip_platform::enable_dpi_awareness();
     let w = klip_platform::window_info(hwnd).unwrap();
-    klip_platform::list_monitors()
-        .unwrap()
-        .into_iter()
-        .find(|m| m.handle == w.monitor)
-        .unwrap()
+    let monitors = klip_platform::list_monitors().unwrap();
+    w.display(&monitors).unwrap().clone()
 }
 
 /// Most common dark and light gray in the checker area (rows 20–70 %).
@@ -127,7 +125,8 @@ fn sdr_game_on_hdr_desktop_is_unchanged() {
     };
     println!("capture: {}", run.status["capture"]);
     println!("patches {:?}, checker {:?}", run.patches, run.checker);
-    assert_eq!(run.status["capture_api"], "Scout");
+    // The internal name of Scout's own capture (`CaptureApi::Klip`, kept by the rename).
+    assert_eq!(run.status["capture_api"], "Klip");
     for (got, want) in run.patches.iter().zip(patches::SDR_CODES) {
         assert!((got - f32::from(want)).abs() <= 2.5, "patch {want}: {got}");
     }

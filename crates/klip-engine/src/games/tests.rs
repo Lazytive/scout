@@ -24,6 +24,7 @@ fn win(handle: u64, pid: u32, w: u32, h: u32) -> WindowInfo {
         client_y: 0,
         minimized: false,
         monitor: 1,
+        on_screen: true,
     }
 }
 

@@ -5,6 +5,26 @@ reason)`.
 
 ## Unreleased
 
+- Fix — HDR: a window that no monitor shows (moved off-screen) is captured with the
+  primary monitor's SDR white, which is what Windows composes it with; the nearest
+  monitor's was used. This was the known bug `m3_hdr::sdr_game_on_hdr_desktop_is_unchanged`
+  (greys ~10 % dark since the e2e tests went off-screen on 2026-10-09: 120 vs 140 nits
+  here); off-screen the greys are now exact. `cargo xtask bundle` removes the GStreamer
+  copy `tauri build` stages in `target/release` once the installer is built: left there
+  (since f5aae58), it shadowed the system GStreamer with no plugins for the release CLI
+  and for every `cargo test --release` (cargo puts `target/release` on PATH), so every
+  e2e recording failed with "no working h264 encoder". The CLI also uses a bundled
+  GStreamer beside it like the app. The HDR test expects the capture's internal name
+  `Klip` again (the rename had changed it). (Claude Opus 5.5: the user's "go ahead", item 2)
+
+- AMD follow-ups — Each GPU model is listed once in setup (Windows lists one GPU as two
+  adapters with different LUIDs: the tester's RX 9070 XT, and since today this PC's RTX
+  4080 SUPER). The recorder logs an H.264 stream that signals a lower level than its
+  size and frame rate need (`klip_media::h264`; the tester's AMF once signalled 5.0 at
+  1440p144). D3D12 / Media Foundation "bitrate ignored?" checked: all three encoders hit
+  a 20 Mbit/s target on noise and undershoot alike on a static picture (VBR); no
+  change. (Claude Opus 5.5: the user's "go ahead", item 3)
+
 - Improvements I.6 — Front end: a prettier gate (`npm run fmt:check`, first in the npm
   gates of `cargo xtask ci`; `.prettierrc.json`: single quotes, 120 columns, the Svelte
   plugin) and every front-end file formatted once by it (68 files, lines over 120

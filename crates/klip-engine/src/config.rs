@@ -147,7 +147,9 @@ fn target_monitor(target: VideoTarget, monitors: &[klip_platform::MonitorInfo]) 
     match target {
         VideoTarget::PrimaryMonitor => monitors.iter().find(|m| m.primary).map(|m| m.handle),
         VideoTarget::Monitor(h) => Some(h),
-        VideoTarget::Window(h) => klip_platform::window_info(h).ok().map(|w| w.monitor),
+        VideoTarget::Window(h) => klip_platform::window_info(h)
+            .ok()
+            .and_then(|w| w.display(monitors).map(|m| m.handle)),
         VideoTarget::Portal => None,
     }
 }

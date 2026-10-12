@@ -673,6 +673,38 @@ pub fn track_info_with_frame(
     Ok(info)
 }
 
+/// Log an H.264 stream that signals a lower level than its size and frame rate need
+/// (the AMD tester's AMF at 2560x1440 / 144 fps once signalled 5.0; 5.2 is needed). Most
+/// players don't mind; the log tells a tester's report what the encoder did.
+fn warn_low_level(caps: &gst::CapsRef, info: &TrackInfo) {
+    let (Codec::H264, TrackParams::Video(v)) = (&info.codec, &info.params) else {
+        return;
+    };
+    let Some(fps) = caps
+        .structure(0)
+        .and_then(|s| s.get::<gst::Fraction>("framerate").ok())
+    else {
+        return;
+    };
+    let (Ok(num), Ok(den)) = (u32::try_from(fps.numer()), u32::try_from(fps.denom())) else {
+        return;
+    };
+    let have = klip_media::h264::signalled_level(&info.codec_data);
+    let need = klip_media::h264::needed_level(v.width, v.height, num, den);
+    if let (Some(have), Some(need)) = (have, need)
+        && have < need
+    {
+        tracing::warn!(
+            signalled = have,
+            needed = need,
+            width = v.width,
+            height = v.height,
+            fps = %format!("{num}/{den}"),
+            "the encoder signals a lower H.264 level than the stream needs"
+        );
+    }
+}
+
 fn aac_track_info(s: &gst::StructureRef) -> Result<TrackInfo, String> {
     if s.get::<i32>("mpegversion").ok() != Some(4)
         || s.get::<&str>("stream-format").ok() != Some("raw")
@@ -784,6 +816,7 @@ fn handle_sample(
         let mut st = state.lock().unwrap_or_else(PoisonError::into_inner);
         if st.caps.as_ref().map(|c| c.as_ref()) != Some(caps) {
             let info = track_info_with_frame(caps, Some(map.as_slice()))?;
+            warn_low_level(caps, &info);
             st.caps = Some(caps.to_owned());
             sink.on_track_info(track, info);
         }
@@ -1136,7 +1169,13 @@ fn target_monitor(target: VideoTarget) -> Option<klip_platform::MonitorInfo> {
     let handle = match target {
         VideoTarget::PrimaryMonitor => monitors.iter().find(|m| m.primary)?.handle,
         VideoTarget::Monitor(h) => h,
-        VideoTarget::Window(h) => klip_platform::window_info(h).ok()?.monitor,
+        // A window off every monitor gets the primary's levels (WindowInfo::display).
+        VideoTarget::Window(h) => {
+            klip_platform::window_info(h)
+                .ok()?
+                .display(&monitors)?
+                .handle
+        }
         VideoTarget::Portal => return None,
     };
     monitors.into_iter().find(|m| m.handle == handle)

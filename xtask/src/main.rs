@@ -289,6 +289,8 @@ fn bundle_installer(full_logs: bool) -> Result<()> {
     ])
     .args(features);
     let built = run_step("installer (tauri build)", c);
+    let removed = bundle::unstage(&root())?;
+    println!("bundle: {removed} staged GStreamer files removed from target/release");
     if full_logs {
         let tester = format!(
             "Scout_{}_x64-setup-full-logs.exe",

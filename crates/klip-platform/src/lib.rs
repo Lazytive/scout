@@ -121,11 +121,27 @@ pub struct WindowInfo {
     pub client_x: i32,
     pub client_y: i32,
     pub minimized: bool,
-    /// The monitor that has the largest part of the window (HMONITOR on Windows).
+    /// The monitor that has the largest part of the window, or the nearest one when no
+    /// monitor shows it (HMONITOR on Windows).
     pub monitor: u64,
+    /// Some monitor shows part of the window (false: moved beyond every monitor).
+    pub on_screen: bool,
 }
 
 impl WindowInfo {
+    /// The monitor whose display settings (HDR, SDR white, refresh) apply to the window:
+    /// its own, or the primary one when no monitor shows it. Windows composes a window
+    /// beyond every monitor with the primary monitor's SDR white, not the nearest
+    /// monitor's (measured 2026-10-12: the test game at 12000,200 beside two HDR monitors
+    /// at 120 and 140 nits came out at 120).
+    pub fn display<'a>(&self, monitors: &'a [MonitorInfo]) -> Option<&'a MonitorInfo> {
+        if self.on_screen {
+            monitors.iter().find(|m| m.handle == self.monitor)
+        } else {
+            monitors.iter().find(|m| m.primary)
+        }
+    }
+
     /// Whether the client area covers all of `m` (borderless or exclusive fullscreen).
     pub fn covers(&self, m: &MonitorInfo) -> bool {
         let right = i64::from(self.client_x).saturating_add(i64::from(self.client_width));
@@ -658,7 +674,25 @@ mod tests {
             client_y: y,
             minimized: false,
             monitor: 1,
+            on_screen: true,
         }
+    }
+
+    #[test]
+    fn a_window_beyond_every_monitor_takes_the_primary_ones_settings() {
+        let mut primary = monitor(0, 0, 2560, 1440);
+        primary.handle = 10;
+        primary.primary = true;
+        let mut second = monitor(2560, 0, 2560, 1440);
+        second.handle = 11;
+        let monitors = [primary, second];
+        let mut w = window(2600, 10, 800, 600);
+        w.monitor = 11;
+        assert_eq!(w.display(&monitors).map(|m| m.handle), Some(11));
+        // Off-screen: the nearest monitor is still reported, but the primary's levels apply.
+        w.on_screen = false;
+        assert_eq!(w.display(&monitors).map(|m| m.handle), Some(10));
+        assert!(w.display(&[]).is_none());
     }
 
     #[test]

@@ -8,6 +8,7 @@ use bytes::Bytes;
 pub mod av1;
 mod drift;
 mod grid;
+pub mod h264;
 
 pub use drift::{Aligned, DriftAligner};
 pub use grid::FrameGrid;

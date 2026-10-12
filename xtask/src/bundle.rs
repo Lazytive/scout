@@ -329,3 +329,57 @@ pub fn run(root: &Path, app_exe: &Path) -> Result<()> {
     );
     Ok(())
 }
+
+/// Remove what `tauri build` staged beside the release exe (the bundle's resources go to
+/// `./`, so every DLL of `dist/gstreamer` lands in `target/release`). Left there, they
+/// shadow the system GStreamer for every release binary and every `cargo test
+/// --release` (cargo puts `target/release` on PATH), with no plugins: no encoders.
+pub fn unstage(root: &Path) -> Result<usize> {
+    unstage_from(&root.join(OUT), &root.join("target").join("release"))
+}
+
+fn unstage_from(staged: &Path, release: &Path) -> Result<usize> {
+    let mut removed = 0usize;
+    let entries =
+        std::fs::read_dir(staged).with_context(|| format!("reading {}", staged.display()))?;
+    for entry in entries {
+        let p = release.join(entry?.file_name());
+        let r = if p.is_dir() {
+            std::fs::remove_dir_all(&p)
+        } else if p.is_file() {
+            std::fs::remove_file(&p)
+        } else {
+            continue;
+        };
+        r.with_context(|| format!("removing {} (is Scout running from there?)", p.display()))?;
+        removed = removed.saturating_add(1);
+    }
+    Ok(removed)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn unstage_removes_only_what_the_bundle_staged() {
+        let base = std::env::temp_dir().join(format!("xtask-unstage-{}", std::process::id()));
+        let (staged, release) = (base.join("staged"), base.join("release"));
+        for d in [&staged, &release] {
+            std::fs::create_dir_all(d.join("gstreamer-1.0")).unwrap();
+            std::fs::write(d.join("gstreamer-1.0-0.dll"), b"x").unwrap();
+            std::fs::write(d.join("gstreamer-1.0").join("gstnvcodec.dll"), b"x").unwrap();
+        }
+        std::fs::write(release.join("klip-app.exe"), b"x").unwrap();
+        std::fs::create_dir_all(release.join("deps")).unwrap();
+        assert_eq!(unstage_from(&staged, &release).unwrap(), 2);
+        assert!(release.join("klip-app.exe").is_file() && release.join("deps").is_dir());
+        assert!(!release.join("gstreamer-1.0").exists());
+        assert!(!release.join("gstreamer-1.0-0.dll").exists());
+        // Nothing staged is left: a second run removes nothing.
+        assert_eq!(unstage_from(&staged, &release).unwrap(), 0);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+}

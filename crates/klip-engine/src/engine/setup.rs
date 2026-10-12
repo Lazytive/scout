@@ -101,10 +101,8 @@ impl Inner {
                 .ok_or_else(|| CommandError::bad_args("codec must be h264, h265 or av1"))?,
             None => Codec::H264,
         };
-        let gpus: Vec<Value> = klip_platform::list_gpus()
-            .unwrap_or_default()
+        let gpus: Vec<Value> = shown_gpus(klip_platform::list_gpus().unwrap_or_default())
             .into_iter()
-            .filter(|g| !g.software)
             .map(|g| {
                 json!({
                     "name": g.name,
@@ -305,9 +303,51 @@ impl Inner {
     }
 }
 
+/// The GPUs to show: hardware adapters, each model once. Windows can list one GPU as two
+/// adapters with different LUIDs (an RX 9070 XT on the AMD tester's PC, 2026-10-12); two
+/// identical cards show once too, which costs nothing (the encoders list names both).
+fn shown_gpus(all: Vec<klip_platform::GpuAdapter>) -> Vec<klip_platform::GpuAdapter> {
+    let mut out: Vec<klip_platform::GpuAdapter> = Vec::new();
+    for g in all.into_iter().filter(|g| !g.software) {
+        if !out
+            .iter()
+            .any(|o| o.vendor_id == g.vendor_id && o.device_id == g.device_id && o.name == g.name)
+        {
+            out.push(g);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn gpu(name: &str, device_id: u32, luid: i64, software: bool) -> klip_platform::GpuAdapter {
+        klip_platform::GpuAdapter {
+            index: 0,
+            name: name.into(),
+            vendor: klip_platform::GpuVendor::from_pci_id(0x1002),
+            vendor_id: 0x1002,
+            device_id,
+            luid,
+            dedicated_video_memory: 16 << 30,
+            software,
+            driver_version: None,
+        }
+    }
+
+    #[test]
+    fn one_gpu_listed_as_two_adapters_shows_once() {
+        let shown = shown_gpus(vec![
+            gpu("AMD Radeon RX 9070 XT", 0x7550, 1, false),
+            gpu("AMD Radeon(TM) Graphics", 0x13c0, 2, false),
+            gpu("AMD Radeon RX 9070 XT", 0x7550, 3, false),
+            gpu("Microsoft Basic Render Driver", 0x8c, 4, true),
+        ]);
+        let names: Vec<&str> = shown.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(names, ["AMD Radeon RX 9070 XT", "AMD Radeon(TM) Graphics"]);
+    }
 
     #[test]
     fn track_counts_follow_the_layout() {

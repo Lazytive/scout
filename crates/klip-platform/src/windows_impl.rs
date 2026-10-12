@@ -22,8 +22,8 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{
     ClientToScreen, DEVMODEW, ENUM_CURRENT_SETTINGS, EnumDisplayMonitors, EnumDisplaySettingsW,
-    GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST, MONITORINFO, MONITORINFOEXW,
-    MonitorFromWindow,
+    GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, MONITORINFO,
+    MONITORINFOEXW, MonitorFromWindow,
 };
 use windows::Win32::Media::Audio::{
     AudioSessionStateActive, AudioSessionStateExpired, DEVICE_STATE_ACTIVE, IAudioSessionControl2,
@@ -157,6 +157,8 @@ fn info_for(hwnd: HWND) -> Result<WindowInfo, PlatformError> {
     let _ = unsafe { ClientToScreen(hwnd, &raw mut origin) };
     // SAFETY: MonitorFromWindow accepts any window handle; NEAREST always returns one.
     let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+    // SAFETY: as above; NULL returns a null handle when no monitor shows the window.
+    let on_screen = !unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL) }.is_invalid();
     Ok(WindowInfo {
         handle,
         pid,
@@ -167,6 +169,7 @@ fn info_for(hwnd: HWND) -> Result<WindowInfo, PlatformError> {
         client_y: origin.y,
         minimized,
         monitor: monitor.0 as usize as u64,
+        on_screen,
     })
 }
 

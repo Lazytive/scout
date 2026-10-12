@@ -1011,6 +1011,10 @@ fn audio_apps() -> Result<()> {
 }
 
 fn main() -> std::process::ExitCode {
+    // Beside a bundled GStreamer (`target/release` after `cargo xtask bundle`, an
+    // installed Scout) Windows loads its DLLs from this folder first; without this the
+    // CLI would run those DLLs with no plugins at all ("no working h264 encoder").
+    klip_platform::use_bundled_gstreamer();
     // Encoder probes run in a fresh copy of this binary (klip_probe::isolated).
     if let Some(code) = klip_probe::worker_main() {
         return std::process::ExitCode::from(u8::try_from(code).unwrap_or(1));

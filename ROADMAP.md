@@ -590,13 +590,21 @@ klip-edit` and `vitest`.
 - **Mic:** no gain, noise suppression or push-to-talk yet; off by default.
 - **Save waits for audio** up to 250 ms (typically 50–100 ms).
 - Static content gives ~1 fps (WGC only sends changed frames), so desktop capture is VFR.
-- **AMF and QSV are unverified**: property names come from the GStreamer docs; no AMD or
-  Intel hardware here. VA-API is M4. Hybrid-laptop ranking is by GPU vendor (two GPUs of
+- **AMF verified by a tester (2026-10-12), QSV unverified**: QSV property names come from
+  the GStreamer docs; no Intel hardware here. VA-API is M4. An AMF stream once signalled
+  H.264 level 5.0 at 1440p144 (5.2 needed; h264parse warned, it played): the recorder
+  now logs "signals a lower H.264 level than the stream needs" when that happens, so a
+  tester's logs show whether it still does. Measured 2026-10-12 here: NVENC, D3D12 and
+  Media Foundation all hit a 20 Mbit/s target on noise (21.2–21.7 Mbit/s) and all spend
+  ~0.2 Mbit/s on a near-static picture (VBR), so smaller files from one encoder on a
+  quiet screen are not an ignored bitrate. Hybrid-laptop ranking is by GPU vendor (two GPUs of
   one vendor can't be told apart) and untested on a real laptop.
 - **HDR tone curve is a choice** (knee 0.8 in sRGB-encoded space, roll-off to the
   display's peak); it may need tuning by eye on real HDR games. The fallback source
   (`d3d11screencapturesrc`) still clips HDR content. A window that moves to a monitor
-  with a different HDR state keeps its start monitor's settings.
+  with a different HDR state keeps its start monitor's settings. A window beyond every
+  monitor takes the primary monitor's SDR white (what Windows composes it with,
+  measured).
 - **A/V timing under GPU load**: frames are stamped when they reach Scout (bounded by
   WGC's time). Idle GPU: video +4.6 ms after the game's GPU-finish time, A/V −3.8 ms
   (old source: +4.2 to +5.9 ms). With another game holding the GPU at 86–100 %,
@@ -967,8 +975,15 @@ made, so nothing to rename).
 
 ## Known bugs
 
-- e2e `m3_hdr::sdr_game_on_hdr_desktop_is_unchanged` fails since the evening of
-  2026-10-09 with every grey level ~10 % darker (patch 16 → 13, 64 → 59, checker
-  60/90 → 54/82), identically with `main` before M6.12 (checked): the desktop's HDR /
-  SDR-content-brightness state changed, the code didn't. To check with the human (SDR
-  brightness slider) before touching the test.
+None known. Fixed 2026-10-12: `m3_hdr::sdr_game_on_hdr_desktop_is_unchanged` (greys
+~10 % dark since 2026-10-09). Cause: that evening the e2e tests began opening the test
+game off-screen (`KLIP_E2E_MONITOR=offscreen`); Windows composes a window that no
+monitor shows with the primary monitor's SDR white (120 nits here), while the capture
+took the nearest monitor's (140 nits): 120/140 is the ~15 % in linear light. The capture
+now uses the primary monitor's levels for such a window; off-screen, the greys are exact
+(16/64/128/192/235/255, checker 59/89). Also fixed: since `cargo xtask bundle` left
+Scout's own GStreamer DLLs in `target/release`, every release binary and `cargo test
+--release` (cargo puts that folder on PATH) loaded them without plugins and found no
+encoder, so the whole e2e suite failed; the bundle step now removes them after building
+the installer (the dev Scout started with `Start Scout.cmd` uses the system GStreamer
+again).
