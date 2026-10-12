@@ -938,6 +938,32 @@ Restart Scout with `Start Scout.cmd` first.
    it: the exported video is black and silent where Main was, like the preview. Click
    both again to bring Main back.
 
+## Manual checks for the human (M11.4–5, copy, drag out, Discord)
+
+Start Scout with `Start Scout.cmd` first (Scout wasn't running when the new build was
+made, so nothing to rename).
+
+1. **Copy a clip.** In the Library click a clip, then press **Ctrl+C** (or **Copy** in
+   the right panel). A message at the bottom says "Copied…". In Discord click the
+   message box and press Ctrl+V: the clip attaches like a file. Paste in an Explorer
+   folder too: a copy of the file appears there.
+2. **Several at once.** Ctrl+click two clips, right-click one → **Copy 2 files**, paste
+   in an Explorer folder: both arrive.
+3. **Drag out.** Drag a clip card onto the desktop or an Explorer folder: a copy lands
+   there and the clip stays in Scout. While dragging you see the clip's picture under
+   the pointer. Drag one onto a Discord chat: it attaches.
+4. **Discord, small clip.** Pick a short clip under 10 MB (its size is under **Info**
+   on the right). Click **Discord**: "Copied: it already fits Discord". Paste in Discord:
+   it uploads and plays.
+5. **Discord, big clip.** Pick a clip over 10 MB and click **Discord**: a thin bar runs
+   along the bottom of its card and the right panel says "Making a Discord copy… %".
+   When it's done: "Ready: the Discord copy is on the clipboard". Paste in Discord: it
+   uploads (it's under 10 MB) and plays. The Library now has "… - Discord" too.
+6. **Cancel.** Click **Discord** on another big clip, then **Cancel** in the right panel:
+   "Discord copy cancelled", and no half-made file is left in the Library.
+7. **After an export.** Open a clip in the editor, **Export** with any preset, then click
+   **Copy file** in the export window and paste it somewhere.
+
 ## Known bugs
 
 - e2e `m3_hdr::sdr_game_on_hdr_desktop_is_unchanged` fails since the evening of
