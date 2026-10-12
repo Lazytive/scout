@@ -24,6 +24,9 @@ const NOT_BUNDLED: &[&str] = &[
     "x264", "x265", "a52dec", "dtsdec", "libav", "openh264", "opengl",
 ];
 
+/// Words in Scout's strings (messages, JSON keys) that happen to be element names.
+const NOT_ELEMENTS: &[&str] = &["pipeline", "speed"];
+
 /// Where the bundle is staged (relative to the repo).
 pub const OUT: &str = "dist/gstreamer";
 /// The plugin folder inside it (the audit checks it).
@@ -47,6 +50,8 @@ pub const PLUGINS: &[&str] = &[
     "audiofx",
     "volume",
     "audiotestsrc",
+    // The encoder probe's test frames (klip-probe): without it no encoder passes.
+    "videotestsrc",
     // Containers and parsers: clips (MP4), music files.
     "isomp4",
     "matroska",
@@ -183,14 +188,33 @@ fn product_source(root: &Path) -> Result<String> {
     Ok(text)
 }
 
-/// Every element the product code names (as a string literal) must come from a bundled
-/// plugin or one of [`NOT_BUNDLED`]; `gst-inspect-1.0` of the full install maps names to
-/// plugins. (The first bundle missed `videocrop` and `scaletempo`: exports failed.)
+/// Words in the product's string literals that may name elements: each literal's first
+/// word, and the first word after every `!` (pipeline descriptions such as the encoder
+/// probe's `"videotestsrc num-buffers=60 ! …"`).
+fn named_elements(source: &str) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    // Every other piece between quotes is a literal's content (escaped quotes are rare
+    // enough in this code; a miss only means a missed name).
+    for lit in source.split('"').skip(1).step_by(2) {
+        for part in lit.split('!') {
+            if let Some(word) = part.split_whitespace().next() {
+                names.insert(word.trim_end_matches(['\\', ',']).to_string());
+            }
+        }
+    }
+    names
+}
+
+/// Every element the product code names (a string literal, or a step of a pipeline
+/// description) must come from a bundled plugin or one of [`NOT_BUNDLED`];
+/// `gst-inspect-1.0` of the full install maps names to plugins. (The first bundles
+/// missed `videocrop` and `scaletempo`, then `videotestsrc` inside the encoder probe's
+/// pipeline string: on a PC without GStreamer no encoder passed the probe.)
 fn check_elements(root: &Path, gst: &Path) -> Result<()> {
     let out = Command::new(gst.join("bin").join("gst-inspect-1.0.exe"))
         .output()
         .context("running gst-inspect-1.0")?;
-    let source = product_source(root)?;
+    let names = named_elements(&product_source(root)?);
     let mut missing: BTreeSet<String> = BTreeSet::new();
     let mut checked: usize = 0;
     for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -201,7 +225,7 @@ fn check_elements(root: &Path, gst: &Path) -> Result<()> {
         if plugin.is_empty() || element.is_empty() || element.contains(' ') {
             continue;
         }
-        if !source.contains(&format!("\"{element}\"")) {
+        if !names.contains(element) || NOT_ELEMENTS.contains(&element) {
             continue;
         }
         checked = checked.saturating_add(1);

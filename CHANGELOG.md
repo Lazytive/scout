@@ -5,6 +5,13 @@ reason)`.
 
 ## Unreleased
 
+- M13 — Fix: the bundle lacked `videotestsrc`, which the encoder probe uses for its test
+  frames, so on a PC without GStreamer every encoder failed the probe and recording
+  never started (the user's AMD tester, logs 2026-10-12; my own check missed it because
+  this PC's cached probe results were reused). `videotestsrc` bundled; the element check
+  now also reads pipeline descriptions (the first word after each `!`) and was shown to
+  fail without it; tested again with the probe cache moved away. (Claude Opus 5.5)
+
 - M13 — Log files: every copy of Scout (app, recorder, media and encoder-probe workers)
   logs to `%LOCALAPPDATA%\Scout\logs\scout-<kind>.<date>.log` (7 days kept, the home
   folder written as `~`, panics logged); `apps/klip-app/src-tauri/src/logging.rs`. A
