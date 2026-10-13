@@ -35,14 +35,22 @@ Read `AGENTS.md` first. Its hard rules override everything, including this file.
 ## Environment (Linux: the same PC dual-booted into Bazzite)
 
 - Bazzite's `/usr` is read-only, so everything builds in the `klip-dev` distrobox
-  (Fedora 44, created with `--nvidia`): GStreamer 1.28 devel + plugins (good, bad-free,
-  libav, openh264, pipewire), full FFmpeg from RPM Fusion (test oracle), rustup 1.99 and
-  cargo-deny in the shared `~/.cargo`. Run commands as
-  `distrobox enter klip-dev -- bash -c 'cd <repo> && CARGO_TARGET_DIR=~/.cache/klip-target cargo …'`
-  (the repo sits on the Windows NTFS drive; keep build output on the Linux disk).
+  (Fedora 44, created with `--nvidia`): the packages in README "Building (Linux)"
+  (GStreamer 1.28, the Tauri/WebKitGTK libraries, full FFmpeg from RPM Fusion as the test
+  oracle), `nodejs24` + `nodejs24-npm`, rustup and cargo-deny in the shared `~/.cargo`
+  (not on the container's PATH: `export PATH=$HOME/.cargo/bin:$PATH`).
+- The repo sits on the Windows NTFS drive (mount it with `udisksctl mount -b
+  /dev/nvme1n1p3`) and its `apps/klip-app/node_modules` holds Windows binaries, so work
+  in a clone on the Linux disk: `git clone <ntfs repo> ~/.cache/klip-src`, then
+  `distrobox enter klip-dev -- bash -c 'export PATH=$HOME/.cargo/bin:$PATH; cd ~/.cache/klip-src && CARGO_TARGET_DIR=~/.cache/klip-target cargo …'`,
+  and bring commits back with `git pull --ff-only ~/.cache/klip-src main` in the NTFS
+  repo. Never `npm ci` in the NTFS copy from Linux.
 - The container shares the session bus, PipeWire, Wayland and the GPU, so portal capture
   and NVENC work from inside it.
 - e2e: the test game goes fullscreen on `KLIP_E2E_OUTPUT` (default `secondary` = DP-3
   here); the portal token for tests is `~/.local/state/klip-e2e/portal-<output>.token`.
   Without it the KDE dialog appears: the human must pick that monitor (not "Full
   Workspace").
+- e2e needs a quiet machine: no video or music playing (stray sounds and late frames),
+  and EasyEffects closed (it makes per-app game audio ~20 ms late: ROADMAP Known bugs).
+  Closing other apps is the human's call: ask.

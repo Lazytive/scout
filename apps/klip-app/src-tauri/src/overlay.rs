@@ -154,6 +154,9 @@ impl Overlay {
         {
             tracing::warn!(error = %e, "overlay window style");
         }
+        // Linux: GTK makes a window's surface when it is first shown, and tao panics
+        // (aborting the app) making one without a surface click-through; `show` does it.
+        #[cfg(windows)]
         window.set_ignore_cursor_events(true)?;
         let pos_override = std::env::var("KLIP_OVERLAY_POS")
             .ok()
@@ -387,6 +390,10 @@ impl Overlay {
             }
             None => {
                 let _ = self.window.show();
+                // Shown, so it has a surface now (see `create`); the menu takes clicks.
+                if what != Showing::Menu {
+                    let _ = self.window.set_ignore_cursor_events(true);
+                }
             }
         }
     }

@@ -41,6 +41,8 @@ const AUDIO_CHUNK_FRAMES: usize = 4_800;
 const VIDEO_QUEUE_FRAMES: u64 = 4;
 /// Bytes the audio appsrc holds before `push` waits.
 const AUDIO_QUEUE_BYTES: u64 = 1 << 22;
+/// The audio track's index in the collector (video is 0).
+const AUDIO: usize = 1;
 
 /// What one pass encodes with.
 #[derive(Clone, Debug)]
@@ -116,6 +118,13 @@ impl PacketSink for Collector {
     }
 
     fn on_packet(&self, track: usize, packet: Packet) {
+        // Audio shifted back by the AAC encoder's delay starts with its priming frames
+        // before 0; drop them, as a clip cut from the recorder's buffer does. (Kept, the
+        // earliest one would become the file's origin and move everything by the delay.)
+        // By their end: the first real frame may start a rounding nanosecond before 0.
+        if track == AUDIO && packet.pts < 0 && packet.dts_end() <= 0 {
+            return;
+        }
         let mut spool = self.spool.lock().unwrap_or_else(PoisonError::into_inner);
         let offset = spool.offset;
         let Some(out) = spool.out.as_mut() else {
@@ -165,9 +174,6 @@ pub struct Encoder {
     /// The packet bytes; handed to [`Encoded`] by [`Encoder::finish`].
     spool: Option<OwnedFile>,
     settings: EncodeSettings,
-    /// The AAC encoder's delay: audio is pushed this much late so the shifted packets
-    /// start at 0 (a negative first pts would become the file's origin).
-    audio_delay_ns: u64,
     audio_frames: u64,
     /// Frames pushed so far; every one must come back as a packet.
     frames: AtomicU64,
@@ -278,7 +284,6 @@ impl Encoder {
         let dyn_sink: Arc<dyn PacketSink> = sink.clone();
         chain.attach(0, dyn_sink.clone(), stats.clone(), Timing::AsIs);
 
-        let mut audio_delay_ns = 0;
         let audio_src = match settings.audio_bps {
             Some(bps) => {
                 let (input, appsink) = audio::build_aac_chain(pipeline, bps)?;
@@ -299,11 +304,11 @@ impl Encoder {
                     .build();
                 pipeline.add(&src).map_err(gst_err)?;
                 src.link(&input).map_err(gst_err)?;
+                // The encoder's priming lands before 0 and is dropped by the collector.
                 let delay = audio::aac_encoder().map_or(0, audio::aac_encoder_delay);
-                audio_delay_ns = u64::try_from(delay).unwrap_or(0);
                 attach_sink_with(
                     &appsink,
-                    1,
+                    AUDIO,
                     dyn_sink,
                     stats.clone(),
                     Timing::Shift(delay.saturating_neg()),
@@ -326,7 +331,6 @@ impl Encoder {
             sink,
             spool: None,
             settings: settings.clone(),
-            audio_delay_ns,
             audio_frames: 0,
             frames: AtomicU64::new(0),
         })
@@ -405,7 +409,6 @@ impl Encoder {
             .saturating_mul(NANOS_PER_SEC as u64)
             .checked_div(u64::from(SAMPLE_RATE))
             .unwrap_or(0)
-            .saturating_add(self.audio_delay_ns)
     }
 
     /// Push interleaved stereo S16 samples after everything pushed so far.

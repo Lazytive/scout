@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-12 (M11 done; human checklists up to M11.5 passed; Linux gates in CI, the Bazzite run before M13).
+Last updated: 2026-10-13 (the Linux pass on Bazzite: two app crashes and the export timing fixed; see "Linux pass").
 
 | | Milestone | State |
 |---|---|---|
@@ -9,13 +9,13 @@ Last updated: 2026-10-12 (M11 done; human checklists up to M11.5 passed; Linux g
 | M2 | Audio (game/per-app/mic tracks, A/V sync ≤ 1 frame) | **done**: acceptance passes |
 | M3 | All GPUs + fallbacks, HDR tone-mapping | **done**; AMD verified 2026-10-12 by the user's tester (RX 9070 XT + Ryzen graphics, the Debug self-test: AMF H.264/HEVC/AV1, D3D12 and Media Foundation encoders all work, 1440p144 recordings, exports); Intel unverified |
 | M4 | Linux (portal + PipeWire, VA-API) | **done on KDE Wayland + NVIDIA** (`cargo xtask e2e` green); GNOME, X11, AMD/Intel unverified |
-| M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux not yet run) |
-| M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux paths written, not yet run |
-| M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux not yet run |
-| M8 | Editor, Normal mode + export presets | **done on Windows** (ADR 0017 accepted): `klip-edit` model + text, `klip-export` pipeline, engine commands, the Editor workspace, e2e `m8_editor.rs`; Linux not yet run |
-| M9 | Editor, Advanced mode (incl. montage) | **done on Windows** (ADR 0018 accepted): schema v2, the composition renderer (montages, transitions, zoom, stickers, colour, ducking, Custom export; 10-minute montage 10.3x realtime, < 800 MB), `editor.frame`/montage projects, the Advanced workspace with a canvas preview and Web Audio sound (≥ 39.9 dB vs the export), e2e `m9_montage.rs`; human checklist passed; Linux not yet run |
+| M5 | Full-session recording + bookmarks | **done**: acceptance passes on Windows (Linux: session files, finalising and A/V pass; a killed recording has one ~67 ms jump at its start (Known bugs)) |
+| M6 | Desktop app shell (Tauri) | **done on Windows**: tray app, first-run setup, settings, hotkeys, game detection + profiles, presets, storage cap, overlay, themes, `cargo xtask bench`; recorder in a child process (M6.12: memory back after a game); Linux: the app starts and shows the overlay since 2026-10-13 (it aborted before); the human checklist on KDE owed |
+| M7 | Library | **done on Windows**: grid with day headings, hover-scrub strips, search, filters (game, date, starred, tag), star, rename, tags, delete to Recycle Bin, open / show in folder; info and thumbnails rebuilt from the folder; Linux: unit/integration tests pass, the hardware e2e is Windows-only, the human checklist on KDE owed |
+| M8 | Editor, Normal mode + export presets | **done on Windows** (ADR 0017 accepted): `klip-edit` model + text, `klip-export` pipeline, engine commands, the Editor workspace, e2e `m8_editor.rs`; Linux: export tests pass since 2026-10-13 (exports were 42.7 ms late), `m8_editor.rs` is Windows-only |
+| M9 | Editor, Advanced mode (incl. montage) | **done on Windows** (ADR 0018 accepted): schema v2, the composition renderer (montages, transitions, zoom, stickers, colour, ducking, Custom export; 10-minute montage 10.3x realtime, < 800 MB), `editor.frame`/montage projects, the Advanced workspace with a canvas preview and Web Audio sound (≥ 39.9 dB vs the export), e2e `m9_montage.rs`; human checklist passed; Linux: export tests pass except the 10-minute montage, 1.4 GB there (Known bugs) |
 | M10 | Themes v1 | **done on Windows** (session 16): accent colour, text size, density, reduced motion, custom theme files (colours, corners, font, background picture) with import/export, editor with live preview and a contrast warning; the overlay follows. Human checklist passed (2026-10-12); Linux not yet run |
-| M11 | Sharing | **done on Windows** (human checklist passed 2026-10-12; Linux gates green in CI, the app not yet run on Linux): copy clips as files, drag out, "Discord" (fits as is, else a Discord export, then copied); the self-hostable share server `scout-share` + Docker exist and are tested, but Scout doesn't upload to it (parked: the user doesn't want to host) |
+| M11 | Sharing | **done on Windows** (human checklist passed 2026-10-12; Linux gates green in CI and on Bazzite; the app runs on Linux since 2026-10-13): copy clips as files, drag out, "Discord" (fits as is, else a Discord export, then copied); the self-hostable share server `scout-share` + Docker exist and are tested, but Scout doesn't upload to it (parked: the user doesn't want to host) |
 | M12 | Auto-clip via official integrations | **dropped** (2026-10-12, the user: "Forget the auto clipping"; they play none of CS2, Dota 2, League). Hotkeys only |
 | M13 | Release 0.1 | **started**: Windows installer with its own GStreamer (`cargo xtask bundle`, NSIS, unsigned), tested from the extracted installer without a system GStreamer on NVIDIA and, by the user's tester, on AMD (RX 9070 XT: self-test 13/13 OK); Intel unverified; tester builds have Settings → Debug → self-test; no Flatpak, updater or README screenshots yet |
 
@@ -117,6 +117,37 @@ green (built in a Fedora 44 distrobox).
 - Hotkey (GlobalShortcuts portal, KDE): Alt+F10 bound after one confirmation dialog; a
   press saved a valid 5.3 s clip in 4 ms (manual run; key presses can't be automated
   on Wayland without extra permissions).
+
+### Linux pass (2026-10-13, M5–M11 on Bazzite)
+
+Same machine and versions as above (Bazzite 44 `44.20260921`, KDE Plasma 6.7.5 Wayland,
+NVIDIA 615.71, GStreamer 1.28.7, PipeWire 1.6.9; `klip-dev` distrobox; the repo cloned
+to the Linux disk). The user's session was in use (a Discord call, YouTube in Firefox
+at times, EasyEffects until it was closed for the audio runs).
+- `cargo xtask ci`: all gates green (391 Rust tests, front-end gates, deny, layers,
+  audit) after one fix (a Windows-only test helper was dead code on Linux).
+- **The app aborted ~0.2 s after start**, then (fixed) **exited on its first overlay**
+  with Wayland protocol error 71: both fixed (CHANGELOG). New e2e `linux_start.rs`:
+  start on its own settings, stay up, overlay shown twice: failed before, passes.
+- Exports were 42.7 ms late (audio, video and chapters; the AAC priming became the
+  file's origin): fixed. Export tests 18/19 (before: 6/17): split audio beeps at
+  0.500/1.500/2.500 s exactly, chapters at 1.000/3.000/5.000 s, crop 42–44 dB, text
+  overlay 45.4 dB, 2x zoom 42.5 dB, ducking −11.96 dB. Editor tests 2/2 (test fix).
+- A/V with EasyEffects closed, game audio (per-app), two clean runs: A/V −10.6 ms
+  (30 beeps within −11.1..−10.3 ms) and −13.1 ms (−13.6..−12.8 ms); audio stamped
+  +0.20 / +0.19 ms after the loopback tap, video +10.8 / +13.3 ms after the GPU. A
+  stopped full session: −5.8 ms (12 beeps, −5.9..−5.7 ms); an earlier run had one
+  +57 ms video outlier. With EasyEffects running: +16.1 ms (beeps +14..+22 ms; audio
+  stamped +20.1 ms after the tap; Known bugs).
+- Last full `cargo xtask e2e`: 33 passed, 4 failed: the montage memory and the
+  killed-recording jump (Known bugs), and two that passed in the first run and failed
+  while Firefox played audio: M1 (87 unreadable frames once, 50 fps capture once; first
+  run 30.2 s, 60.03 fps, 0 unreadable, save 50 ms) and the per-app exclusion (the other
+  apps' audio measured 0.125 RMS against a 0.106 limit; first run 0.021). Needs one
+  quiet re-run.
+- Not covered on Linux: `m6_daemon`, `m7_library`, `m8_editor`, `m9_montage` and the
+  overlay e2e are Windows-only (`SendInput` hotkeys, window handles); the human
+  checklist below covers the app on KDE.
 
 ### Full-session recording (M5)
 
@@ -683,6 +714,24 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
    tests (the screencast is SDR); an HDR *game* on Linux (e.g. with gamescope/Proton HDR)
    is unchecked.
 
+## Manual checks for the human (the app on Linux, KDE)
+
+Start Scout on Bazzite (a build from the Linux disk, `cargo run -p klip-app --release`,
+your real settings). The first start asks KDE twice: the shortcuts (Alt+F10…) and,
+when a game starts, which screen to share (pick the game's monitor).
+1. **Tray and window**: the tray icon appears; left click opens the Library; closing
+   the window keeps Scout in the tray; Quit ends it.
+2. **Game detection**: start a non-anti-cheat game from Steam (Proton is fine): the
+   title bar names it and starts buffering.
+3. **Clip**: Alt+F10 in the game: the overlay card shows top right for ~3 s, the game
+   keeps the keyboard, the clip appears in the Library with a thumbnail and its sound.
+4. **Library**: hover-scrub a card, star, rename, "Show in folder" (Dolphin opens) and
+   "Open" (your video player).
+5. **Editor**: trim a clip and export it with the YouTube preset; it plays in sync.
+6. **Discord / copy**: "Copy" a clip, paste it into a Discord chat (as a file).
+7. **EasyEffects**: if you keep it running, clip a game with a sharp sound (a gunshot)
+   and tell me if the sound feels late against the picture.
+
 ## Manual checks for the human (M5)
 
 1. **Play a killed recording**: `klip-cli record --session --out <folder>`, record a
@@ -987,7 +1036,23 @@ made, so nothing to rename).
 
 ## Known bugs
 
-None known. Fixed 2026-10-12: `m3_hdr::sdr_game_on_hdr_desktop_is_unchanged` (greys
+- **Linux + EasyEffects: per-app game audio ~20 ms late** (2026-10-13). With EasyEffects
+  routing app streams through its sink, a game's stream is no longer one PipeWire cycle
+  ahead of the output, but Scout still shifts it by one buffer (`pipewire_audio.rs`
+  `one_cycle_early`): audio stamped +20.1 ms after the tap (quantum 1024), A/V
+  +16.1 ms, beeps up to +21.9 ms (over one 60 fps frame); closed: +0.2 ms and −10.6 ms.
+  Likely fix: shift only when the stream's own link goes to a device sink; verify with
+  EasyEffects running.
+- **Linux: a 10-minute, 20-layer montage peaks at 1.4 GB RSS** (`long_montage_stays_under_a_gigabyte`,
+  alone; Windows 798 MB). At 1.2 GB: 526 MB heap, 297 MB `/dev/nvidiactl` (pinned by
+  the NVIDIA driver for the CUDA decoders/encoder), the rest mapped libraries. Heap is
+  within budget; the driver's share isn't ours to shrink without fewer GPU decoders.
+- **Linux: a killed full-session recording jumps ~60–67 ms after its first frame** (5 of
+  5 runs, 7–8 game frames at 120 fps; located twice: game frame 31 → 39 and 33 → 41 at
+  the file's start; the rest continuous apart from rare 50 ms steps). The session takes the ring from its newest keyframe under the
+  lock, so likely a capture/encoder start-up stall. Not investigated further.
+
+Fixed 2026-10-12: `m3_hdr::sdr_game_on_hdr_desktop_is_unchanged` (greys
 ~10 % dark since 2026-10-09). Cause: that evening the e2e tests began opening the test
 game off-screen (`KLIP_E2E_MONITOR=offscreen`); Windows composes a window that no
 monitor shows with the primary monitor's SDR white (120 nits here), while the capture

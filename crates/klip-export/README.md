@@ -69,8 +69,13 @@ bus, 30 s), a pipeline that fails to start goes to NULL (no leaked encoder sessi
 `.part` or `.spool` left by another export is never touched (`files::OwnedFile`: made
 with `create_new`, removed unless committed); a piece past the last video frame holds
 the previous frame; each piece is played 100 ms past its end so `scaletempo` drains,
-and a track that starts late is padded in front; audio is pushed late by the AAC
-encoder's delay so packets start at 0.
+and a track that starts late is padded in front. Audio is pushed at its own times and
+the AAC encoder's output shifted back by its delay (`klip_capture::audio::
+aac_encoder_delay`: Linux's `fdkaacenc` 2048 samples, `avenc_aac` 1024; Media
+Foundation 0); the priming frames that land before 0 are dropped by their end, as in a
+clip cut from the recorder's buffer (kept, the earliest would become the file's origin
+and move video, audio and chapters by the delay; found on the Bazzite pass,
+2026-10-13).
 
 Decoding is software by default when run in the media worker
 (`prefer_software_decoders`), on the GPU otherwise; scaling and composing are CPU

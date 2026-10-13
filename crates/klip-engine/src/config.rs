@@ -526,6 +526,7 @@ pub fn plan_with(
 mod tests {
     #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
+    #[cfg(windows)]
     use klip_probe::{EncoderFamily, EncoderVendor};
 
     use super::*;
@@ -591,6 +592,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     fn encoder(element: &str) -> EncoderChoice {
         EncoderChoice {
             element: element.into(),

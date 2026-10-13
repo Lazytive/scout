@@ -659,7 +659,7 @@ fn real_clip(path: &Path, frames: u32, pattern: &str) -> bool {
         return false;
     };
     let line = format!(
-        "videotestsrc num-buffers={frames} pattern={pattern} ! video/x-raw,format=NV12,width=640,height=360,framerate=60/1 ! {enc} ! h264parse ! mp4mux ! filesink location=\"{}\"",
+        "videotestsrc num-buffers={frames} pattern={pattern} ! video/x-raw,format=NV12,width=640,height=360,framerate=60/1 ! videoconvert ! {enc} ! h264parse ! mp4mux ! filesink location=\"{}\"",
         path.to_string_lossy().replace('\\', "/")
     );
     let pipeline = gstreamer::parse::launch(&line).unwrap();

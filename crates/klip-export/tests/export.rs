@@ -119,6 +119,10 @@ impl PacketSink for Collect {
         v[track] = Some(info);
     }
     fn on_packet(&self, track: usize, packet: Packet) {
+        // The AAC encoder's priming, shifted before 0: a recorder clip starts after it.
+        if track > 0 && packet.pts < 0 && packet.dts_end() <= 0 {
+            return;
+        }
         let mut v = self.packets.lock().unwrap();
         if v.len() <= track {
             v.resize(track + 1, Vec::new());

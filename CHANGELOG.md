@@ -5,6 +5,25 @@ reason)`.
 
 ## Unreleased
 
+- Linux pass (Bazzite, KDE Plasma 6.7.5 Wayland, NVIDIA 615.71) — the first run of the
+  app and of the M8–M11 hardware tests on Linux. Fixes: **the app aborted at start-up**
+  (the hidden overlay was made click-through before GTK had made its surface; tao
+  panicked in a GTK callback): it is now made click-through when shown; **then it
+  exited (Wayland protocol error 71) on the first overlay**: WebKitGTK's DMA-BUF
+  renderer with NVIDIA, so `main` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` on Linux with
+  an NVIDIA GPU unless the user set it (opaque and non-click-through overlays failed the
+  same way); new e2e `linux_start.rs` (failed before, passes now). **Exports were 42.7 ms
+  late on Linux** (audio, video and chapters: `fdkaacenc`'s 2048-sample priming became
+  the MP4's origin; then, once dropped, a rounding nanosecond dropped one real frame
+  too): audio is pushed at its own times and the priming frames are dropped by their
+  end, as the recorder's clips do (export tests 6/17 → 18/19 on Linux; Windows has no
+  encoder delay, so nothing changes there). Linux-only test fixes: a Windows-only test
+  helper in `klip-engine` (dead code broke clippy on Linux since 66e8dd7), the editor
+  tests' clip maker (`openh264enc` takes I420, not NV12), the export tests' clip maker
+  (same priming rule). Found and left open (ROADMAP Known bugs): EasyEffects makes
+  per-app game audio one PipeWire cycle late; a 10-minute montage peaks at 1.4 GB RSS on
+  Linux. (Claude Opus 5.5: the user, "do the linux tests")
+
 - Settings — "Restart now or later": a change to what the running recorder read at its
   start (quality, encoder, buffer length, cursor, audio, clip folders, the followed
   game's profile) shows a warning: Restart now (the replay buffer starts empty; a

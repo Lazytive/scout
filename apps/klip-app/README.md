@@ -67,7 +67,11 @@ app sizes its window).
   chime synthesised with cpal, no sound file) and the system notification
   (`tauri-plugin-notification`) follow their own switches in every mode. Settings →
   Overlay → "Show me" previews it (`overlay.preview`). Test overrides:
-  `KLIP_OVERLAY_POS=x,y`, `KLIP_NO_FOCUS=1`.
+  `KLIP_OVERLAY_POS=x,y`, `KLIP_NO_FOCUS=1`. Linux: made click-through when shown, not
+  when created (a GTK window has no surface before it is first shown, and tao aborts
+  the app otherwise); on an NVIDIA GPU `main` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+  unless the user set it (WebKitGTK's DMA-BUF renderer ends the app with Wayland
+  protocol error 71 when the overlay shows: KDE Plasma 6.7, driver 615).
 - `src-tauri/src/thumb_scheme.rs` (M7): the `klipthumb` URI scheme for library
   thumbnails (`http://klipthumb.localhost/<poster|strip>/<key>?v=<version>` in
   WebView2): only cached thumbnails of library clips (the engine's `library.thumb` checks
@@ -286,6 +290,10 @@ and take their hotkeys.
   intervals p99 8.84 ms without, 8.77 ms with the pop-ups; max 9.4 / 10.0 ms). Off-screen
   means the overlay never covered the game, so the effect of a window over the game on
   VRR/independent flip is not measured here (human checklist).
+- e2e `src-tauri/tests/linux_start.rs` (Linux): the app starts on its own settings,
+  stays up, and shows the overlay twice (on the desktop for a few seconds; Wayland lets
+  no app place itself off-screen). Failed before the two Linux fixes above (abort at
+  start-up, then exit on the first overlay).
 - The card with a real thumbnail was captured off-screen (`tools/window-shot.ps1`).
 - M6.8 driven in the browser with the mock (every Settings page; custom quality fields;
   live meter; a duplicate hotkey rejected on its row; the first-run steps to Finish) and

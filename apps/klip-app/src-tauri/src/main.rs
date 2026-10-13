@@ -381,6 +381,20 @@ fn main() -> ExitCode {
     let bundled_gstreamer = klip_platform::use_bundled_gstreamer();
     let kind = logging::kind();
     klip_platform::set_env_before_threads(&logging::gstreamer_env(kind));
+    // Linux with an NVIDIA GPU: WebKitGTK's DMA-BUF renderer ends the app with a Wayland
+    // protocol error (71) as soon as the overlay is shown (KDE Plasma 6.7, driver 615;
+    // opaque or not, click-through or not); its other renderer works. A value the user
+    // set wins.
+    #[cfg(target_os = "linux")]
+    if kind == "app"
+        && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
+        && klip_platform::list_gpus().is_ok_and(|g| {
+            g.iter()
+                .any(|a| a.vendor == klip_platform::GpuVendor::Nvidia)
+        })
+    {
+        klip_platform::set_env_before_threads(&[("WEBKIT_DISABLE_DMABUF_RENDERER", "1".into())]);
+    }
     // Every copy of the exe logs to a file (logging.rs); workers to the file only.
     logging::init(kind);
     if kind == "app" {
