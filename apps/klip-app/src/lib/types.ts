@@ -41,6 +41,8 @@ export interface Status {
   session: boolean | null;
   recorder: RecorderStatus | null;
   last_error: string | null;
+  /** Changed settings the running recorder uses only after `recorder.restart`. */
+  restart_pending?: string[];
   hotkeys: HotkeyState[];
   settings_status: 'missing' | 'loaded' | 'repaired' | 'reset';
   settings_issues: string[];
@@ -97,6 +99,7 @@ export type KlipEvent =
   | { event: 'mic_level'; peak_db: number; rms_db: number }
   | { event: 'hotkeys'; bound: HotkeyState[] }
   | { event: 'settings_changed'; settings: unknown }
+  | { event: 'restart_pending'; reasons: string[] }
   | { event: 'themes_changed'; id: string }
   | { event: 'storage_cleaned'; report: { removed: number; bytes: number } }
   | { event: 'recovered'; path: string; result: unknown }

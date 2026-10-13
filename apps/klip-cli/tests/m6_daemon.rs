@@ -310,6 +310,48 @@ fn daemon_follows_a_game_and_clips_on_the_hotkey() {
     let secs = recording[0].duration_secs().unwrap_or(0.0);
     assert!(secs >= 2.0, "the recording kept what was written: {secs} s");
 
+    // A setting the recorder reads only at its start (the user, 2026-10-13: warn and let
+    // them restart now or later): the engine names what waits for a restart, and
+    // `recorder.restart` applies it; a running recording goes on in a new file.
+    let session = run_json(cli(&discovery).args(["session", "start"]));
+    let before_restart = Path::new(session["path"].as_str().unwrap()).to_path_buf();
+    std::thread::sleep(Duration::from_secs(2));
+    run_json(cli(&discovery).args([
+        "call",
+        "settings.set",
+        r#"{"recording":{"buffer_secs":45}}"#,
+    ]));
+    let pending = events.wait_for("restart_pending", Duration::from_secs(10));
+    assert_eq!(
+        pending["reasons"],
+        json!(["Replay buffer length"]),
+        "{pending}"
+    );
+    let status = run_json(cli(&discovery).args(["call", "engine.status"]));
+    assert_eq!(status["restart_pending"], json!(["Replay buffer length"]));
+    let r = run_json(cli(&discovery).args(["call", "recorder.restart"]));
+    assert_eq!(r, json!({"restarting": true, "resumes_recording": true}));
+    let stopped = events.wait_for("recorder_stopped", Duration::from_secs(10));
+    assert_eq!(stopped["reason"], "settings changed");
+    let rec = events.wait_for("recorder_started", Duration::from_secs(30));
+    assert_eq!(rec["buffer_ms"], 45_000, "{rec}");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        let s = run_json(cli(&discovery).args(["call", "engine.status"]));
+        if s["session"] == true || Instant::now() > deadline {
+            break s;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    assert_eq!(status["session"], true, "the recording goes on: {status}");
+    assert_eq!(status["restart_pending"], json!([]), "{status}");
+    let first_part = oracle::probe_streams(&before_restart).unwrap();
+    assert!(
+        first_part[0].duration_secs().unwrap_or(0.0) >= 1.5,
+        "{first_part:?}"
+    );
+    run_json(cli(&discovery).args(["session", "stop"]));
+
     // Let the game write its frame log, then end it: the engine stops buffering.
     std::thread::sleep(Duration::from_millis(1500));
     let _ = game_proc.0.kill();

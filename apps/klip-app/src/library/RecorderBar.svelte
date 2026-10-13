@@ -7,7 +7,8 @@
   import { untrack } from 'svelte';
 
   import { actionLabel, formatBytes, formatDuration, formatTimecode } from '../lib/format';
-  import { app, run } from '../lib/store.svelte';
+  import { joinReasons } from '../lib/restart';
+  import { app, restartRecorder, run } from '../lib/store.svelte';
 
   const st = $derived(app.status);
   const rec = $derived(st?.recorder ?? null);
@@ -69,6 +70,8 @@
 
   const brokenKeys = $derived((st?.hotkeys ?? []).filter((h) => !!h.error));
   const problems = $derived((st?.last_error ? 1 : 0) + brokenKeys.length);
+  /** Changed settings waiting for a recorder restart (after "Later" in RestartPrompt). */
+  const pending = $derived(st?.restart_pending ?? []);
 
   const source = $derived.by(() => {
     const s = st?.game?.source;
@@ -138,6 +141,17 @@
       <span class="label">{what}</span>
     </button>
   {/if}
+  {#if pending.length > 0 && !app.restartAsk}
+    <button
+      class="flat problem"
+      onclick={() => (app.restartAsk = true)}
+      title="Waiting for a recorder restart: {joinReasons(pending)}"
+      aria-label="Restart the recorder to apply the new settings"
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M11.8 1.8v2.8H9" /></svg>
+      <span class="label">Restart to apply</span>
+    </button>
+  {/if}
   <span class="grow"></span>
   <button class="rec" disabled={!live || app.busy} onclick={() => run('session.toggle')}>
     <span class="rec-dot" class:on={st?.session} aria-hidden="true"></span>
@@ -194,6 +208,14 @@
       <section>
         <h3>Activity</h3>
         {#if st?.last_error}<p class="note bad">Recording couldn’t start: {st.last_error}</p>{/if}
+        {#if pending.length > 0}
+          <p class="note warn">
+            Waiting for a recorder restart: {joinReasons(pending)}.
+            <button class="link" disabled={app.busy} onclick={() => ((open = false), void restartRecorder())}
+              >Restart now</button
+            >
+          </p>
+        {/if}
         {#each brokenKeys as h (h.id)}
           <p class="note warn">
             <span class="combo"

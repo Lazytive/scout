@@ -18,6 +18,7 @@ import { patchFor, splitError, type Settings } from './settings';
 import { editorEvent } from './editor.svelte';
 import { libraryEvent } from './library.svelte';
 import type { ThemeSetting } from './themes';
+import { toast } from './toasts.svelte';
 import type { KlipEvent, Status, StorageStatus } from './types';
 
 export interface Activity {
@@ -56,6 +57,8 @@ export const app = $state({
   look: null as Look | null,
   contrast: [] as ContrastProblem[],
   activity: [] as Activity[],
+  /** Ask "restart the recorder now or later?" (a `restart_pending` change; RestartPrompt). */
+  restartAsk: false,
   /** The last command error, shown until the next command. */
   error: null as string | null,
   busy: false,
@@ -319,6 +322,18 @@ export async function run(cmd: string, args?: unknown): Promise<void> {
   }
 }
 
+/** Restart the recorder so it uses the changed settings (the replay buffer starts empty). */
+export async function restartRecorder(): Promise<void> {
+  app.restartAsk = false;
+  await run('recorder.restart');
+}
+
+/** Keep the running recorder; the changed settings apply at its next start. */
+export function restartLater(): void {
+  app.restartAsk = false;
+  toast('The new settings apply the next time the recorder starts.');
+}
+
 /** Start listening; returns a stop function. */
 export async function connect(): Promise<() => void> {
   const unlisten = await onEvent((e) => {
@@ -331,6 +346,8 @@ export async function connect(): Promise<() => void> {
     if (e.event === 'thumbs_ready' || e.event === 'library_changed' || e.event === 'export_progress') return;
     log(e);
     if (e.event === 'settings_changed') useSettings(e.settings);
+    if (e.event === 'restart_pending') app.restartAsk = e.reasons.length > 0;
+    if (e.event === 'recorder_started' || e.event === 'recorder_stopped') app.restartAsk = false;
     if (e.event === 'themes_changed') void refreshThemes();
     void refresh();
     if (e.event === 'clip_saved' || e.event === 'storage_cleaned' || e.event === 'settings_changed') {

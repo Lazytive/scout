@@ -5,6 +5,17 @@ reason)`.
 
 ## Unreleased
 
+- Settings — "Restart now or later": a change to what the running recorder read at its
+  start (quality, encoder, buffer length, cursor, audio, clip folders, the followed
+  game's profile) shows a warning: Restart now (the replay buffer starts empty; a
+  running recording goes on in a new file) or Later (the next recorder start uses
+  them; an orange restart icon in the title bar and a line in the ⓘ pop-up stay until
+  then). Engine: `restart_pending {reasons}` event, `engine.status.restart_pending`,
+  command `recorder.restart` (`engine/restart.rs`). Tested: unit tests (what needs a
+  restart, profiles per game), the daemon e2e (a buffer length change → the event →
+  restart → 45 s buffer, recording resumed), the UI against the mock. (Claude Opus 5.5:
+  the user, "give them a warning, to reset now or later")
+
 - Fix — HDR: a window that no monitor shows (moved off-screen) is captured with the
   primary monitor's SDR white, which is what Windows composes it with; the nearest
   monitor's was used. This was the known bug `m3_hdr::sdr_game_on_hdr_desktop_is_unchanged`

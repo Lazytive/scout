@@ -9,6 +9,7 @@
   import { formatDuration } from './lib/format';
   import ThemeMenu from './lib/ThemeMenu.svelte';
   import Settings from './Settings.svelte';
+  import RestartPrompt from './lib/RestartPrompt.svelte';
   import Toast from './lib/Toast.svelte';
   import { customChrome, dragsWindow, startDrag, toggleMaximize } from './lib/window-chrome';
   import WindowButtons from './lib/WindowButtons.svelte';
@@ -102,6 +103,7 @@
       <span class="warn">Settings repaired ({st.settings_issues.length})</span>
     {/if}
   </footer>
+  <RestartPrompt />
   <Toast />
 </div>
 

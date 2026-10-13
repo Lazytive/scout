@@ -29,6 +29,7 @@ mod export;
 mod host;
 mod library;
 mod overlay;
+mod restart;
 mod setup;
 mod share;
 mod storage;
@@ -119,6 +120,8 @@ fn describe(b: &HotkeyBinding) -> String {
 struct Current {
     recorder: Arc<RecorderHandle>,
     clip_dir: PathBuf,
+    /// The settings it was started with (changes to them wait for a restart).
+    started_with: restart::StartedWith,
 }
 
 #[derive(Default)]
@@ -134,6 +137,8 @@ struct State {
     crashes: u32,
     /// Finalise recordings a dead recorder process left, at this time.
     recover_at: Option<Instant>,
+    /// `recorder.restart` stopped a recording: start one again with the next recorder.
+    resume_session: bool,
 }
 
 pub(crate) struct Inner {
@@ -504,6 +509,7 @@ impl Inner {
             let mut st = lock(&self.state);
             st.retry_at = None;
             st.crashes = 0;
+            st.resume_session = false;
             st.game.take()
         };
         if let Some(game) = gone {
@@ -548,7 +554,9 @@ impl Inner {
                 st.current = Some(Current {
                     recorder: Arc::new(handle),
                     clip_dir: clip_dir.clone(),
+                    started_with: restart::StartedWith::new(settings, game.map(|g| g.exe.as_str())),
                 });
+                let resume = std::mem::take(&mut st.resume_session);
                 st.retry_at = None;
                 st.last_error = None;
                 drop(st);
@@ -565,6 +573,9 @@ impl Inner {
                     clip_dir: clip_dir.to_string_lossy().into_owned(),
                     audio: status.get("audio").cloned().unwrap_or(Value::Null),
                 });
+                if resume && let Err(e) = self.handle(commands::SESSION_START, &Value::Null) {
+                    tracing::warn!(error = %e.message, "the recording didn't go on after the restart");
+                }
             }
             Err(e) => {
                 let error = e.to_string();
@@ -764,6 +775,7 @@ impl Inner {
         self.emit(&Event::SettingsChanged {
             settings: v.clone(),
         });
+        self.settings_need_restart(&old, &new);
         self.wake();
         Ok(json!({ "settings": v }))
     }
@@ -796,6 +808,7 @@ impl Inner {
             "recorder": recorder.map(|(r, _)| r),
             "recorder_pid": current.as_ref().and_then(|(r, _)| r.pid()),
             "last_error": last_error,
+            "restart_pending": self.restart_pending(),
             "hotkeys": lock(&self.bound).clone(),
             "hotkeys_paused": lock(&self.hotkeys_paused).is_some(),
             "settings_status": status_name(self.load_status),
@@ -809,6 +822,7 @@ impl Handler for Inner {
         match cmd {
             commands::PING => Ok(json!({ "pong": true })),
             commands::ENGINE_STATUS => Ok(self.status()),
+            commands::RECORDER_RESTART => self.restart_recorder(),
             commands::RECORDER_STOP | commands::APP_QUIT => {
                 self.exit.store(true, Ordering::Relaxed);
                 self.wake();

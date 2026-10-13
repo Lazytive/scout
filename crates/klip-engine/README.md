@@ -42,7 +42,12 @@ Scout's engine (ADR 0014): everything the app does that isn't UI. The desktop ap
   at start (recordings folder and its game folders). Hotkeys come from the settings
   (ids `clip.save.0`, `session.toggle.0`, …); a press runs its action on a job thread
   (one at a time per hotkey, under `catch_unwind`); changed hotkeys are rebound at once,
-  other changes apply when the next game starts. Commands: `ping`, `engine.status`,
+  other changes apply when the recorder next starts. A change to what the running
+  recorder read at its start (quality, encoder, buffer length, cursor, audio, clip
+  folders; the followed game's profile counts) emits `restart_pending {reasons}` and
+  shows in `engine.status.restart_pending`; `recorder.restart` stops and starts it at
+  once (`engine/restart.rs`; the buffer starts empty, a running recording goes on in a
+  new file). Commands: `ping`, `engine.status`,
   `settings.get`, `settings.set` (strict merge patch, saved atomically), `games.list`,
   `clip.save`, `session.*`, `bookmark.add`, `recorder.status`, `overlay.menu`,
   `recorder.stop`/`app.quit` (the front end exits).

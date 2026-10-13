@@ -87,6 +87,11 @@ pub enum Event {
     SettingsChanged {
         settings: Value,
     },
+    /// A settings change the running recorder reads only at its start: `reasons` names
+    /// what waits for `recorder.restart` (empty: a change was undone).
+    RestartPending {
+        reasons: Vec<String>,
+    },
     /// A custom theme was saved, imported or deleted (M10).
     ThemesChanged {
         id: String,

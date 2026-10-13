@@ -947,6 +947,18 @@ Restart Scout with `Start Scout.cmd` first.
    it: the exported video is black and silent where Main was, like the preview. Click
    both again to bring Main back.
 
+## Manual checks for the human (restart now or later, 2026-10-13)
+
+Start Scout with `Start Scout.cmd`, with a game running (the replay buffer on).
+
+1. Settings → Recording: pick another Quality. A warning at the bottom asks "Restart the
+   recorder to use the new settings?", names Quality and how much is in the buffer.
+2. **Later**: the warning goes; an orange restart icon ("Restart to apply" on a wide
+   window) stays in the title bar, and the ⓘ pop-up says what waits for a restart.
+3. Click the icon, then **Restart now**: the buffer starts again from 0:00 and the icon
+   goes. With Record on, the recording goes on (a second file in the recordings folder).
+4. Change a hotkey, the theme or the storage cap: no warning (they apply at once).
+
 ## Manual checks for the human (M11.4–5, copy, drag out, Discord)
 
 Start Scout with `Start Scout.cmd` first (Scout wasn't running when the new build was

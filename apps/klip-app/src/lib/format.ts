@@ -1,5 +1,6 @@
 // Small pure helpers for display (unit-tested in format.test.ts).
 
+import { joinReasons } from './restart';
 import type { KlipEvent } from './types';
 
 /** `1.2 GB`, `340 MB`, `12 KB` (binary units, like Explorer). */
@@ -65,6 +66,10 @@ export function describeEvent(e: KlipEvent): { text: string; tone: Tone } | null
       };
     case 'recorder_stopped':
       return { text: `Replay buffer off: ${e.reason}`, tone: 'info' };
+    case 'restart_pending':
+      return e.reasons.length > 0
+        ? { text: `Waiting for a recorder restart: ${joinReasons(e.reasons)}`, tone: 'warn' }
+        : null;
     case 'recorder_failed':
       return { text: `Couldn't start recording: ${e.error}`, tone: 'bad' };
     case 'clip_saved':

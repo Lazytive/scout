@@ -23,7 +23,7 @@ const game: Game = {
 export function mockBackend() {
   const listeners = new Set<(e: KlipEvent) => void>();
   const emit = (e: KlipEvent) => listeners.forEach((l) => l(e));
-  const started = Date.now();
+  let started = Date.now();
   const status: Status = {
     buffer_mode: 'games',
     game: null,
@@ -58,7 +58,22 @@ export function mockBackend() {
     settings_issues: [],
   };
 
+  // What the recorder started with (the engine's `restart::StartedWith`).
+  let startedWith: Settings | null = null;
+  const restartReasons = (a: Settings, b: Settings): string[] => {
+    const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y);
+    const out: string[] = [];
+    if (!same(a.recording.quality, b.recording.quality)) out.push('Quality');
+    if (a.recording.encoder !== b.recording.encoder) out.push('Encoder');
+    if (a.recording.buffer_secs !== b.recording.buffer_secs) out.push('Replay buffer length');
+    if (a.recording.show_cursor !== b.recording.show_cursor) out.push('Mouse cursor');
+    if (!same(a.audio, b.audio)) out.push('Audio');
+    if (!same(a.clips, b.clips)) out.push('Clip folders');
+    return out;
+  };
+
   setTimeout(() => {
+    startedWith = structuredClone(settings);
     status.game = game;
     status.recording = true;
     status.session = false;
@@ -178,9 +193,10 @@ export function mockBackend() {
         case 'engine.status': {
           if (status.recorder) {
             const up = Date.now() - started - 1500;
-            status.recorder.buffered_ms = Math.max(0, Math.min(120_000, up));
+            status.recorder.buffered_ms = Math.max(0, Math.min(status.recorder.buffer_ms ?? 120_000, up));
             status.recorder.bytes = (status.recorder.buffered_ms / 1000) * 2_600_000;
           }
+          status.restart_pending = status.recorder && startedWith ? restartReasons(startedWith, settings) : [];
           return structuredClone(status);
         }
         case 'settings.get':
@@ -201,9 +217,35 @@ export function mockBackend() {
             );
             throw new CommandError('bad_args', `hotkeys[${i}].keys: ${keys[dup]} is already used by another action`);
           }
+          const touched = restartReasons(settings, next).length > 0;
           settings = next;
           emit({ event: 'settings_changed', settings: structuredClone(settings) });
+          if (touched && status.recorder && startedWith) {
+            emit({ event: 'restart_pending', reasons: restartReasons(startedWith, settings) });
+          }
           return { settings: structuredClone(settings) };
+        }
+        case 'recorder.restart': {
+          if (!status.recorder) return { restarting: false };
+          const recording = !!status.session;
+          if (recording) emit({ event: 'recording_stopped', summary: {} });
+          emit({ event: 'recorder_stopped', reason: 'settings changed' });
+          await new Promise((r) => setTimeout(r, 600));
+          startedWith = structuredClone(settings);
+          started = Date.now() - 1500;
+          status.recorder.buffer_ms = settings.recording.buffer_secs * 1000;
+          emit({
+            event: 'recorder_started',
+            game: game.name,
+            encoder: 'nvd3d11h264enc',
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            buffer_ms: status.recorder.buffer_ms,
+            clip_dir: status.clip_dir ?? '',
+          });
+          if (recording) emit({ event: 'recording_started', path: 'C:\\clips\\rec-2.mp4' });
+          return { restarting: true, resumes_recording: recording };
         }
         case 'recording.estimate': {
           const d = (args ?? settings) as Settings;

@@ -26,6 +26,9 @@ pub mod commands {
     pub const RECORDER_STATUS: &str = "recorder.status";
     /// Stop the recorder process.
     pub const RECORDER_STOP: &str = "recorder.stop";
+    /// Restart the recorder with the current settings (the replay buffer starts empty; a
+    /// running recording goes on in a new file): `{"restarting", "resumes_recording"}`.
+    pub const RECORDER_RESTART: &str = "recorder.restart";
     /// Liveness check; returns `{"pong":true}`.
     pub const PING: &str = "ping";
     /// Start a full-session recording; returns `{"recording":true,"path":…}`.
