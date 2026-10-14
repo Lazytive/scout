@@ -147,17 +147,44 @@ fn node_client(p: &spa::utils::dict::DictRef) -> Option<u32> {
     p.get("client.id").and_then(|s| s.parse().ok())
 }
 
+/// Whether a stream node global comes from pipewire-pulse, i.e. a PulseAudio app (most
+/// games, browsers and voice apps). Its client's peer is pipewire-pulse itself, so the
+/// client's pid names no app; the app's pid is only in the node's info
+/// (`application.process.id`, which the app told pipewire-pulse: an app lying about it can
+/// at most get its own sound into a clip), and registry globals don't carry it, so such a
+/// node is bound for its info. Found on Bazzite (2026-10-14): a game's track was silent.
+fn is_pulse_stream(p: &spa::utils::dict::DictRef) -> bool {
+    p.get("client.api") == Some("pipewire-pulse")
+}
+
+/// The app's pid in a pipewire-pulse stream's node info.
+fn info_pid(p: Option<&spa::utils::dict::DictRef>) -> Option<u32> {
+    p?.get("application.process.id")?.trim().parse().ok()
+}
+
+/// Whose a playback stream is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StreamOwner {
+    /// A native client: the pid of this client global.
+    Client(Option<u32>),
+    /// A pipewire-pulse stream: the pid from its node info; `None` until that arrives,
+    /// and until then it is linked in neither mode.
+    Pulse(Option<u32>),
+}
+
 /// What the registry has told us, for linking app streams (`Process` endpoints).
 #[derive(Default)]
 struct Graph {
     /// Clients: id → process id.
     clients: HashMap<u32, u32>,
-    /// Playback streams (`Stream/Output/Audio`): node id → client id.
-    streams: HashMap<u32, Option<u32>>,
+    /// Playback streams (`Stream/Output/Audio`): node id → whose.
+    streams: HashMap<u32, StreamOwner>,
     /// Ports: id → (node id, is output, channel name).
     ports: HashMap<u32, (u32, bool, String)>,
     /// Links Scout created, by (output port, input port). Dropping one removes the link.
     links: HashMap<(u32, u32), pw::link::Link>,
+    /// pipewire-pulse stream nodes bound for their info, until they go.
+    bound: HashMap<u32, (pw::node::Node, pw::node::NodeListener)>,
 }
 
 /// Links app streams to the capture stream for a `Process` endpoint.
@@ -172,20 +199,29 @@ struct Linker {
 }
 
 impl Linker {
-    fn global(&self, g: &pw::registry::GlobalObject<&spa::utils::dict::DictRef>) {
+    fn global(
+        self: &Rc<Self>,
+        g: &pw::registry::GlobalObject<&spa::utils::dict::DictRef>,
+        registry: &pw::registry::RegistryRc,
+    ) {
         let Some(p) = g.props else { return };
         match g.type_ {
             ObjectType::Client => {
                 if let Some(pid) = client_pid(p) {
-                    // A process may have joined the tree since we looked.
-                    if !self.tree.borrow().contains(&pid) {
-                        *self.tree.borrow_mut() = process_tree(self.pid);
-                    }
+                    self.refresh_tree(pid);
                     self.graph.borrow_mut().clients.insert(g.id, pid);
                 }
             }
             ObjectType::Node if p.get("media.class") == Some("Stream/Output/Audio") => {
-                self.graph.borrow_mut().streams.insert(g.id, node_client(p));
+                let owner = if is_pulse_stream(p) {
+                    StreamOwner::Pulse(None)
+                } else {
+                    StreamOwner::Client(node_client(p))
+                };
+                self.graph.borrow_mut().streams.insert(g.id, owner);
+                if owner == StreamOwner::Pulse(None) {
+                    self.bind_pulse(g, registry);
+                }
             }
             ObjectType::Port => {
                 let node = p.get("node.id").and_then(|s| s.parse::<u32>().ok());
@@ -206,11 +242,46 @@ impl Linker {
         self.link();
     }
 
+    /// A process may have joined the tree since we looked.
+    fn refresh_tree(&self, pid: u32) {
+        if !self.tree.borrow().contains(&pid) {
+            *self.tree.borrow_mut() = process_tree(self.pid);
+        }
+    }
+
+    /// Bind a pipewire-pulse stream's node for its info, which names the app's pid, and
+    /// link once it does (see [`is_pulse_stream`]).
+    fn bind_pulse(
+        self: &Rc<Self>,
+        g: &pw::registry::GlobalObject<&spa::utils::dict::DictRef>,
+        registry: &pw::registry::RegistryRc,
+    ) {
+        let Ok(node) = registry.bind::<pw::node::Node, _>(g) else {
+            return;
+        };
+        let (id, me) = (g.id, Rc::downgrade(self));
+        let listener = node
+            .add_listener_local()
+            .info(move |info| {
+                let (Some(me), Some(pid)) = (me.upgrade(), info_pid(info.props())) else {
+                    return;
+                };
+                me.refresh_tree(pid);
+                if let Some(owner) = me.graph.borrow_mut().streams.get_mut(&id) {
+                    *owner = StreamOwner::Pulse(Some(pid));
+                }
+                me.link();
+            })
+            .register();
+        self.graph.borrow_mut().bound.insert(id, (node, listener));
+    }
+
     fn removed(&self, id: u32) {
         let mut graph = self.graph.borrow_mut();
         graph.clients.remove(&id);
         graph.streams.remove(&id);
         graph.ports.remove(&id);
+        graph.bound.remove(&id);
         graph.links.retain(|(o, i), _| *o != id && *i != id);
     }
 
@@ -308,13 +379,15 @@ fn input_for<'p>(out_channel: &str, inputs: &'p [(u32, String)]) -> impl Iterato
 }
 
 /// Create the links that are missing for `Process` endpoints.
-fn update_links(
-    core: &pw::core::Core,
-    graph: &mut Graph,
+/// The (stream node, its output port, our input port) links a `Process` endpoint wants:
+/// the streams of `tree` (`include`) or of everything else; a pipewire-pulse stream whose
+/// app isn't known yet is in neither.
+fn wanted_links(
+    graph: &Graph,
     own_node: u32,
     tree: &HashSet<u32>,
     include: bool,
-) {
+) -> Vec<(u32, u32, u32)> {
     let inputs: Vec<(u32, String)> = graph
         .ports
         .iter()
@@ -322,18 +395,21 @@ fn update_links(
         .map(|(id, (_, _, ch))| (*id, ch.clone()))
         .collect();
     if inputs.is_empty() {
-        return;
+        return Vec::new();
     }
-    let wanted: Vec<(u32, u32, u32)> = graph
+    graph
         .ports
         .iter()
         .filter(|(_, (node, output, _))| {
             *output
                 && *node != own_node
-                && graph.streams.get(node).is_some_and(|client| {
-                    let pid = client.and_then(|c| graph.clients.get(&c));
-                    let ours = pid.is_some_and(|p| tree.contains(p));
-                    ours == include
+                && graph.streams.get(node).is_some_and(|owner| {
+                    let pid = match *owner {
+                        StreamOwner::Client(c) => c.and_then(|c| graph.clients.get(&c).copied()),
+                        StreamOwner::Pulse(None) => return false,
+                        StreamOwner::Pulse(pid) => pid,
+                    };
+                    pid.is_some_and(|p| tree.contains(&p)) == include
                 })
         })
         .flat_map(|(out_id, (node, _, ch))| {
@@ -341,8 +417,17 @@ fn update_links(
                 .map(|in_id| (*node, *out_id, in_id))
                 .collect::<Vec<_>>()
         })
-        .collect();
-    for (node, out_port, in_port) in wanted {
+        .collect()
+}
+
+fn update_links(
+    core: &pw::core::Core,
+    graph: &mut Graph,
+    own_node: u32,
+    tree: &HashSet<u32>,
+    include: bool,
+) {
+    for (node, out_port, in_port) in wanted_links(graph, own_node, tree, include) {
         if graph.links.contains_key(&(out_port, in_port)) {
             continue;
         }
@@ -462,12 +547,16 @@ fn session(
         .connect(spa::utils::Direction::Input, None, flags, &mut params)
         .map_err(pw_err)?;
 
-    let registry = core.get_registry().map_err(pw_err)?;
+    let registry = core.get_registry_rc().map_err(pw_err)?;
     let _registry_listener = linker.as_ref().map(|l| {
-        let (added, removed) = (l.clone(), l.clone());
+        let (added, removed, weak) = (l.clone(), l.clone(), registry.downgrade());
         registry
             .add_listener_local()
-            .global(move |g| added.global(g))
+            .global(move |g| {
+                if let Some(registry) = weak.upgrade() {
+                    added.global(g, &registry);
+                }
+            })
             .global_remove(move |id| removed.removed(id))
             .register()
     });
@@ -577,6 +666,8 @@ struct SeenStream {
     _node: pw::node::Node,
     _listener: pw::node::NodeListener,
     client: Option<u32>,
+    /// A pipewire-pulse stream: its app's pid, from the node info ([`is_pulse_stream`]).
+    pulse: Option<Rc<Cell<Option<u32>>>>,
     running: Rc<Cell<bool>>,
 }
 
@@ -615,12 +706,16 @@ pub(crate) fn audio_sessions() -> Result<Vec<crate::AudioSession>, PlatformError
                     return;
                 };
                 let running = Rc::new(Cell::new(false));
+                let pulse = is_pulse_stream(p).then(Rc::<Cell<Option<u32>>>::default);
                 let listener = node
                     .add_listener_local()
                     .info({
-                        let running = running.clone();
+                        let (running, pulse) = (running.clone(), pulse.clone());
                         move |info| {
                             running.set(matches!(info.state(), pw::node::NodeState::Running));
+                            if let (Some(pulse), Some(pid)) = (&pulse, info_pid(info.props())) {
+                                pulse.set(Some(pid));
+                            }
                         }
                     })
                     .register();
@@ -628,6 +723,7 @@ pub(crate) fn audio_sessions() -> Result<Vec<crate::AudioSession>, PlatformError
                     _node: node,
                     _listener: listener,
                     client: node_client(p),
+                    pulse,
                     running,
                 });
             }
@@ -674,7 +770,11 @@ pub(crate) fn audio_sessions() -> Result<Vec<crate::AudioSession>, PlatformError
     let mut out: Vec<crate::AudioSession> = Vec::new();
     let clients = clients.borrow();
     for s in seen.borrow().iter() {
-        let Some(&pid) = s.client.and_then(|c| clients.get(&c)) else {
+        let pid = match &s.pulse {
+            Some(pulse) => pulse.get(),
+            None => s.client.and_then(|c| clients.get(&c).copied()),
+        };
+        let Some(pid) = pid else {
             continue;
         };
         match out.iter_mut().find(|a| a.pid == pid) {
@@ -693,6 +793,57 @@ mod tests {
     use super::*;
     use crate::{AudioCapture, AudioPacket};
     use std::sync::Mutex;
+
+    /// Barony as PipeWire listed it on Bazzite: a pipewire-pulse stream, whose client is
+    /// pipewire-pulse (pid 2860) and whose node info names the game (194058).
+    #[test]
+    fn pulse_streams_are_known_by_the_apps_own_pid() {
+        let mut g = Graph::default();
+        let own = 100;
+        for (port, node, out, ch) in [
+            (101, own, false, "FL"),
+            (102, own, false, "FR"),
+            (11, 10, true, "FL"),
+            (12, 10, true, "FR"),
+            (21, 20, true, "FL"),
+            (31, 30, true, "FL"),
+        ] {
+            g.ports.insert(port, (node, out, ch.to_string()));
+        }
+        g.clients.insert(7, 2860);
+        g.clients.insert(8, 4242);
+        g.streams.insert(10, StreamOwner::Pulse(Some(194058))); // the game
+        g.streams.insert(20, StreamOwner::Pulse(None)); // info not here yet
+        g.streams.insert(30, StreamOwner::Client(Some(8))); // a native app
+        let game = HashSet::from([194058]);
+        let nodes = |g: &Graph, include| {
+            let mut n: Vec<u32> = wanted_links(g, own, &game, include)
+                .into_iter()
+                .map(|(node, _, _)| node)
+                .collect();
+            n.sort_unstable();
+            n.dedup();
+            n
+        };
+        assert_eq!(
+            nodes(&g, true),
+            vec![10],
+            "the game, by the pid in its node info"
+        );
+        assert_eq!(
+            nodes(&g, false),
+            vec![30],
+            "everything else, but not the unknown one"
+        );
+        let links = wanted_links(&g, own, &game, true);
+        assert!(
+            links.contains(&(10, 11, 101)) && links.contains(&(10, 12, 102)),
+            "{links:?}"
+        );
+        // pipewire-pulse's own pid never stands for an app.
+        g.streams.insert(20, StreamOwner::Client(Some(7)));
+        assert_eq!(nodes(&g, true), vec![10]);
+    }
 
     /// Collects samples of the first channel.
     struct Collect(Arc<Mutex<Vec<f32>>>);

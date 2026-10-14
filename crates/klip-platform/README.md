@@ -97,6 +97,9 @@ Linux (`linux_impl.rs`, `screencast.rs`; ADR 0012):
   (include a process tree / everything except it; process ids from the client's
   `pipewire.sec.pid`, set by the daemon). Stamped with the graph cycle time minus the
   stream delay (CLOCK_MONOTONIC); silence while nothing plays; reconnects every 2 s.
+  PulseAudio apps' streams (`client.api = pipewire-pulse`; their client's peer pid is
+  pipewire-pulse's) are bound for their node info, whose `application.process.id` names
+  the app, and linked only once known.
 - `audio_sessions`: processes with a playback stream, active when one is running (two
   registry round trips; nodes bound for their state).
 - `timeline.rs`: the silence/overlap timeline shared with WASAPI.

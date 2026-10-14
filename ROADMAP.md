@@ -155,7 +155,11 @@ at times, EasyEffects until it was closed for the audio runs).
   stale registrations cleared), the clip recorded the other monitor (the screen picked
   in KDE's dialog), and clips didn't play in the editor (WebKitGTK plays no media from
   the asset protocol: a loopback media server on Linux, fixed); clipping and
-  thumbnails worked. Re-check of 3 onward pending.
+  thumbnails worked. Re-check: clips and editor playback work; the clip showed the
+  other monitor again (KDE's dialog choice) and its tracks were silent (PulseAudio apps'
+  streams never matched the game: fixed). The user questions the screen dialog and
+  screen capture for an automatic clipper: options (KWin's window capture on KDE, which
+  needs AGENTS.md rule 1 changed; one portal pick of all screens; gamescope) put to them.
 - Overlay placement (2026-10-14): KDE puts a normal window in the middle of the screen,
   so the overlay is now a layer-shell surface (gtk-layer-shell 0.10 in the distrobox).
   Previewed on the desktop with screenshots: the card 18 px (logical) from the top-right

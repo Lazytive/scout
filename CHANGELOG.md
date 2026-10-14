@@ -5,6 +5,18 @@ reason)`.
 
 ## Unreleased
 
+- Linux per-app audio for PulseAudio apps — A Barony clip's game track was silent: like
+  most games, browsers and voice apps, Barony plays through pipewire-pulse, whose
+  streams belong to a client whose peer pid (`pipewire.sec.pid`) is pipewire-pulse's,
+  so the game's stream never matched the game; the registry's globals don't carry the
+  app's pid either. Stream nodes marked `client.api = pipewire-pulse` are now bound for
+  their info, whose `application.process.id` names the app, and linked once it does
+  (in neither mode before, so "everything but Scout" never takes Scout's own sound in
+  the meantime); the audio-apps list does the same. Checked on Bazzite: Barony's stream
+  is linked into the game track (`pw-dump`). Test: Barony's stream as PipeWire listed it.
+  The klip-testgame tests passed because it is a native PipeWire client. (Claude Opus
+  5.5: the user, "unsure of audio")
+
 - Linux fixes from the human's KDE checklist (Bazzite, 2026-10-14) — **No game was
   detected** when Scout ran in a distrobox: the game's `/proc/<pid>/exe` link is
   "permission denied" from inside the container (every host process is), so
