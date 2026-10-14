@@ -107,6 +107,14 @@ pub async fn editor_media(
     Ok(media)
 }
 
+/// Linux: where the page loads media files from (`media_server.rs`: WebKitGTK plays no
+/// `<video>`/`<audio>` from the asset protocol); none elsewhere, where the asset protocol
+/// works.
+#[tauri::command]
+pub fn media_base(state: tauri::State<'_, AppState>) -> Option<String> {
+    state.media_base.clone()
+}
+
 /// The window's one command: run an engine command.
 #[tauri::command]
 pub async fn klip(

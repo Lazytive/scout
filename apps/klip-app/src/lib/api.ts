@@ -210,11 +210,18 @@ export async function pickThemePicture(): Promise<string | null> {
   return typeof picked === 'string' ? picked : null;
 }
 
-/** A file the engine named, as a URL the page can load (Tauri's asset protocol). */
+/** Linux: the app's loopback server for media files (`media_base`; WebKitGTK plays no
+    <video>/<audio> from the asset protocol); null elsewhere. Asked once. */
+let mediaBase: Promise<string | null> | undefined;
+
+/** A file the engine named, as a URL the page can load: Tauri's asset protocol, or on
+    Linux the same file from the loopback media server. */
 export async function fileUrl(path: string): Promise<string | null> {
   if (!inTauri) return path === DEMO_FILES.image ? DEMO_STICKER : null;
   const core = await import('@tauri-apps/api/core');
-  return core.convertFileSrc(path);
+  mediaBase ??= core.invoke<string | null>('media_base').catch(() => null);
+  const base = await mediaBase;
+  return base ? `${base}${encodeURIComponent(path)}` : core.convertFileSrc(path);
 }
 
 /**

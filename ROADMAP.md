@@ -148,6 +148,14 @@ at times, EasyEffects until it was closed for the audio runs).
 - Not covered on Linux: `m6_daemon`, `m7_library`, `m8_editor`, `m9_montage` and the
   overlay e2e are Windows-only (`SendInput` hotkeys, window handles); the human
   checklist below covers the app on KDE.
+- The human's KDE checklist (2026-10-14), first run: 1 passed. 2 failed: no game was
+  detected from the distrobox (the game's `exe` link is unreadable there), and Steam's
+  runtime and Proton would have been taken for games: fixed. 3 failed: hotkeys unbound
+  in KDE (a pre-rename registration held Alt+F10; Scout showed no error: fixed, and the
+  stale registrations cleared), the clip recorded the other monitor (the screen picked
+  in KDE's dialog), and clips didn't play in the editor (WebKitGTK plays no media from
+  the asset protocol: a loopback media server on Linux, fixed); clipping and
+  thumbnails worked. Re-check of 3 onward pending.
 - Overlay placement (2026-10-14): KDE puts a normal window in the middle of the screen,
   so the overlay is now a layer-shell surface (gtk-layer-shell 0.10 in the distrobox).
   Previewed on the desktop with screenshots: the card 18 px (logical) from the top-right

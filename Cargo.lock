@@ -2925,6 +2925,7 @@ dependencies = [
  "auto-launch",
  "cpal",
  "dirs 7.0.0",
+ "getrandom 0.4.3",
  "klip-control",
  "klip-engine",
  "klip-platform",

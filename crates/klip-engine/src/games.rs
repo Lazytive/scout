@@ -100,6 +100,11 @@ const NOT_GAMES: &[&str] = &[
     "_commonredist",
 ];
 
+/// Store sub-folder names that start like this aren't games: Steam's Proton versions
+/// ("Proton - Experimental", "Proton 9.0 (Beta)", …) and Linux runtimes
+/// ("SteamLinuxRuntime_sniper", …), whose processes run beside every Proton game.
+const NOT_GAME_PREFIXES: &[&str] = &["proton ", "steamlinuxruntime"];
+
 /// Executables that are never games, lower case.
 const NEVER: &[&str] = &[
     "steam.exe",
@@ -184,7 +189,12 @@ pub fn library_game(path: &str) -> Option<(Store, String)> {
         if folder.is_empty() || rest.split('/').count() < 2 {
             continue;
         }
-        if NOT_GAMES.contains(&folder.to_lowercase().as_str()) {
+        let lower_folder = folder.to_lowercase();
+        if NOT_GAMES.contains(&lower_folder.as_str())
+            || NOT_GAME_PREFIXES
+                .iter()
+                .any(|p| lower_folder.starts_with(p))
+        {
             return None;
         }
         return Some((*store, folder.to_string()));

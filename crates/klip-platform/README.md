@@ -120,7 +120,12 @@ Linux (`linux_impl.rs`, `screencast.rs`; ADR 0012):
   the protocol (GNOME), both return `Ok(false)` and the overlay stays a normal window
   (KDE puts that in the middle). Both run on the GTK main thread only (checked).
 - `process_path`: `/proc/<pid>/exe`, or the command line's program for Wine/Proton
-  loaders (untested until the next Linux session).
+  loaders; when the link can't be read (a process in a user namespace we have no rights
+  in: every host process when Scout runs in a distrobox, Steam's games among them), the
+  command line's program if it is a path (run on Bazzite: Proton games from the
+  distrobox, 2026-10-14).
+- `GlobalShortcuts` reports a shortcut the portal bound without keys (KDE: not
+  confirmed, or another app holds them) as an error, so the UI shows it.
 - Monitors and windows return `Unsupported` (Wayland has no window list).
 
 Only documented OS APIs are used (WGC is the OS capture API). Nothing here touches

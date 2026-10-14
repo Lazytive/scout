@@ -259,6 +259,22 @@ mod linux {
         write_if_changed(&dir.join(format!("{app_id}.desktop")), content.as_bytes())
     }
 
+    /// A shortcut as the portal bound it. No trigger means the desktop gave it no keys
+    /// (KDE: the user didn't confirm them, or another app holds them), so it never fires:
+    /// an error, shown like Windows' "already used by another app".
+    pub(super) fn bound_shortcut(id: &str, trigger: &str) -> BoundShortcut {
+        let trigger = trigger.trim();
+        BoundShortcut {
+            id: id.to_string(),
+            trigger: trigger.to_string(),
+            error: trigger.is_empty().then(|| {
+                "the desktop gave it no keys (another app may use them); set them in the \
+                 desktop's shortcut settings"
+                    .to_string()
+            }),
+        }
+    }
+
     async fn serve(
         specs: &[ShortcutSpec],
         tx: &std::sync::mpsc::Sender<Result<Vec<BoundShortcut>, PlatformError>>,
@@ -286,11 +302,7 @@ mod linux {
         let bound = response
             .shortcuts()
             .iter()
-            .map(|s| BoundShortcut {
-                id: s.id().to_string(),
-                trigger: s.trigger_description().to_string(),
-                error: None,
-            })
+            .map(|s| bound_shortcut(s.id(), s.trigger_description()))
             .collect();
         // The portal sends activations only to the session's owner (this connection).
         let activated = proxy.receive_activated().await.map_err(os)?;
@@ -345,6 +357,23 @@ mod linux {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        /// Found on Bazzite (2026-10-14): KDE had bound every shortcut with no keys (an
+        /// older registration held Alt+F10) and Scout reported them as working.
+        #[test]
+        fn a_shortcut_without_keys_is_an_error() {
+            let ok = bound_shortcut("clip.save.0", "Alt+F10");
+            assert_eq!(ok.trigger, "Alt+F10");
+            assert_eq!(ok.error, None);
+            for none in ["", "  "] {
+                let b = bound_shortcut("clip.save.0", none);
+                assert_eq!(b.trigger, "");
+                assert!(
+                    b.error.as_deref().is_some_and(|e| e.contains("no keys")),
+                    "{b:?}"
+                );
+            }
+        }
 
         /// The taskbar (KDE, Wayland) shows the icon of the window's desktop entry: the
         /// entry names Scout's icon, written beside it; an entry from before (no icon,

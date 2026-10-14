@@ -78,6 +78,17 @@ app sizes its window).
   takes the keyboard while shown (for Esc). Without it the window shows where the
   compositor puts it (KDE: the middle). Opaque on Linux, with the card filling the
   window: a see-through WebKitGTK view drew only the animated timer bar.
+- `src-tauri/src/media_server.rs` (Linux): the preview's video, sound and pictures over
+  loopback HTTP. WebKitGTK plays `<video>`/`<audio>` only from http(s), file and blob
+  URLs (its GStreamer source has no element for Tauri's `asset:` scheme: "FormatError"
+  before a byte is read; WebKitGTK 2.54), so on Linux `fileUrl` (`api.ts`) asks
+  `media_base` once and points at `http://127.0.0.1:<port>/<token>/<percent-encoded
+  path>`. It serves exactly the asset protocol's scope (the engine-named files of
+  `editor_media`, files picked in a dialog); a 128-bit token in the path, the same 404
+  for a wrong token, a path outside the scope or a missing file; GET/HEAD, one byte
+  range, `Connection: close`, at most 32 connections, 16 KiB of headers, timeouts; CORS
+  only for the app's own origins. The CSP allows `http://127.0.0.1:*` for images,
+  media and `fetch`. Windows keeps the asset protocol (WebView2 plays it).
 - `src-tauri/src/thumb_scheme.rs` (M7): the `klipthumb` URI scheme for library
   thumbnails (`http://klipthumb.localhost/<poster|strip>/<key>?v=<version>` in
   WebView2): only cached thumbnails of library clips (the engine's `library.thumb` checks

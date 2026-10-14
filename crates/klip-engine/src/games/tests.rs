@@ -335,6 +335,55 @@ fn without_a_window_list_processes_count() {
     assert_eq!(games[1].window, None);
 }
 
+/// Found on Bazzite (2026-10-14), the processes of a Proton game as Scout saw them: Steam's
+/// runtime and Proton live in `steamapps/common` too, and with no window list the lowest
+/// pid came first, so Scout followed "SteamLinuxRuntime_4" instead of the game.
+#[test]
+fn steam_runtime_and_proton_are_not_games() {
+    let steam = "/var/home/me/.local/share/Steam/steamapps/common";
+    let runtime = format!(
+        "{steam}/SteamLinuxRuntime_4/pressure-vessel/libexec/steam-runtime-tools-0/srt-bwrap"
+    );
+    let wineserver = format!("{steam}/Proton - Experimental/files/lib/wine/../../bin/wineserver");
+    let mut s = snap(
+        &[
+            (31300, &runtime, &[]),
+            (31483, &wineserver, &[]),
+            (
+                31559,
+                r"\\?\S:\steamapps\common\Proton - Experimental\files\share\wine/../xalia/xalia.exe",
+                &[],
+            ),
+            (31565, r"S:\steamapps\common\9 Kings\9Kings.exe", &[]),
+            (
+                31570,
+                r"S:\steamapps\common\9 Kings\UnityCrashHandler64.exe",
+                &[],
+            ),
+        ],
+        None,
+    );
+    s.windows = None;
+    let games = detect(&s, &GameSettings::default());
+    assert_eq!(names(&games), vec!["9 Kings"]);
+    assert_eq!(games[0].pid, 31565);
+    for folder in [
+        "Proton 9.0 (Beta)",
+        "Proton Hotfix",
+        "Proton EasyAntiCheat Runtime",
+        "SteamLinuxRuntime",
+        "SteamLinuxRuntime_sniper",
+    ] {
+        let path = format!("{steam}/{folder}/x/tool");
+        assert_eq!(library_game(&path), None, "{path}");
+    }
+    // A game whose name merely starts with "Proton" still counts.
+    assert_eq!(
+        library_game(&format!("{steam}/Protonaut/Protonaut.x86_64")),
+        Some((Store::Steam, "Protonaut".into()))
+    );
+}
+
 #[test]
 fn candidates_list_programs_with_windows() {
     let s = snap(

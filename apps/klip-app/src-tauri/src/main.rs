@@ -18,6 +18,8 @@ mod cue;
 mod guard;
 mod ipc;
 mod logging;
+#[cfg(any(target_os = "linux", test))]
+mod media_server;
 mod overlay;
 mod thumb_scheme;
 mod tray;
@@ -43,6 +45,8 @@ pub(crate) struct AppState {
     /// first (`ipc::editor_media` allows what the engine names and forbids the oldest
     /// beyond `ipc::MAX_MEDIA_FILES`).
     pub(crate) media: Mutex<std::collections::VecDeque<std::path::PathBuf>>,
+    /// Linux: the loopback server the page loads those files from (`media_server.rs`).
+    pub(crate) media_base: Option<String>,
 }
 
 fn setting(handler: &Arc<dyn Handler>, section: &str, key: &str, default: bool) -> bool {
@@ -230,6 +234,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             ipc::klip,
             ipc::overlay_close,
             ipc::editor_media,
+            ipc::media_base,
             ipc::debug_info,
             ipc::debug_save_report,
             ipc::open_logs
@@ -263,10 +268,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             opts.events = Some(tx);
             let engine = Engine::start(opts)?;
             let handler = engine.handler();
+            // Linux: WebKitGTK plays no media from the asset protocol, so the same files
+            // are served over loopback HTTP (media_server.rs).
+            #[cfg(target_os = "linux")]
+            let media_base = {
+                let scope = app.asset_protocol_scope();
+                let allowed = move |p: &std::path::Path| scope.is_allowed(p);
+                match media_server::MediaServer::start(Arc::new(allowed)) {
+                    Ok(server) => Some(server.base().to_string()),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "media server: the preview can't play");
+                        None
+                    }
+                }
+            };
+            #[cfg(not(target_os = "linux"))]
+            let media_base = None;
             app.manage(AppState {
                 handler: handler.clone(),
                 engine: Mutex::new(Some(engine)),
                 media: Mutex::new(std::collections::VecDeque::new()),
+                media_base,
             });
             if std::env::var_os("KLIP_SETTINGS").is_none() {
                 migrate_autostart(app.handle());

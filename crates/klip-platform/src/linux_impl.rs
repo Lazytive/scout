@@ -198,21 +198,46 @@ fn parent_pid(stat: &str) -> Option<u32> {
     fields.next()?.parse().ok()
 }
 
-/// Running processes: pid, parent pid and executable file name (the `exe` link's file
-/// name when readable, else the kernel's 15-character `comm`).
 /// Executable of `pid`; for Wine/Proton loaders the Windows program from the command line
 /// (Wine rewrites it to the program's path).
 pub fn process_path(pid: u32) -> Result<std::path::PathBuf, PlatformError> {
     let base = std::path::PathBuf::from(format!("/proc/{pid}"));
-    let exe = fs::read_link(base.join("exe")).map_err(|e| PlatformError::Os(e.to_string()))?;
+    let exe = fs::read_link(base.join("exe"));
+    // Read only when needed: the loaders, or an unreadable link.
+    let cmdline = || read_small(&base.join("cmdline"), MAX_SMALL_FILE);
+    let wants_cmdline = exe.as_ref().map_or(true, |e| is_wine_loader(e));
+    path_from(exe, if wants_cmdline { cmdline() } else { None })
+}
+
+/// Whether `exe` is Wine's loader (the program it runs is in the command line).
+fn is_wine_loader(exe: &Path) -> bool {
     let name = exe.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    if (name.starts_with("wine") || name.contains("preloader"))
-        && let Some(cmd) = read_small(&base.join("cmdline"), MAX_SMALL_FILE)
-        && let Some(first) = cmd.split('\0').next().filter(|s| !s.is_empty())
-    {
-        return Ok(std::path::PathBuf::from(first));
+    name.starts_with("wine") || name.contains("preloader")
+}
+
+/// [`process_path`] from the `exe` link and the command line. The link can't be read for
+/// a process in a user namespace we have no rights in: every host process when Scout
+/// runs in a container (a distrobox), Steam's games among them. Their command line
+/// still can, and its program, when given as a path (`/…/game.x86_64`, or Proton's
+/// `S:\steamapps\common\Game\Game.exe`), stands in for the link.
+fn path_from(
+    exe: std::io::Result<std::path::PathBuf>,
+    cmdline: Option<String>,
+) -> Result<std::path::PathBuf, PlatformError> {
+    let program = cmdline.and_then(|cmd| {
+        cmd.split('\0')
+            .next()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    });
+    match exe {
+        Ok(exe) if is_wine_loader(&exe) => Ok(program.map_or(exe, std::path::PathBuf::from)),
+        Ok(exe) => Ok(exe),
+        Err(e) => program
+            .filter(|p| p.contains(['/', '\\']))
+            .map(std::path::PathBuf::from)
+            .ok_or_else(|| PlatformError::Os(e.to_string())),
     }
-    Ok(exe)
 }
 
 /// CPU time (utime + stime) and memory (statm) of a process.
@@ -250,6 +275,8 @@ pub fn process_usage(pid: u32) -> Result<crate::ProcessUsage, PlatformError> {
     })
 }
 
+/// Running processes: pid, parent pid and executable file name (the `exe` link's file
+/// name when readable, else the kernel's 15-character `comm`).
 pub fn list_processes() -> Result<Vec<ProcessInfo>, PlatformError> {
     let dir = fs::read_dir("/proc").map_err(|e| PlatformError::Os(e.to_string()))?;
     let mut out = Vec::new();
@@ -288,6 +315,39 @@ pub fn list_processes() -> Result<Vec<ProcessInfo>, PlatformError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Found on Bazzite (2026-10-14): Scout in a distrobox detected no Steam game, as the
+    /// game's `exe` link is "permission denied" from inside the container.
+    #[test]
+    fn unreadable_exe_link_falls_back_to_the_command_line() {
+        use std::io::{Error, ErrorKind};
+        use std::path::PathBuf;
+        let denied = || Err(Error::from(ErrorKind::PermissionDenied));
+        let proton = Some("S:\\steamapps\\common\\9 Kings\\9Kings.exe\0".to_string());
+        assert_eq!(
+            path_from(denied(), proton.clone()).unwrap(),
+            PathBuf::from("S:\\steamapps\\common\\9 Kings\\9Kings.exe")
+        );
+        let native = Some("/games/steamapps/common/Game/game.x86_64\0-fullscreen\0".into());
+        assert_eq!(
+            path_from(denied(), native).unwrap(),
+            PathBuf::from("/games/steamapps/common/Game/game.x86_64")
+        );
+        // A bare program name is no path; no command line (a kernel thread) neither.
+        assert!(path_from(denied(), Some("bash\0-c\0".into())).is_err());
+        assert!(path_from(denied(), None).is_err());
+        // A readable link wins, except Wine's loader, which names the program it runs.
+        let preloader = PathBuf::from("/proton/files/lib/wine/i386-unix/wine64-preloader");
+        assert_eq!(
+            path_from(Ok(preloader.clone()), proton).unwrap(),
+            PathBuf::from("S:\\steamapps\\common\\9 Kings\\9Kings.exe")
+        );
+        assert_eq!(path_from(Ok(preloader.clone()), None).unwrap(), preloader);
+        assert_eq!(
+            path_from(Ok("/usr/bin/bash".into()), Some("/other\0".into())).unwrap(),
+            PathBuf::from("/usr/bin/bash")
+        );
+    }
 
     #[test]
     fn parses_pci_slots_and_versions() {

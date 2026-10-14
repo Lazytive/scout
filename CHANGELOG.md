@@ -5,6 +5,29 @@ reason)`.
 
 ## Unreleased
 
+- Linux fixes from the human's KDE checklist (Bazzite, 2026-10-14) — **No game was
+  detected** when Scout ran in a distrobox: the game's `/proc/<pid>/exe` link is
+  "permission denied" from inside the container (every host process is), so
+  `process_path` failed; it now falls back to the command line's program when that is a
+  path (Proton: `S:\steamapps\common\9 Kings\9Kings.exe`). **Then Steam's own tools
+  counted as games**: Proton and the Steam Linux Runtime live in `steamapps/common` and
+  run beside every Proton game, and with no window list the lowest pid came first, so
+  Scout followed "SteamLinuxRuntime_4" (on a host install too); folders starting with
+  "Proton " or "SteamLinuxRuntime" are no games now. **Hotkeys did nothing**: KDE had
+  bound every shortcut with no keys (the pre-rename `dev.klip.Klip` registration held
+  Alt+F10) and Scout reported them as working; a shortcut the portal binds without keys
+  is now an error the UI shows. **Clips didn't play in the editor**: WebKitGTK plays
+  `<video>`/`<audio>` only from http(s), file and blob URLs ("FormatError" for Tauri's
+  `asset:` scheme before a byte is read; checked with a stand-alone WebKitGTK 2.54 page:
+  `file:` and loopback `http:` play the clip, `asset:` fails with or without CORS), so on
+  Linux the preview's files come from a loopback HTTP server serving exactly the asset
+  protocol's scope behind a random token (`media_server.rs`); checked with the app on a
+  virtual display: the editor loads the clip from it, Play runs the timecode. Tests:
+  the unreadable link, the Proton game's real process list, keyless shortcuts, byte
+  ranges, the scope and token, a range over a real socket. (Claude Opus 5.5: the
+  user's checklist results, "2 failed", "3 fail, clipping works but not the keybinds,
+  video doesnt play")
+
 - Linux overlay and taskbar icon — On Wayland no window can place itself, so the
   overlay showed in the middle of the screen on KDE. It is now a layer-shell surface
   (`klip_platform::overlay_layer_init`/`overlay_layer_place`, `layer_shell.rs`):
