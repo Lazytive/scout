@@ -299,6 +299,18 @@ impl Linker {
     }
 }
 
+/// Whether a core error ends the session. Errors on our own link and node proxies (an app
+/// stream that went away) are routine, and so is "unknown resource" for a destroy (op 7):
+/// a proxy dropped when its object went away (`removed`) reaches the daemon after the
+/// object is gone. Found on Bazzite (2026-10-14): every app sound that ended restarted
+/// the capture, a stretch of silence each time.
+fn is_fatal(id: u32, res: i32, message: &str) -> bool {
+    const ENOENT: i32 = 2;
+    let gone =
+        res == -ENOENT && message.starts_with("unknown resource") && message.ends_with(" op:7");
+    id == pw::core::PW_ID_CORE && !gone
+}
+
 fn pw_err(e: pw::Error) -> String {
     format!("PipeWire: {e}")
 }
@@ -464,8 +476,7 @@ fn session(
         .error({
             let (ml, failure) = (mainloop.clone(), failure.clone());
             move |id, _seq, res, message| {
-                // Errors on our own link proxies (an app stream that went away) are routine.
-                if id == pw::core::PW_ID_CORE {
+                if is_fatal(id, res, message) {
                     *failure.borrow_mut() = Some(format!("PipeWire error {res}: {message}"));
                     ml.quit();
                 }
@@ -845,8 +856,127 @@ mod tests {
         assert_eq!(nodes(&g, true), vec![10]);
     }
 
-    /// Collects samples of the first channel.
-    struct Collect(Arc<Mutex<Vec<f32>>>);
+    /// The error from Bazzite's recorder log is routine; other core errors still end the
+    /// session, errors on our own proxies never do.
+    #[test]
+    fn destroying_what_is_gone_is_routine() {
+        let core = pw::core::PW_ID_CORE;
+        assert!(!is_fatal(core, -2, "unknown resource 8 op:7"));
+        assert!(is_fatal(core, -2, "unknown resource 8 op:2"));
+        assert!(is_fatal(core, -32, "connection error"));
+        assert!(is_fatal(core, -2, "no such factory"));
+        assert!(!is_fatal(5, -2, "link failed"));
+    }
+
+    /// A 1 kHz tone in 10 ms blocks (ten whole periods at 48 kHz, so every block starts
+    /// at the same phase), between its first block with sound and the last block:
+    /// (blocks, level dips below 70 % of the median, phase jumps over 0.3 rad). A lost or
+    /// repeated stretch shows as a jump, a gap as a dip.
+    fn tone_breaks(v: &[f32]) -> (usize, usize, usize) {
+        use std::f32::consts::PI;
+        let w = 2.0 * PI * 1000.0 / 48_000.0;
+        let fits: Vec<(f32, f32)> = v
+            .as_chunks::<480>()
+            .0
+            .iter()
+            .map(|b| {
+                let (mut s, mut c) = (0.0f32, 0.0f32);
+                for (k, x) in b.iter().enumerate() {
+                    s += x * (w * k as f32).sin();
+                    c += x * (w * k as f32).cos();
+                }
+                ((s * s + c * c).sqrt() * 2.0 / 480.0, c.atan2(s))
+            })
+            .collect();
+        let first = fits.iter().position(|f| f.0 > 0.05).unwrap_or(fits.len());
+        // The first block is cut where the link starts; the last where capture stops.
+        let tone = &fits[(first + 1).min(fits.len())..fits.len().saturating_sub(1).max(first + 1)];
+        let mut amps: Vec<f32> = tone.iter().map(|f| f.0).collect();
+        amps.sort_by(f32::total_cmp);
+        let median = amps.get(amps.len() / 2).copied().unwrap_or(0.0);
+        let dips = tone.iter().filter(|f| f.0 < 0.7 * median).count();
+        let jumps = tone
+            .windows(2)
+            .filter(|p| {
+                let d = (p[1].1 - p[0].1 + 3.0 * PI).rem_euclid(2.0 * PI) - PI;
+                p[0].0 >= 0.7 * median && p[1].0 >= 0.7 * median && d.abs() > 0.3
+            })
+            .count();
+        (tone.len(), dips, jumps)
+    }
+
+    /// Found on Bazzite (2026-10-14): a game playing through pipewire-pulse (as most do)
+    /// was never linked, so its track was silent; then every other app sound that ended
+    /// restarted the capture. A tone from `pulsesink` is captured by its process, whole (no
+    /// dips, no jumps), while two short sounds from another PulseAudio app come and go.
+    #[test]
+    #[ignore = "needs a PipeWire session with pipewire-pulse and gst-launch-1.0; run via `cargo xtask e2e`"]
+    fn pulse_app_streams_are_linked_by_process_and_whole() {
+        let sink = "klip-test-pulse-null-sink";
+        let (stop_sink, sink_thread) = null_sink(sink);
+        std::thread::sleep(Duration::from_millis(300));
+        let mut tone = std::process::Command::new("gst-launch-1.0")
+            .args([
+                "-q",
+                "audiotestsrc",
+                "freq=1000",
+                "volume=0.5",
+                "!",
+                "audio/x-raw,rate=48000,channels=2",
+                "!",
+                "pulsesink",
+                &format!("device={sink}"),
+            ])
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(700));
+        let pid = tone.id();
+        let blip = || {
+            std::thread::sleep(Duration::from_millis(600));
+            let _ = std::process::Command::new("gst-launch-1.0")
+                .args([
+                    "-q",
+                    "audiotestsrc",
+                    "freq=300",
+                    "num-buffers=30",
+                    "!",
+                    "pulsesink",
+                ])
+                .args([format!("device={sink}")])
+                .status();
+        };
+        let (included, notices) = capture_while(
+            CaptureEndpoint::Process { pid, include: true },
+            4000,
+            || {
+                blip();
+                blip();
+            },
+        );
+        let sessions = audio_sessions().unwrap();
+        let _ = tone.kill();
+        let _ = tone.wait();
+        let _ = stop_sink.send(());
+        let _ = sink_thread.join();
+        let inc = included.get(9_600..).map(rms).unwrap_or(0.0);
+        let (blocks, dips, jumps) = tone_breaks(&included);
+        println!("rms {inc:.3}; {blocks} tone blocks, {dips} dips, {jumps} phase jumps");
+        println!("sessions: {sessions:?}");
+        assert!(
+            inc > 0.3,
+            "the PulseAudio app's stream was not captured: {inc}"
+        );
+        assert!(blocks > 300, "too little of the tone: {blocks} blocks");
+        assert_eq!((dips, jumps), (0, 0), "the tone is broken up");
+        assert!(notices.is_empty(), "the capture restarted: {notices:?}");
+        assert!(
+            sessions.iter().any(|s| s.pid == pid),
+            "the audio-apps list misses the PulseAudio app {pid}: {sessions:?}"
+        );
+    }
+
+    /// Collects samples of the first channel, and the notices.
+    struct Collect(Arc<Mutex<Vec<f32>>>, Arc<Mutex<Vec<String>>>);
     impl AudioCaptureSink for Collect {
         fn packet(&mut self, p: AudioPacket<'_>) {
             let mut v = self.0.lock().unwrap();
@@ -857,6 +987,7 @@ mod tests {
         }
         fn notice(&mut self, message: String) {
             println!("notice: {message}");
+            self.1.lock().unwrap().push(message);
         }
     }
 
@@ -865,11 +996,25 @@ mod tests {
     }
 
     fn capture(endpoint: CaptureEndpoint, ms: u64) -> Vec<f32> {
+        capture_while(endpoint, ms, || {}).0
+    }
+
+    /// Capture for `ms`, running `during` meanwhile: the samples and the notices.
+    fn capture_while(
+        endpoint: CaptureEndpoint,
+        ms: u64,
+        during: impl FnOnce(),
+    ) -> (Vec<f32>, Vec<String>) {
         let log = Arc::new(Mutex::new(Vec::new()));
-        let cap = AudioCapture::start(endpoint, 48_000, 2, Box::new(Collect(log.clone()))).unwrap();
-        std::thread::sleep(Duration::from_millis(ms));
+        let notices = Arc::new(Mutex::new(Vec::new()));
+        let sink = Collect(log.clone(), notices.clone());
+        let cap = AudioCapture::start(endpoint, 48_000, 2, Box::new(sink)).unwrap();
+        let start = std::time::Instant::now();
+        during();
+        std::thread::sleep(Duration::from_millis(ms).saturating_sub(start.elapsed()));
         cap.stop();
-        Arc::try_unwrap(log).unwrap().into_inner().unwrap()
+        let notices = notices.lock().unwrap().clone();
+        (Arc::try_unwrap(log).unwrap().into_inner().unwrap(), notices)
     }
 
     /// A null sink only this test plays to (nothing audible), kept while the loop thread

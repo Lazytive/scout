@@ -5,6 +5,19 @@ reason)`.
 
 ## Unreleased
 
+- Linux audio capture restarts — Every app sound that ended (a Discord or browser blip,
+  the editor's own sound) restarted Scout's audio captures with a stretch of silence:
+  dropping the proxy of a stream that went away sends a destroy the daemon answers with
+  "unknown resource N op:7" on the core, which counted as fatal. That one answer is
+  routine now (`is_fatal`). New hardware test: a 1 kHz tone from a PulseAudio client
+  (`pulsesink`) captured by its process while another PulseAudio app plays two short
+  sounds: whole (RMS 0.350, no level dips, no phase jumps, no restarts; 3 of 3 runs);
+  with the old rule it restarted ("unknown resource 9 op:7"), RMS 0.221, two jumps.
+  Also measured, for the editor: with sound on one track, its playback of a tone is
+  identical to the file (a null sink, 0 dips, 0 jumps); the same tone on two tracks at
+  once plays with 421 phase jumps in 6 s (the tracks drift against each other: open).
+  (Claude Opus 5.5: the user, "the audio is static and glichy")
+
 - Linux per-app audio for PulseAudio apps — A Barony clip's game track was silent: like
   most games, browsers and voice apps, Barony plays through pipewire-pulse, whose
   streams belong to a client whose peer pid (`pipewire.sec.pid`) is pipewire-pulse's,

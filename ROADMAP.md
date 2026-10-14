@@ -160,6 +160,8 @@ at times, EasyEffects until it was closed for the audio runs).
   streams never matched the game: fixed). The user questions the screen dialog and
   screen capture for an automatic clipper: options (KWin's window capture on KDE, which
   needs AGENTS.md rule 1 changed; one portal pick of all screens; gamescope) put to them.
+  Then "static and glitchy" audio: the recorder's captures restarted whenever an app
+  sound ended (fixed, hardware test); the recorded Barony track itself was clean.
 - Overlay placement (2026-10-14): KDE puts a normal window in the middle of the screen,
   so the overlay is now a layer-shell surface (gtk-layer-shell 0.10 in the distrobox).
   Previewed on the desktop with screenshots: the card 18 px (logical) from the top-right
@@ -1057,6 +1059,11 @@ made, so nothing to rename).
   ✅ (2026-10-12)  **Copy file** in the export window and paste it somewhere.
 
 ## Known bugs
+
+- **Editor: tracks with sound drift against each other** (2026-10-14, Linux/WebKitGTK;
+  Windows not measured). The same tone on two tracks plays with 421 phase jumps in 6 s
+  (a null sink, Xvfb); one track alone is clean. A clip with game sound and a voice
+  track would play with the two slightly off; the export is not affected.
 
 - **Linux + EasyEffects: per-app game audio ~20 ms late** (2026-10-13). With EasyEffects
   routing app streams through its sink, a game's stream is no longer one PipeWire cycle
