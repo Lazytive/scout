@@ -1011,6 +1011,11 @@ fn audio_apps() -> Result<()> {
 }
 
 fn main() -> std::process::ExitCode {
+    // Linux in a container: the host's system bus, so PipeWire gets its real-time audio
+    // thread from RTKit (before any thread starts).
+    if let Some(bus) = klip_platform::container_system_bus() {
+        klip_platform::set_env_before_threads(&[("DBUS_SYSTEM_BUS_ADDRESS", bus)]);
+    }
     // Beside a bundled GStreamer (`target/release` after `cargo xtask bundle`, an
     // installed Scout) Windows loads its DLLs from this folder first; without this the
     // CLI would run those DLLs with no plugins at all ("no working h264 encoder").

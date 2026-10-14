@@ -99,7 +99,12 @@ Linux (`linux_impl.rs`, `screencast.rs`; ADR 0012):
   stream delay (CLOCK_MONOTONIC); silence while nothing plays; reconnects every 2 s.
   PulseAudio apps' streams (`client.api = pipewire-pulse`; their client's peer pid is
   pipewire-pulse's) are bound for their node info, whose `application.process.id` names
-  the app, and linked only once known.
+  the app, and linked only once known. The stream runs with `RT_PROCESS` (PipeWire's
+  real-time data thread queues each cycle's buffers, stamped from the newest back; the
+  capture thread delivers them and fills silence) and asks for 16 buffers, so a busy
+  machine doesn't lose cycles. `container_system_bus()`: in a distrobox/toolbox, the
+  host's system bus for RTKit (`DBUS_SYSTEM_BUS_ADDRESS`), set by the app and CLI at
+  start.
 - `audio_sessions`: processes with a playback stream, active when one is running (two
   registry round trips; nodes bound for their state).
 - `timeline.rs`: the silence/overlap timeline shared with WASAPI.

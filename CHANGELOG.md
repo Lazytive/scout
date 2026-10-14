@@ -5,6 +5,26 @@ reason)`.
 
 ## Unreleased
 
+- Linux audio capture on a busy machine — The user's clips had short holes in the game
+  sound (one 15–20 ms hole at 28.5 s of a Barony clip; the capture node counted 1130
+  xruns). Scout's PipeWire stream did its per-cycle work on Scout's own normal-priority
+  thread, so when the CPU was busy (a game, the encoder) whole graph cycles never reached
+  Scout. Measured with a hardware test pinned to one CPU core shared with four busy
+  loops: 254k of ~480k frames of a tone arrived (RMS 0.24 instead of 0.35). The stream
+  now runs with `RT_PROCESS`: PipeWire's data thread (real-time through RTKit) takes
+  every waiting buffer, stamps each from the newest back, and queues it; Scout's thread
+  delivers the queue every 10 ms. It also asks for 16 buffers instead of PipeWire's one.
+  In a container (distrobox, toolbox) the system bus RTKit lives on is the host's:
+  `container_system_bus` points `DBUS_SYSTEM_BUS_ADDRESS` at `/run/host/run/dbus/…` when
+  the container has none and the user set none (the app and the CLI, before any thread).
+  Same contended test after the change: 3 of 3 runs whole on the host and in the
+  distrobox (all of the tone, no dips, no jumps); the recorder's `data-loop.0` thread runs
+  at RR 20. Also found: on this PC the Audeze headset output runs as a follower of the
+  Elgato Wave:3 microphone's clock (two USB clocks; ALSA "follower … resync" in the
+  journal), with Scout closed too, so live crackles from that are the desktop's audio
+  setup (EasyEffects joining the mic and output chains), not Scout. (Claude Opus 5.5: the
+  user, "audio still buggin", "26 seconds")
+
 - Linux audio capture restarts — Every app sound that ended (a Discord or browser blip,
   the editor's own sound) restarted Scout's audio captures with a stretch of silence:
   dropping the proxy of a stream that went away sends a destroy the daemon answers with

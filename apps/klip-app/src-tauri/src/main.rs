@@ -403,6 +403,11 @@ fn main() -> ExitCode {
     let bundled_gstreamer = klip_platform::use_bundled_gstreamer();
     let kind = logging::kind();
     klip_platform::set_env_before_threads(&logging::gstreamer_env(kind));
+    // Linux in a container: the host's system bus, so PipeWire gets its real-time audio
+    // thread from RTKit (the recorder inherits it).
+    if let Some(bus) = klip_platform::container_system_bus() {
+        klip_platform::set_env_before_threads(&[("DBUS_SYSTEM_BUS_ADDRESS", bus)]);
+    }
     // Linux with an NVIDIA GPU: WebKitGTK's DMA-BUF renderer ends the app with a Wayland
     // protocol error (71) as soon as the overlay is shown (KDE Plasma 6.7, driver 615;
     // opaque or not, click-through or not); its other renderer works. A value the user

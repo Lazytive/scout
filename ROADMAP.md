@@ -162,6 +162,9 @@ at times, EasyEffects until it was closed for the audio runs).
   needs AGENTS.md rule 1 changed; one portal pick of all screens; gamescope) put to them.
   Then "static and glitchy" audio: the recorder's captures restarted whenever an app
   sound ended (fixed, hardware test); the recorded Barony track itself was clean.
+  Then "still buggin" at 26 s: a 15–20 ms hole; Scout's capture lost whole graph cycles
+  when the CPU was busy (no real-time thread, and none possible in the distrobox): fixed
+  with `RT_PROCESS` and the host's system bus in containers (contended test 3/3 whole).
 - Overlay placement (2026-10-14): KDE puts a normal window in the middle of the screen,
   so the overlay is now a layer-shell surface (gtk-layer-shell 0.10 in the distrobox).
   Previewed on the desktop with screenshots: the card 18 px (logical) from the top-right

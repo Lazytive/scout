@@ -17,8 +17,8 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use pipewire as pw;
@@ -33,6 +33,8 @@ use crate::{AudioCaptureSink, CaptureEndpoint, PlatformError, qpc_now_ns};
 const TICK: Duration = Duration::from_millis(10);
 /// Largest buffer accepted from PipeWire, in frames (1 s at 192 kHz).
 const MAX_FRAMES: usize = 192_000;
+/// Most buffers taken in one wake-up (see `on_process`).
+const MAX_PENDING: usize = 64;
 
 /// A running capture thread.
 pub(crate) struct Handle {
@@ -67,7 +69,6 @@ pub(crate) fn start(
             let state = Rc::new(RefCell::new(Shared {
                 sink,
                 next: Some(qpc_now_ns()),
-                samples: Vec::new(),
                 delivered: false,
             }));
             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -88,17 +89,59 @@ pub(crate) fn start(
 }
 
 /// State the loop's callbacks share (all on the capture thread).
+/// Audio the data thread captured, waiting for the main thread ([`Shared::take`]).
+#[derive(Default)]
+struct Captured {
+    packets: Vec<CapturedPacket>,
+    /// Packets were dropped because the main thread fell [`MAX_QUEUED`] behind.
+    dropped: bool,
+}
+
+struct CapturedPacket {
+    start: i64,
+    frames: u32,
+    samples: Vec<f32>,
+}
+
+/// Most packets waiting for the main thread (seconds at any quantum).
+const MAX_QUEUED: usize = 512;
+
 struct Shared {
     sink: Box<dyn AudioCaptureSink>,
     /// End of the audio delivered so far.
     next: Option<i64>,
-    /// Reused conversion buffer.
-    samples: Vec<f32>,
     /// Real audio arrived in the current session.
     delivered: bool,
 }
 
 impl Shared {
+    /// Deliver what the data thread queued ([`on_process`]).
+    fn take(&mut self, fmt: Format, captured: &Mutex<Captured>) {
+        let (packets, dropped) = {
+            let mut c = captured
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            (
+                std::mem::take(&mut c.packets),
+                std::mem::take(&mut c.dropped),
+            )
+        };
+        let mut discontinuity = dropped;
+        for p in packets {
+            deliver(
+                fmt,
+                &mut self.next,
+                p.start,
+                p.frames,
+                Some(&p.samples),
+                discontinuity,
+                self.sink.as_mut(),
+            );
+            discontinuity = false;
+            self.delivered = true;
+        }
+    }
+
     fn fill_silence(&mut self, fmt: Format) {
         fill_silence(fmt, &mut self.next, self.sink.as_mut());
     }
@@ -341,6 +384,38 @@ fn positions(channels: u16) -> [u32; 64] {
     p
 }
 
+/// Buffers the stream may queue for us. PipeWire's default is one, so a capture thread
+/// that wakes later than one graph cycle (a busy machine: a game and its encoder) lost
+/// that cycle's audio; 16 give it ~340 ms at a 1024-frame quantum (found on Bazzite,
+/// 2026-10-14: a third of a tone lost with one CPU core busy).
+const STREAM_BUFFERS: i32 = 16;
+
+/// The `Buffers` param: [`STREAM_BUFFERS`] (2 to 32).
+fn buffers_param() -> Result<Vec<u8>, String> {
+    let count = spa::utils::Choice(
+        spa::utils::ChoiceFlags::empty(),
+        spa::utils::ChoiceEnum::Range {
+            default: STREAM_BUFFERS,
+            min: 2,
+            max: 32,
+        },
+    );
+    let obj = spa::pod::Object {
+        type_: spa::utils::SpaTypes::ObjectParamBuffers.as_raw(),
+        id: spa::param::ParamType::Buffers.as_raw(),
+        properties: vec![spa::pod::Property::new(
+            spa::sys::SPA_PARAM_BUFFERS_buffers,
+            spa::pod::Value::Choice(spa::pod::ChoiceValue::Int(count)),
+        )],
+    };
+    spa::pod::serialize::PodSerializer::serialize(
+        std::io::Cursor::new(Vec::new()),
+        &spa::pod::Value::Object(obj),
+    )
+    .map(|(c, _)| c.into_inner())
+    .map_err(|e| format!("audio buffers: {e:?}"))
+}
+
 /// The `EnumFormat` param: F32LE interleaved at `fmt` (PipeWire converts to it).
 fn format_param(fmt: Format) -> Result<Vec<u8>, String> {
     let mut info = spa::param::audio::AudioInfoRaw::new();
@@ -518,7 +593,13 @@ fn session(
             }))
         }
     };
-    let stream = pw::stream::StreamBox::new(&core, "Scout audio capture", props).map_err(pw_err)?;
+    // App streams linked straight to us arrive one graph cycle before the output's mix
+    // carries them (measured −10.5 to −10.75 ms at a 512-frame quantum against the sink
+    // monitor); stamp them one buffer later so all sources agree.
+    let one_cycle_early = linker.is_some();
+    let captured: Arc<Mutex<Captured>> = Arc::default();
+    let stream =
+        pw::stream::StreamRc::new(core.clone(), "Scout audio capture", props).map_err(pw_err)?;
     let _stream_listener = stream
         .add_local_listener_with_user_data(())
         .state_changed({
@@ -538,19 +619,19 @@ fn session(
             }
         })
         .process({
-            let state = state.clone();
-            // App streams linked straight to us arrive one graph cycle before the output's
-            // mix carries them (measured −10.5 to −10.75 ms at a 512-frame quantum against
-            // the sink monitor); stamp them one buffer later so all sources agree.
-            let one_cycle_early = linker.is_some();
-            move |stream, _| on_process(stream, fmt, &state, one_cycle_early)
+            // PipeWire's data thread (RT_PROCESS): real-time where the desktop allows, so a
+            // busy machine doesn't make Scout miss graph cycles. It only queues the audio.
+            let captured = captured.clone();
+            move |stream, _| on_process(stream, fmt, &captured, one_cycle_early)
         })
         .register()
         .map_err(pw_err)?;
     let values = format_param(fmt)?;
     let pod = spa::pod::Pod::from_bytes(&values).ok_or("audio format pod")?;
-    let mut params = [pod];
-    let mut flags = pw::stream::StreamFlags::MAP_BUFFERS;
+    let buffers = buffers_param()?;
+    let buffers = spa::pod::Pod::from_bytes(&buffers).ok_or("audio buffers pod")?;
+    let mut params = [pod, buffers];
+    let mut flags = pw::stream::StreamFlags::MAP_BUFFERS | pw::stream::StreamFlags::RT_PROCESS;
     if linker.is_none() {
         flags |= pw::stream::StreamFlags::AUTOCONNECT;
     }
@@ -573,8 +654,15 @@ fn session(
     });
 
     let timer = mainloop.loop_().add_timer({
-        let (ml, state, stop) = (mainloop.clone(), state.clone(), stop.clone());
+        let (ml, state, stop, captured) = (
+            mainloop.clone(),
+            state.clone(),
+            stop.clone(),
+            captured.clone(),
+        );
         move |_| {
+            // What the data thread captured first, then silence for what is still missing.
+            state.borrow_mut().take(fmt, &captured);
             state.borrow_mut().fill_silence(fmt);
             if stop.load(Ordering::Relaxed) {
                 ml.quit();
@@ -598,58 +686,93 @@ fn session(
 fn on_process(
     stream: &pw::stream::Stream,
     fmt: Format,
-    state: &RefCell<Shared>,
+    captured: &Mutex<Captured>,
     one_cycle_early: bool,
 ) {
-    let Some(mut buffer) = stream.dequeue_buffer() else {
-        return;
-    };
-    let datas = buffer.datas_mut();
-    let Some(d) = datas.first_mut() else { return };
-    let offset = usize::try_from(d.chunk().offset()).unwrap_or(usize::MAX);
-    let size = usize::try_from(d.chunk().size()).unwrap_or(0);
-    let Some(bytes) = d.data() else { return };
-    let Some(bytes) = offset
-        .checked_add(size)
-        .and_then(|end| bytes.get(offset..end))
-    else {
-        return;
-    };
-    let frame_bytes = usize::from(fmt.channels).saturating_mul(4);
-    let frames = bytes
-        .len()
-        .checked_div(frame_bytes)
-        .unwrap_or(0)
-        .min(MAX_FRAMES);
-    if frames == 0 {
-        return;
+    // A late wake-up (a busy machine: a game, the encoder) finds several buffers waiting.
+    // Take them all, oldest first: they are consecutive cycles, so each starts where the
+    // next begins, counted back from the newest (the current cycle). Taking one per
+    // wake-up stamped with "now" left a silent hole per late cycle and lost audio once the
+    // queue filled (found on Bazzite, 2026-10-14: a third of a tone lost with one CPU core
+    // busy).
+    let mut pending: Vec<pw::buffer::Buffer<'_>> = Vec::new();
+    while pending.len() < MAX_PENDING {
+        match stream.dequeue_buffer() {
+            Some(b) => pending.push(b),
+            None => break,
+        }
     }
+    let frames: Vec<u32> = pending.iter_mut().map(|b| buffer_frames(b, fmt)).collect();
+    let Some(&newest) = frames.last() else {
+        return;
+    };
     let mut start = capture_time(stream);
     if one_cycle_early {
-        start = start.saturating_add(fmt.frames_ns(u32::try_from(frames).unwrap_or(0)));
+        start = start.saturating_add(fmt.frames_ns(newest));
     }
-    let mut s = state.borrow_mut();
-    let s = &mut *s;
-    s.samples.clear();
-    s.samples.extend(
-        bytes
+    let mut starts = Vec::with_capacity(frames.len());
+    let mut rest = frames.iter().rev();
+    rest.next();
+    starts.push(start);
+    let mut t = start;
+    for f in rest {
+        t = t.saturating_sub(fmt.frames_ns(*f));
+        starts.push(t);
+    }
+    starts.reverse();
+    let mut c = captured
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for ((buffer, start), frames) in pending.iter_mut().zip(starts).zip(frames) {
+        if frames == 0 {
+            continue;
+        }
+        let Some(bytes) = buffer_bytes(buffer) else {
+            continue;
+        };
+        let samples: Vec<f32> = bytes
             .as_chunks::<4>()
             .0
             .iter()
-            .take(frames.saturating_mul(usize::from(fmt.channels)))
-            .map(|b| f32::from_le_bytes(*b)),
-    );
-    let frames = u32::try_from(frames).unwrap_or(0);
-    deliver(
-        fmt,
-        &mut s.next,
-        start,
-        frames,
-        Some(&s.samples),
-        false,
-        s.sink.as_mut(),
-    );
-    s.delivered = true;
+            .take(
+                usize::try_from(frames)
+                    .unwrap_or(0)
+                    .saturating_mul(usize::from(fmt.channels)),
+            )
+            .map(|b| f32::from_le_bytes(*b))
+            .collect();
+        if c.packets.len() >= MAX_QUEUED {
+            c.packets.remove(0);
+            c.dropped = true;
+        }
+        c.packets.push(CapturedPacket {
+            start,
+            frames,
+            samples,
+        });
+    }
+}
+
+/// The bytes of a buffer's first data plane (its chunk).
+fn buffer_bytes<'a>(buffer: &'a mut pw::buffer::Buffer<'_>) -> Option<&'a [u8]> {
+    let d = buffer.datas_mut().first_mut()?;
+    let offset = usize::try_from(d.chunk().offset()).ok()?;
+    let size = usize::try_from(d.chunk().size()).ok()?;
+    let bytes = d.data()?;
+    offset
+        .checked_add(size)
+        .and_then(|end| bytes.get(offset..end))
+}
+
+/// Whole frames in a buffer (capped).
+fn buffer_frames(buffer: &mut pw::buffer::Buffer<'_>, fmt: Format) -> u32 {
+    let frame_bytes = usize::from(fmt.channels).saturating_mul(4);
+    let frames = buffer_bytes(buffer)
+        .map_or(0, |b| b.len())
+        .checked_div(frame_bytes)
+        .unwrap_or(0)
+        .min(MAX_FRAMES);
+    u32::try_from(frames).unwrap_or(0)
 }
 
 /// When the first frame of the buffer being processed was captured: the graph cycle's
@@ -932,25 +1055,28 @@ mod tests {
         std::thread::sleep(Duration::from_millis(700));
         let pid = tone.id();
         let blip = || {
-            std::thread::sleep(Duration::from_millis(600));
             let _ = std::process::Command::new("gst-launch-1.0")
                 .args([
                     "-q",
                     "audiotestsrc",
                     "freq=300",
-                    "num-buffers=30",
+                    "num-buffers=10",
                     "!",
                     "pulsesink",
                 ])
                 .args([format!("device={sink}")])
                 .status();
         };
+        // Other apps' sounds coming and going all the time (a browser, a voice app, the
+        // editor): each is a new stream with its own updates.
         let (included, notices) = capture_while(
             CaptureEndpoint::Process { pid, include: true },
-            4000,
+            10_000,
             || {
-                blip();
-                blip();
+                for _ in 0..20 {
+                    std::thread::sleep(Duration::from_millis(250));
+                    blip();
+                }
             },
         );
         let sessions = audio_sessions().unwrap();
@@ -966,7 +1092,7 @@ mod tests {
             inc > 0.3,
             "the PulseAudio app's stream was not captured: {inc}"
         );
-        assert!(blocks > 300, "too little of the tone: {blocks} blocks");
+        assert!(blocks > 900, "too little of the tone: {blocks} blocks");
         assert_eq!((dips, jumps), (0, 0), "the tone is broken up");
         assert!(notices.is_empty(), "the capture restarted: {notices:?}");
         assert!(
