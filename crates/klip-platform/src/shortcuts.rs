@@ -39,8 +39,9 @@ pub struct BoundShortcut {
 /// Tell the portals which app this is (host apps only; sandboxed ones already have an
 /// id). Must come before any other portal call of the process, else it is refused. The
 /// portal looks the id up as a desktop entry; an installed Scout ships one, and for the
-/// CLI a hidden one (`NoDisplay=true`, no menu item) is written to
-/// `$XDG_DATA_HOME/applications` if it is missing.
+/// CLI and an unpackaged app a hidden one (`NoDisplay=true`, no menu item) is written to
+/// `$XDG_DATA_HOME/applications` if it is missing. On Wayland the taskbar takes the
+/// window's icon from that entry, so it names Scout's icon (written beside it).
 pub fn register_app_id(app_id: &str) -> Result<(), PlatformError> {
     #[cfg(target_os = "linux")]
     {
@@ -70,6 +71,17 @@ pub fn register_app_id(app_id: &str) -> Result<(), PlatformError> {
         let _ = app_id;
         Err(PlatformError::Unsupported)
     }
+}
+
+/// Linux: name this process `app_id` for GLib, before GTK starts. GTK gives its windows
+/// that name as their Wayland app id, which the desktop matches to the desktop entry
+/// ([`register_app_id`]) for the taskbar's icon; otherwise they are named after the
+/// executable (`klip-app`) and get a generic icon. Elsewhere: nothing.
+pub fn set_desktop_app_id(app_id: &str) {
+    #[cfg(target_os = "linux")]
+    gstreamer::glib::set_prgname(Some(app_id));
+    #[cfg(not(target_os = "linux"))]
+    let _ = app_id;
 }
 
 /// Bound shortcuts; activations are delivered until this is dropped.
@@ -129,7 +141,7 @@ impl GlobalShortcuts {
 #[cfg(target_os = "linux")]
 mod linux {
     use std::panic::{AssertUnwindSafe, catch_unwind};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use ashpd::desktop::global_shortcuts::{
         BindShortcutsOptions, GlobalShortcuts as Portal, NewShortcut,
@@ -161,11 +173,59 @@ mod linux {
         }
     }
 
+    /// Scout's icon (`app-icon.svg` at 256x256, ATTRIBUTION.md), for the desktop entry.
+    const ICON_PNG: &[u8] = include_bytes!("../../../apps/klip-app/src-tauri/icons/128x128@2x.png");
+
     /// Write a hidden desktop entry for `app_id` unless an identical one exists (atomic:
     /// temp + rename). The portal only accepts entries whose `Exec` program exists, so it
     /// names this executable (or `true` if its path needs quoting). Returns whether it
     /// wrote one.
     pub(super) fn ensure_desktop_entry(app_id: &str) -> Result<bool, PlatformError> {
+        let data = std::env::var_os("XDG_DATA_HOME")
+            .filter(|d| !d.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+            .ok_or_else(|| PlatformError::Os("no XDG_DATA_HOME or HOME".into()))?;
+        let exe = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.to_str().map(str::to_string))
+            .filter(|p| plain_path(p))
+            .unwrap_or_else(|| "true".into());
+        write_desktop_entry(&data, app_id, &exe)
+    }
+
+    /// No quoting needed in a desktop entry's `Exec` or `Icon`.
+    fn plain_path(p: &str) -> bool {
+        p.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"/._-+".contains(&b))
+    }
+
+    /// Write `content` to `path` unless it already holds exactly that (atomic: temp +
+    /// rename). Returns whether it wrote.
+    fn write_if_changed(path: &Path, content: &[u8]) -> Result<bool, PlatformError> {
+        // Small files we wrote ourselves; anything bigger is not ours to compare.
+        let same = std::fs::metadata(path).is_ok_and(|m| m.len() < 1 << 20)
+            && std::fs::read(path).is_ok_and(|c| c == content);
+        if same {
+            return Ok(false);
+        }
+        let io = |e: std::io::Error| PlatformError::Os(format!("desktop entry: {e}"));
+        let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+            return Err(PlatformError::Os(format!("bad path {}", path.display())));
+        };
+        std::fs::create_dir_all(dir).map_err(io)?;
+        let tmp = dir.join(format!(".{}.tmp", name.to_string_lossy()));
+        std::fs::write(&tmp, content).map_err(io)?;
+        std::fs::rename(&tmp, path).map_err(io)?;
+        Ok(true)
+    }
+
+    /// The desktop entry (and the icon it names) under `data` (`$XDG_DATA_HOME`).
+    pub(super) fn write_desktop_entry(
+        data: &Path,
+        app_id: &str,
+        exe: &str,
+    ) -> Result<bool, PlatformError> {
         // The id comes from a constant, but keep it a plain file name regardless.
         if app_id.is_empty()
             || !app_id
@@ -174,11 +234,6 @@ mod linux {
         {
             return Err(PlatformError::Os(format!("bad app id {app_id:?}")));
         }
-        let data = std::env::var_os("XDG_DATA_HOME")
-            .filter(|d| !d.is_empty())
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
-            .ok_or_else(|| PlatformError::Os("no XDG_DATA_HOME or HOME".into()))?;
         let dir = data.join("applications");
         // The entry written before the rename (ADR 0020), when it is our small hidden one.
         let old = dir.join(format!("{LEGACY_APP_ID}.desktop"));
@@ -187,31 +242,21 @@ mod linux {
         {
             let _ = std::fs::remove_file(&old);
         }
-        let path = dir.join(format!("{app_id}.desktop"));
-        let exe = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.to_str().map(str::to_string))
-            .filter(|p| {
-                p.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"/._-+".contains(&b))
-            })
-            .unwrap_or_else(|| "true".into());
+        // The icon by its full path (no icon-theme cache to refresh); its theme name if
+        // the path would need quoting.
+        let icon_path = data
+            .join("icons/hicolor/256x256/apps")
+            .join(format!("{app_id}.png"));
+        write_if_changed(&icon_path, ICON_PNG)?;
+        let icon = icon_path
+            .to_str()
+            .filter(|p| plain_path(p))
+            .map_or_else(|| app_id.to_string(), str::to_string);
         let content = format!(
             "[Desktop Entry]\nType=Application\nName=Scout\nComment=Game clip recorder\n\
-             Exec={exe}\nTerminal=true\nNoDisplay=true\n"
+             Exec={exe}\nIcon={icon}\nTerminal=false\nNoDisplay=true\n"
         );
-        // Small file we wrote ourselves; anything bigger is not ours to compare.
-        let same = std::fs::metadata(&path).is_ok_and(|m| m.len() < 4096)
-            && std::fs::read_to_string(&path).is_ok_and(|c| c == content);
-        if same {
-            return Ok(false);
-        }
-        let io = |e: std::io::Error| PlatformError::Os(format!("desktop entry: {e}"));
-        std::fs::create_dir_all(&dir).map_err(io)?;
-        let tmp = dir.join(format!(".{app_id}.desktop.tmp"));
-        std::fs::write(&tmp, content).map_err(io)?;
-        std::fs::rename(&tmp, &path).map_err(io)?;
-        Ok(true)
+        write_if_changed(&dir.join(format!("{app_id}.desktop")), content.as_bytes())
     }
 
     async fn serve(
@@ -294,6 +339,46 @@ mod linux {
             )),
             Ok(Err(e)) => Err(e),
             Err(_) => Err(PlatformError::Os("shortcuts portal thread ended".into())),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// The taskbar (KDE, Wayland) shows the icon of the window's desktop entry: the
+        /// entry names Scout's icon, written beside it; an entry from before (no icon,
+        /// `Terminal=true`) is replaced; an identical one is left alone.
+        #[test]
+        fn desktop_entry_names_scouts_icon() {
+            let data = tempfile::tempdir().unwrap();
+            let id = "io.github.lazytive.Scout";
+            let entry = data
+                .path()
+                .join("applications")
+                .join(format!("{id}.desktop"));
+            std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+            std::fs::write(
+                &entry,
+                "[Desktop Entry]\nType=Application\nName=Scout\nExec=/x\nTerminal=true\nNoDisplay=true\n",
+            )
+            .unwrap();
+            assert!(write_desktop_entry(data.path(), id, "/opt/scout/klip-app").unwrap());
+            let text = std::fs::read_to_string(&entry).unwrap();
+            let icon = data
+                .path()
+                .join(format!("icons/hicolor/256x256/apps/{id}.png"));
+            assert!(
+                text.contains(&format!("\nIcon={}\n", icon.display())),
+                "{text}"
+            );
+            assert!(text.contains("\nExec=/opt/scout/klip-app\n"), "{text}");
+            assert!(text.contains("\nTerminal=false\n"), "{text}");
+            assert!(text.contains("\nNoDisplay=true\n"), "{text}");
+            assert_eq!(std::fs::read(&icon).unwrap(), ICON_PNG);
+            assert!(ICON_PNG.starts_with(b"\x89PNG"));
+            assert!(!write_desktop_entry(data.path(), id, "/opt/scout/klip-app").unwrap());
+            assert!(write_desktop_entry(data.path(), "bad/id", "/x").is_err());
         }
     }
 }

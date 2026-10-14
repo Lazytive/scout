@@ -61,7 +61,9 @@ sudo dnf install --allowerasing --enablerepo=fedora-cisco-openh264   gcc gcc-c++
 ```
 
 Then Rust via rustup (the version in `rust-toolchain.toml` installs itself), Node.js, and
-the same commands as on Windows. Screen capture goes through the desktop's ScreenCast
+the same commands as on Windows. Optional, for the overlay in its corner on KDE Plasma
+and wlroots desktops: `sudo dnf install gtk-layer-shell` (loaded at run time; without it
+the overlay shows where the desktop puts it). Screen capture goes through the desktop's ScreenCast
 portal: the first recording asks which screen to share.
 
 ## Licence

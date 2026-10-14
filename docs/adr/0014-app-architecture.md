@@ -123,5 +123,9 @@ windows are hard to drive from tests.
   Done in M6.12, ADR 0016.
 - The overlay is Windows-only so far; on Linux the sound and notification stand in
   (layer-shell later). The Linux engine paths are written but not yet run.
+  Update 2026-10-14: on Linux (Wayland) the overlay is a layer-shell surface through
+  gtk-layer-shell (LGPL-3.0+, loaded at run time, not bundled; KDE Plasma and wlroots
+  desktops, not GNOME), anchored to the chosen corner of the active output; without
+  the library or the protocol it falls back to a normal window.
 - Whether a window over a borderless game turns VRR off while the card shows is not
   measured (human checklist; PresentMon could measure it).

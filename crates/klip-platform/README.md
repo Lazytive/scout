@@ -107,7 +107,18 @@ Linux (`linux_impl.rs`, `screencast.rs`; ADR 0012):
   entry (`NoDisplay=true`, `Exec` = this executable) to `$XDG_DATA_HOME/applications`,
   because the portal only accepts ids with a desktop entry whose program exists.
   `APP_ID = io.github.lazytive.Scout` (ADR 0020; the hidden entry of the old
-  `dev.klip.Klip` id is removed).
+  `dev.klip.Klip` id is removed). The entry names Scout's icon, written beside it
+  (`icons/hicolor/256x256/apps`), and `set_desktop_app_id` (GLib's program name, set
+  before GTK starts) gives the app's windows that id on Wayland, so the taskbar shows
+  Scout's icon instead of a generic one for `klip-app`.
+- Overlay (`layer_shell.rs`): `overlay_layer_init(title)` makes the overlay window a
+  layer-shell surface (overlay layer, no keyboard) and `overlay_layer_place` sizes it
+  and anchors it to a corner (or none: centred) of the output the compositor picks (KDE:
+  the active one), as Wayland lets no window place itself. gtk-layer-shell (LGPL-3.0+,
+  `libgtk-layer-shell.so.0`, 0.6 or later) is loaded at run time with `libloading`, and
+  the GTK calls are looked up in the process; without it, or on a compositor without
+  the protocol (GNOME), both return `Ok(false)` and the overlay stays a normal window
+  (KDE puts that in the middle). Both run on the GTK main thread only (checked).
 - `process_path`: `/proc/<pid>/exe`, or the command line's program for Wine/Proton
   loaders (untested until the next Linux session).
 - Monitors and windows return `Unsupported` (Wayland has no window list).

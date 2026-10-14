@@ -16,6 +16,7 @@ mod hotkey_tests;
 mod hotkeys_win;
 #[cfg(any(windows, test))]
 mod keymap;
+mod layer_shell;
 #[cfg(target_os = "linux")]
 mod linux_impl;
 #[cfg(target_os = "linux")]
@@ -34,9 +35,12 @@ mod windows_impl;
 
 pub use bundled::{BUNDLED_PLUGIN_DIR, set_env_before_threads, use_bundled_gstreamer};
 pub use clipboard::{MAX_COPY_FILES, clipboard_text, copied_files, copy_files, set_clipboard_text};
+pub use layer_shell::{OverlayAnchor, overlay_layer_init, overlay_layer_place};
 pub use screencast::{ScreenCast, ScreenCastRequest, ScreenCastSource, ScreenCastStream};
 pub use shell::{open_file, reveal_file};
-pub use shortcuts::{APP_ID, BoundShortcut, GlobalShortcuts, ShortcutSpec, register_app_id};
+pub use shortcuts::{
+    APP_ID, BoundShortcut, GlobalShortcuts, ShortcutSpec, register_app_id, set_desktop_app_id,
+};
 #[cfg(windows)]
 pub use wgc::{
     GpuCapture, GpuCaptureConfig, GpuCaptureStats, GpuCaptureTarget, GpuFrameSink, HdrDisplay,

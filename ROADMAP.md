@@ -148,6 +148,12 @@ at times, EasyEffects until it was closed for the audio runs).
 - Not covered on Linux: `m6_daemon`, `m7_library`, `m8_editor`, `m9_montage` and the
   overlay e2e are Windows-only (`SendInput` hotkeys, window handles); the human
   checklist below covers the app on KDE.
+- Overlay placement (2026-10-14): KDE puts a normal window in the middle of the screen,
+  so the overlay is now a layer-shell surface (gtk-layer-shell 0.10 in the distrobox).
+  Previewed on the desktop with screenshots: the card 18 px (logical) from the top-right
+  corner of the active output, then bottom-left (above the panel) with that setting,
+  and the quick menu centred; the card hid itself after `overlay.seconds`. The
+  overlay is opaque on Linux (see-through, WebKitGTK drew only the timer bar).
 
 ### Full-session recording (M5)
 
@@ -581,8 +587,9 @@ klip-edit` and `vitest`.
     installs are on the human checklist. The engine follows the game's process, not its
     windows: a game that replaces its window isn't re-targeted (the capture supervisor
     falls back to its monitor, ADR 0011).
-  - Overlay: Windows only (Linux gets the sound and notification; layer-shell later);
-    its effect on VRR/G-Sync over a real game is unmeasured (human checklist or
+  - Overlay on Linux (Wayland): a layer-shell surface (gtk-layer-shell, KDE and wlroots;
+    GNOME gets a normal window wherever it puts it); checked on KDE with a preview: the
+    card in its corner, the menu centred, on the active output. Its effect on VRR/G-Sync over a real game is unmeasured (human checklist or
     PresentMon); the quick menu takes the focus while open, so it isn't shown over an
     exclusive-fullscreen game.
   - While a game is recorded there are two Scout processes (the engine, ~22 MB private,
@@ -719,12 +726,15 @@ loopback is an OS API and doesn't touch the game, but that decision is theirs.
 Start Scout on Bazzite (a build from the Linux disk, `cargo run -p klip-app --release`,
 your real settings). The first start asks KDE twice: the shortcuts (Alt+F10…) and,
 when a game starts, which screen to share (pick the game's monitor).
-1. **Tray and window**: the tray icon appears; left click opens the Library; closing
-   the window keeps Scout in the tray; Quit ends it.
+1. **Tray and window**: the tray icon appears; left click opens the Library (the
+   taskbar shows Scout's icon, not a generic one); closing the window keeps Scout in
+   the tray; Quit ends it.
 2. **Game detection**: start a non-anti-cheat game from Steam (Proton is fine): the
    title bar names it and starts buffering.
-3. **Clip**: Alt+F10 in the game: the overlay card shows top right for ~3 s, the game
-   keeps the keyboard, the clip appears in the Library with a thumbnail and its sound.
+3. **Clip**: Alt+F10 in the game: the overlay card shows top right of the game's
+   monitor for ~3 s (not in the middle, not on the other monitor), over the game even in
+   fullscreen; the game keeps the keyboard; the clip appears in the Library with a
+   thumbnail and its sound.
 4. **Library**: hover-scrub a card, star, rename, "Show in folder" (Dolphin opens) and
    "Open" (your video player).
 5. **Editor**: trim a clip and export it with the YouTube preset; it plays in sync.

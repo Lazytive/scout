@@ -27,6 +27,11 @@
   let thumb = $state<string | null>(null);
 
   const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  // Linux (WebKitGTK): a web view with a see-through background draws only what is being
+  // animated (the timer), so there the window is opaque and the pop-up fills it.
+  if (typeof navigator !== 'undefined' && /\bLinux\b/.test(navigator.userAgent)) {
+    document.documentElement.dataset.opaque = 'true';
+  }
   // The overlay follows the theme (M10): colours, accent, corners, font and motion. Its
   // window is sized by the app, so text size, density and the picture stay out.
   let appearance: Partial<Appearance> | undefined;
@@ -144,6 +149,17 @@
   :global(body) {
     background: transparent !important;
     overflow: hidden;
+  }
+  /* Linux: an opaque window (see the script), so the card and the menu fill it. */
+  :global(:root[data-opaque='true']),
+  :global(:root[data-opaque='true'] body) {
+    background: var(--panel) !important;
+  }
+  :global(:root[data-opaque='true']) .card,
+  :global(:root[data-opaque='true']) .menu {
+    inset: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
   .card {
     position: absolute;

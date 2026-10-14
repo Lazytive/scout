@@ -18,6 +18,10 @@ ashpd = { version = "0.13", default-features = false, features = ["async-io", "s
 pipewire = { version = "0.10", features = ["v0_3_50"] }
 futures-channel = "0.3"
 futures-util = { version = "0.3", default-features = false }
+# Its `glib`: the process name GTK uses as the windows' Wayland app id (`set_desktop_app_id`).
+gstreamer.workspace = true
+# gtk-layer-shell, loaded at run time when installed (`layer_shell.rs`).
+libloading = "0.8"
 pollster.workspace = true
 rustix = { version = "1", features = ["fs", "param", "time"] }
 tracing.workspace = true

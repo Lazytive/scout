@@ -24,6 +24,8 @@ use tauri::{
 };
 
 pub const LABEL: &str = "overlay";
+/// The window's title (Linux: how the layer-shell code finds it).
+const TITLE: &str = "Scout overlay";
 /// Window sizes in logical pixels (the card has a 6 px margin for its shadow).
 const CARD: (f64, f64) = (392.0, 100.0);
 const DOT: (f64, f64) = (26.0, 26.0);
@@ -94,6 +96,8 @@ pub struct Overlay {
     next_card: AtomicU64,
     pos_override: Option<(i32, i32)>,
     no_focus: bool,
+    /// Linux (Wayland): a layer-shell surface, placed by its anchors.
+    layer: bool,
 }
 
 fn lock(m: &Mutex<State>) -> MutexGuard<'_, State> {
@@ -134,8 +138,10 @@ impl Overlay {
     /// Create the (hidden) overlay window.
     pub fn create(app: &AppHandle, prefs: Prefs) -> tauri::Result<Arc<Overlay>> {
         let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("overlay.html".into()))
-            .title("Scout overlay")
-            .transparent(true)
+            .title(TITLE)
+            // Linux: WebKitGTK draws only animated parts over a see-through background
+            // (any alpha below 1), so the window is opaque there and the card fills it.
+            .transparent(!cfg!(target_os = "linux"))
             .decorations(false)
             .always_on_top(true)
             .skip_taskbar(true)
@@ -158,6 +164,13 @@ impl Overlay {
         // (aborting the app) making one without a surface click-through; `show` does it.
         #[cfg(windows)]
         window.set_ignore_cursor_events(true)?;
+        // Linux (Wayland): no window can place itself, so a normal one shows where the
+        // compositor likes (KDE: the middle); a layer-shell surface sits in its corner.
+        let layer = klip_platform::overlay_layer_init(TITLE).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "overlay layer surface");
+            false
+        });
+        tracing::info!(layer, "overlay window");
         let pos_override = std::env::var("KLIP_OVERLAY_POS")
             .ok()
             .and_then(|s| crate::parse_pos(&s));
@@ -176,6 +189,7 @@ impl Overlay {
             next_card: AtomicU64::new(1),
             pos_override,
             no_focus: std::env::var_os("KLIP_NO_FOCUS").is_some(),
+            layer,
         }))
     }
 
@@ -423,6 +437,27 @@ impl Overlay {
                 .window
                 .set_size(PhysicalSize::new(lw.round() as u32, lh.round() as u32));
             let _ = self.window.set_position(PhysicalPosition::new(x, y));
+            return;
+        }
+        if self.layer {
+            // The compositor puts it on the output in use (the game's, as it has focus).
+            // Sized there too: a layer surface ignores a window resize.
+            let size = (lw.round() as i32, lh.round() as i32);
+            let anchor = if centered {
+                klip_platform::OverlayAnchor::Center
+            } else {
+                klip_platform::OverlayAnchor::from_corner(&lock(&self.state).prefs.corner)
+            };
+            // The quick menu (the centred one) takes the keyboard for Esc.
+            let keyboard = centered && !self.no_focus;
+            let margin = MARGIN.round() as i32;
+            let _ = self.window.run_on_main_thread(move || {
+                if let Err(e) =
+                    klip_platform::overlay_layer_place(TITLE, size, anchor, margin, keyboard)
+                {
+                    tracing::warn!(error = %e, "placing the overlay");
+                }
+            });
             return;
         }
         let game = lock(&self.state).game_window;

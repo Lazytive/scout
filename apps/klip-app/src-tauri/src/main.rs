@@ -395,6 +395,10 @@ fn main() -> ExitCode {
     {
         klip_platform::set_env_before_threads(&[("WEBKIT_DISABLE_DMABUF_RENDERER", "1".into())]);
     }
+    // Linux: the windows' app id, so the taskbar finds Scout's desktop entry and icon.
+    if kind == "app" {
+        klip_platform::set_desktop_app_id(klip_platform::APP_ID);
+    }
     // Every copy of the exe logs to a file (logging.rs); workers to the file only.
     logging::init(kind);
     if kind == "app" {

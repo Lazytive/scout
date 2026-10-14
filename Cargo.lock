@@ -3109,6 +3109,7 @@ dependencies = [
  "gstreamer",
  "gstreamer-video",
  "klip-settings",
+ "libloading 0.8.9",
  "pipewire",
  "pollster",
  "rustix 1.1.5",

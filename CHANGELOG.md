@@ -5,6 +5,23 @@ reason)`.
 
 ## Unreleased
 
+- Linux overlay and taskbar icon — On Wayland no window can place itself, so the
+  overlay showed in the middle of the screen on KDE. It is now a layer-shell surface
+  (`klip_platform::overlay_layer_init`/`overlay_layer_place`, `layer_shell.rs`):
+  gtk-layer-shell (LGPL-3.0+, the system's, loaded at run time with `libloading`, not
+  bundled), on the overlay layer, anchored to the chosen corner of the active output
+  (the menu: centred, taking the keyboard for Esc); without the library or the protocol
+  (GNOME) it stays a normal window. The overlay window is opaque on Linux (a
+  see-through WebKitGTK view drew only the timer bar). The app's windows get the
+  Wayland app id `io.github.lazytive.Scout` (`set_desktop_app_id`, GLib's program name)
+  and the hidden desktop entry names Scout's icon (written beside it), so the taskbar
+  shows Scout's icon, not a generic one for `klip-app`; the entry no longer asks for a
+  terminal. Checked on KDE Plasma 6.7.5 with screenshots of `overlay.preview` and
+  `overlay.menu`: top right, then bottom left above the panel, menu centred, the card
+  hides after its seconds. Tests: corners → anchors, no GTK → "unavailable", the
+  desktop entry. (Claude Opus 5.5: started in the Linux pass, finished at the user's
+  "finish the overlay work and rebuild first")
+
 - Linux pass (Bazzite, KDE Plasma 6.7.5 Wayland, NVIDIA 615.71) — the first run of the
   app and of the M8–M11 hardware tests on Linux. Fixes: **the app aborted at start-up**
   (the hidden overlay was made click-through before GTK had made its surface; tao

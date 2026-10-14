@@ -71,7 +71,13 @@ app sizes its window).
   when created (a GTK window has no surface before it is first shown, and tao aborts
   the app otherwise); on an NVIDIA GPU `main` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`
   unless the user set it (WebKitGTK's DMA-BUF renderer ends the app with Wayland
-  protocol error 71 when the overlay shows: KDE Plasma 6.7, driver 615).
+  protocol error 71 when the overlay shows: KDE Plasma 6.7, driver 615). On Wayland it
+  is a layer-shell surface when gtk-layer-shell is installed
+  (`klip_platform::overlay_layer_init`/`overlay_layer_place`): the card in its corner
+  and the menu in the middle of the active output, above fullscreen games; the menu
+  takes the keyboard while shown (for Esc). Without it the window shows where the
+  compositor puts it (KDE: the middle). Opaque on Linux, with the card filling the
+  window: a see-through WebKitGTK view drew only the animated timer bar.
 - `src-tauri/src/thumb_scheme.rs` (M7): the `klipthumb` URI scheme for library
   thumbnails (`http://klipthumb.localhost/<poster|strip>/<key>?v=<version>` in
   WebView2): only cached thumbnails of library clips (the engine's `library.thumb` checks
