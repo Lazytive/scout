@@ -1844,6 +1844,8 @@
     right: -7px;
   }
   .menu {
+    animation: pop-in var(--motion) var(--ease-out);
+    transform-origin: top left;
     position: fixed;
     z-index: 20;
     min-width: 190px;

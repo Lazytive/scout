@@ -192,6 +192,36 @@ export function mockLibrary(emit: (e: KlipEvent) => void) {
     switch (cmd) {
       case 'library.list':
         return list(a);
+      // Mock-only: `clip.save` adds its clip to the folder, as the real engine's file would.
+      case 'mock.saved': {
+        const { game, duration_ms } = args as { game: string; duration_ms: number };
+        const d = new Date();
+        const name = `Scout_${stamp(d)}`;
+        const c: LibClip = {
+          key: `${game}/${name}.mp4`,
+          path: `C:\\Users\\you\\Videos\\Scout\\${game}\\${name}.mp4`,
+          name,
+          game,
+          bytes: Math.round((duration_ms / 1000) * 2_600_000),
+          date_ms: d.getTime(),
+          starred: false,
+          tags: [],
+          info: {
+            duration_ms,
+            created_unix: Math.floor(d.getTime() / 1000),
+            codec: 'H.264',
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            audio_tracks: 3,
+            bookmarks_ms: [],
+          },
+          error: null,
+          thumbs: { poster: null, strip: null },
+        };
+        clips.unshift(c);
+        return c.path;
+      }
       case 'library.thumbs': {
         const keys = a.keys ?? [];
         keys.forEach((k, i) =>

@@ -93,6 +93,8 @@
     color: var(--text-strong);
   }
   .menu {
+    animation: pop-in var(--motion) var(--ease-out);
+    transform-origin: top right;
     position: absolute;
     right: 0;
     top: calc(100% + 4px);

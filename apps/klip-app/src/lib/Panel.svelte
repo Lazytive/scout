@@ -79,6 +79,7 @@
     bottom: 6px;
     height: 1px;
     background: var(--text-strong);
+    animation: grow-x var(--motion-enter) var(--ease-out);
   }
   .grow {
     flex: 1;

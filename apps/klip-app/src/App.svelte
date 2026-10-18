@@ -177,9 +177,14 @@
     bottom: 0;
     height: 1.5px;
     background: var(--text-strong);
+    animation: grow-x var(--motion-enter) var(--ease-out);
   }
   main {
     min-height: 0;
+  }
+  /* A workspace fades in when it opens (each page's root mounts anew). */
+  main > :global(:first-child) {
+    animation: fade-rise var(--motion-enter) var(--ease-out);
   }
   .statusbar {
     background: var(--statusbar);

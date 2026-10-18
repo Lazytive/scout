@@ -215,6 +215,7 @@
 
 <style>
   .backdrop {
+    animation: fade-in var(--motion) ease-out;
     position: fixed;
     inset: 0;
     background: color-mix(in srgb, var(--gutter) 75%, transparent);
@@ -223,6 +224,7 @@
     z-index: 20;
   }
   .dialog {
+    animation: pop-in var(--motion-enter) var(--ease-out);
     width: min(760px, calc(100vw - 48px));
     min-height: 420px;
     background: var(--panel);

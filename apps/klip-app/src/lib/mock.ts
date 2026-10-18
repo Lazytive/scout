@@ -316,7 +316,7 @@ export function mockBackend() {
           need();
           const last = (args as { last_ms?: number } | null)?.last_ms ?? 30_000;
           const clip = {
-            path: 'C:\\clips\\Scout_2026-10-09.mp4',
+            path: library('mock.saved', { game: game.name, duration_ms: last }) as string,
             duration_ms: last,
             bytes: last * 2600,
             frames: last * 0.06,

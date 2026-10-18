@@ -276,6 +276,7 @@
     font-size: var(--text-sm);
   }
   .scrim {
+    animation: fade-in var(--motion) ease-out;
     position: fixed;
     inset: 0;
     background: rgb(0 0 0 / 45%);
@@ -284,6 +285,7 @@
     place-items: center;
   }
   .dialog {
+    animation: pop-in var(--motion-enter) var(--ease-out);
     width: 520px;
     max-width: calc(100vw - 32px);
     background: var(--panel);

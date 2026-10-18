@@ -20,6 +20,8 @@
     onstar,
     ondragout,
     progress = null,
+    order = 0,
+    fresh = false,
   }: {
     clip: LibClip;
     tiles: number;
@@ -35,7 +37,14 @@
     ondragout: () => void;
     /** A job on this clip (the Discord copy), 0–100. */
     progress?: number | null;
+    /** Place in its group: the first cards fade in one after another. */
+    order?: number;
+    /** Just saved: the card glows once as it arrives. */
+    fresh?: boolean;
   } = $props();
+
+  /** The star pops when pressed (not when a starred card first shows). */
+  let pop = $state(false);
 
   let el: HTMLElement | undefined = $state();
   let hover = $state(false);
@@ -101,6 +110,8 @@
   class="card"
   class:selected
   class:focused
+  class:fresh
+  style:--i={Math.min(order, 12)}
   role="option"
   aria-selected={selected}
   tabindex="-1"
@@ -163,6 +174,8 @@
     <button
       class="flat star"
       class:on={clip.starred}
+      class:pop
+      onanimationend={() => (pop = false)}
       aria-label={clip.starred ? 'Unstar' : 'Star'}
       aria-pressed={clip.starred}
       title={clip.starred
@@ -170,6 +183,7 @@
         : 'Star (keeps it from the storage cap)'}
       onclick={(e) => {
         e.stopPropagation();
+        pop = !clip.starred;
         onstar();
       }}
       ondblclick={(e) => e.stopPropagation()}
@@ -200,6 +214,25 @@
     cursor: default;
     min-width: 0;
     outline: none;
+    /* The first dozen cards of a group fade in one after another (0 with reduced motion). */
+    animation: fade-rise var(--motion-enter) var(--ease-out) backwards;
+    animation-delay: calc(var(--i, 0) * var(--motion) / 6);
+  }
+  /* A clip that was just saved arrives with an accent glow. */
+  .card.fresh {
+    animation:
+      fade-rise var(--motion-enter) var(--ease-out) backwards,
+      fresh-glow calc(var(--motion) * 14) ease-out;
+  }
+  @keyframes fresh-glow {
+    0%,
+    25% {
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 70%, transparent);
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 3px transparent;
+    }
   }
   .card:hover {
     background: var(--hover);
@@ -326,6 +359,14 @@
   .star.on svg {
     fill: #ffc940;
     stroke: #ffc940;
+  }
+  .star.pop svg {
+    animation: star-pop calc(var(--motion) * 2.5) var(--ease-out);
+  }
+  @keyframes star-pop {
+    40% {
+      transform: scale(1.35) rotate(-12deg);
+    }
   }
   .star:hover:not(:disabled) {
     background: rgb(0 0 0 / 75%);

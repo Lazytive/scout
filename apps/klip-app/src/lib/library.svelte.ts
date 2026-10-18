@@ -21,6 +21,7 @@ import type { KlipEvent, ThumbsReadyEvent } from './types';
 export type CardSize = 's' | 'm' | 'l';
 
 const SIZE_KEY = 'klip.library.size';
+const WATER_KEY = 'klip.library.water';
 
 function loadSize(): CardSize {
   try {
@@ -51,7 +52,39 @@ export const lib = $state({
   confirm: null as null | { keys: string[]; permanent: boolean },
   /** The Library page was opened (only then do events refresh it). */
   active: false,
+  /** The last clip saved and when: its card glows once as it arrives. */
+  fresh: null as { path: string; at: number } | null,
+  /** The animated ASCII water behind the clip grid (this machine only). */
+  water: loadWater(),
 });
+
+function loadWater(): boolean {
+  try {
+    return localStorage.getItem(WATER_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export function setWater(on: boolean): void {
+  lib.water = on;
+  try {
+    localStorage.setItem(WATER_KEY, on ? 'on' : 'off');
+  } catch {
+    // Not remembered; nothing else depends on it.
+  }
+}
+
+/** How long after its save a clip's card still arrives as new. */
+const FRESH_MS = 30_000;
+
+/** The clip was just saved (its card should glow as it appears). */
+export function isFresh(path: string, now = Date.now()): boolean {
+  const f = lib.fresh;
+  if (!f || now - f.at > FRESH_MS) return false;
+  const norm = (p: string) => p.replaceAll('/', '\\').toLowerCase();
+  return norm(f.path) === norm(path);
+}
 
 let seq = 0;
 
@@ -125,6 +158,7 @@ function thumbsReady(e: ThumbsReadyEvent): void {
 /** Engine events that change the library. */
 export function libraryEvent(e: KlipEvent): void {
   if (e.event === 'export_progress' || e.event === 'export_done') discordEvent(e);
+  if (e.event === 'clip_saved') lib.fresh = { path: e.clip.path, at: Date.now() };
   if (!lib.active) return;
   switch (e.event) {
     case 'thumbs_ready':

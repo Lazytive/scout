@@ -5,6 +5,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  import AsciiWater from './library/AsciiWater.svelte';
   import ClipCard from './library/ClipCard.svelte';
   import Details from './library/Details.svelte';
   import Filters from './library/Filters.svelte';
@@ -20,6 +21,7 @@
     discord,
     discordClip,
     dragClipsOut,
+    isFresh,
     lib,
     openClip,
     refreshLibrary,
@@ -231,66 +233,71 @@
         </div>
         {#if lib.error}<p class="error" role="alert">{lib.error}</p>{/if}
 
-        <div
-          class="grid"
-          bind:this={grid}
-          role="listbox"
-          aria-label="Clips"
-          aria-multiselectable="true"
-          tabindex="0"
-          onkeydown={keydown}
-          style:--card-min="{minWidth}px"
-        >
-          {#if !listing}
-            <p class="empty-state muted">{lib.loading ? 'Reading the clip folder…' : ''}</p>
-          {:else if listing.total === 0}
-            <div class="empty-state">
-              <p class="big">No clips yet</p>
-              <p class="muted">
-                {#if firstKey}
-                  Press <span class="combo"
-                    >{#each (firstKey.keys ?? '').split('+') as k, i (i)}<kbd>{k}</kbd>{/each}</span
-                  >
-                  in a game to save the last {formatDuration((firstKey.secs ?? 30) * 1000)}, or use <b>Save</b> at the top.
-                {:else}
-                  Use <b>Save</b> at the top while a game runs.
-                {/if}
-              </p>
-              <p class="muted">
-                Your clips show up here, newest first. Scout keeps them as plain MP4 files in {listing.folder}.
-              </p>
-            </div>
-          {:else if clips.length === 0}
-            <div class="empty-state">
-              <p class="big">No clips match</p>
-              {#if filtered(lib.query)}<button onclick={clearFilters}>Clear filters</button>{/if}
-            </div>
-          {:else}
-            {#each groups as g (g.key)}
-              <section aria-label={g.label ?? 'Clips'}>
-                {#if g.label}
-                  <h2>{g.label}<span class="n mono">{g.clips.length}</span></h2>
-                {/if}
-                <div class="cards">
-                  {#each g.clips as c (c.key)}
-                    <ClipCard
-                      clip={c}
-                      {tiles}
-                      selected={lib.selected.includes(c.key)}
-                      focused={lib.cursor === c.key}
-                      showDay={g.label === null}
-                      onpick={(e) => pick(c, e)}
-                      onopen={() => openEditor(c)}
-                      onmenu={(e) => openMenu(c, e)}
-                      onstar={() => setStar([c], !c.starred)}
-                      ondragout={() => void dragClipsOut(c)}
-                      progress={discord.job?.key === c.key ? discord.job.pct : null}
-                    />
-                  {/each}
-                </div>
-              </section>
-            {/each}
-          {/if}
+        <div class="grid-area">
+          {#if lib.water}<AsciiWater />{/if}
+          <div
+            class="grid"
+            bind:this={grid}
+            role="listbox"
+            aria-label="Clips"
+            aria-multiselectable="true"
+            tabindex="0"
+            onkeydown={keydown}
+            style:--card-min="{minWidth}px"
+          >
+            {#if !listing}
+              <p class="empty-state muted">{lib.loading ? 'Reading the clip folder…' : ''}</p>
+            {:else if listing.total === 0}
+              <div class="empty-state">
+                <p class="big">No clips yet</p>
+                <p class="muted">
+                  {#if firstKey}
+                    Press <span class="combo"
+                      >{#each (firstKey.keys ?? '').split('+') as k, i (i)}<kbd>{k}</kbd>{/each}</span
+                    >
+                    in a game to save the last {formatDuration((firstKey.secs ?? 30) * 1000)}, or use <b>Save</b> at the top.
+                  {:else}
+                    Use <b>Save</b> at the top while a game runs.
+                  {/if}
+                </p>
+                <p class="muted">
+                  Your clips show up here, newest first. Scout keeps them as plain MP4 files in {listing.folder}.
+                </p>
+              </div>
+            {:else if clips.length === 0}
+              <div class="empty-state">
+                <p class="big">No clips match</p>
+                {#if filtered(lib.query)}<button onclick={clearFilters}>Clear filters</button>{/if}
+              </div>
+            {:else}
+              {#each groups as g (g.key)}
+                <section aria-label={g.label ?? 'Clips'}>
+                  {#if g.label}
+                    <h2>{g.label}<span class="n mono">{g.clips.length}</span></h2>
+                  {/if}
+                  <div class="cards">
+                    {#each g.clips as c, i (c.key)}
+                      <ClipCard
+                        clip={c}
+                        {tiles}
+                        order={i}
+                        fresh={isFresh(c.path)}
+                        selected={lib.selected.includes(c.key)}
+                        focused={lib.cursor === c.key}
+                        showDay={g.label === null}
+                        onpick={(e) => pick(c, e)}
+                        onopen={() => openEditor(c)}
+                        onmenu={(e) => openMenu(c, e)}
+                        onstar={() => setStar([c], !c.starred)}
+                        ondragout={() => void dragClipsOut(c)}
+                        progress={discord.job?.key === c.key ? discord.job.pct : null}
+                      />
+                    {/each}
+                  </div>
+                </section>
+              {/each}
+            {/if}
+          </div>
         </div>
       </div>
     </Panel>
@@ -515,7 +522,16 @@
     font-size: var(--text-sm);
     padding-bottom: var(--space-2);
   }
+  /* Holds the clip grid over the ASCII water (when on). */
+  .grid-area {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
   .grid {
+    position: relative;
     flex: 1;
     min-height: 0;
     overflow-y: auto;
@@ -564,6 +580,8 @@
     color: var(--text-strong);
   }
   .menu {
+    animation: pop-in var(--motion) var(--ease-out);
+    transform-origin: top left;
     position: fixed;
     z-index: 20;
     min-width: 210px;
@@ -596,6 +614,7 @@
     margin: 4px 2px;
   }
   .scrim {
+    animation: fade-in var(--motion) ease-out;
     position: fixed;
     inset: 0;
     background: rgb(0 0 0 / 45%);
@@ -605,6 +624,7 @@
     z-index: 30;
   }
   .dialog {
+    animation: pop-in var(--motion-enter) var(--ease-out);
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: var(--radius);

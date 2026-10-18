@@ -280,9 +280,36 @@
   }
   [data-mode='recording'] .dot {
     background: var(--rec);
+    position: relative;
+  }
+  /* A REC light: a ring pulses out of the dot while a recording runs (transform and
+     opacity only, so it costs the compositor almost nothing while a game plays). */
+  [data-mode='recording'] .dot::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--rec);
+    animation: rec-pulse calc(var(--motion) * 14) ease-out infinite;
+  }
+  @keyframes rec-pulse {
+    from {
+      transform: scale(1);
+      opacity: 0.7;
+    }
+    to {
+      transform: scale(2.8);
+      opacity: 0;
+    }
   }
   [data-mode='starting'] .dot {
     background: var(--warn);
+    animation: blink calc(var(--motion) * 6) ease-in-out infinite alternate;
+  }
+  @keyframes blink {
+    to {
+      opacity: 0.3;
+    }
   }
   .who {
     color: var(--text-strong);
@@ -405,6 +432,8 @@
     }
   }
   .pop {
+    animation: pop-in var(--motion) var(--ease-out);
+    transform-origin: top right;
     position: absolute;
     top: calc(100% + 10px);
     right: var(--space-2);

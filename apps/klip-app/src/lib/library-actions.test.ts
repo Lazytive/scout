@@ -24,7 +24,7 @@ vi.mock('./toasts.svelte', () => ({
 }));
 
 import type { LibClip } from './library';
-import { setStar } from './library.svelte';
+import { isFresh, libraryEvent, setStar } from './library.svelte';
 
 const clip = (path: string) => ({ key: path, path, name: path, starred: false }) as unknown as LibClip;
 
@@ -53,5 +53,22 @@ describe('setStar', () => {
     fake.failPath = 'a.mp4';
     await setStar([clip('a.mp4')], false);
     expect(fake.toasts).toEqual(["error: Couldn't unstar the clip: the file is locked"]);
+  });
+});
+
+describe('isFresh', () => {
+  const saved = (path: string) =>
+    libraryEvent({ event: 'clip_saved', game: null, window: null, clip: { path } as never });
+
+  it('marks the clip just saved, whatever the slashes or case', () => {
+    saved('C:\\Videos\\Scout\\Game\\Scout_1.mp4');
+    expect(isFresh('c:/videos/scout/game/scout_1.mp4')).toBe(true);
+    expect(isFresh('C:\\Videos\\Scout\\Game\\Scout_2.mp4')).toBe(false);
+  });
+
+  it('stops after 30 s', () => {
+    saved('a.mp4');
+    expect(isFresh('a.mp4', Date.now() + 29_000)).toBe(true);
+    expect(isFresh('a.mp4', Date.now() + 31_000)).toBe(false);
   });
 });

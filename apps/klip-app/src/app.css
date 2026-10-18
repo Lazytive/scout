@@ -52,6 +52,10 @@
   --statusbar-h: 24px;
   --control-h: 28px;
   --motion: 120ms;
+  /* Entrances (pages, cards, menus) run a little longer than hover changes. Both are
+     multiples of --motion, so reduced motion (0 ms) turns them off too. */
+  --motion-enter: calc(var(--motion) * 1.5);
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
   /* Custom theme picture (M10): set by src/lib/appearance.ts. */
   --backdrop-image: none;
   --backdrop-dim: transparent;
@@ -120,6 +124,31 @@
   animation-delay: 0s !important;
   animation-iteration-count: 1 !important;
   scroll-behavior: auto !important;
+}
+
+/* Shared entrance animations (opacity and transform only, so the compositor runs them).
+   Only `from` frames: once done the element keeps its own styles. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+}
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
 }
 
 * {

@@ -5,6 +5,7 @@
   import { ACCENT_SWATCHES, resolveLook, type Appearance, type CustomTheme, type Look } from '../lib/appearance';
   import { pictureUrl } from '../lib/api';
   import Row from '../lib/forms/Row.svelte';
+  import { lib, setWater } from '../lib/library.svelte';
   import Segmented from '../lib/forms/Segmented.svelte';
   import type { Settings } from '../lib/settings';
   import {
@@ -245,6 +246,21 @@
         { value: 'full', label: 'Full' },
       ]}
       onchange={(v) => void setAppearance('motion', v)}
+    />
+  </Row>
+
+  <Row
+    label="Library background"
+    hint="Animated ASCII water behind your clips. It moves only while Scout's window has focus and stays still with reduced motion."
+  >
+    <Segmented
+      label="Library background"
+      value={lib.water ? 'water' : 'plain'}
+      options={[
+        { value: 'plain', label: 'Plain' },
+        { value: 'water', label: 'ASCII water' },
+      ]}
+      onchange={(v) => setWater(v === 'water')}
     />
   </Row>
 
