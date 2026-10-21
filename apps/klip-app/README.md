@@ -43,6 +43,15 @@ in `main.ts` before mounting, so a custom theme doesn't flash Dark. The overlay 
 colours, accent, corners, font and motion (not text size, density or the picture: the
 app sizes its window).
 
+Motion (2026-10-21): every entrance is opacity and transform only, timed from
+`--motion` (`--motion-enter` = 1.5× for pages, cards, menus and dialogs; `--ease-out`),
+so Reduced motion turns all of it off. The shared keyframes live in `app.css`
+(`fade-in`, `fade-rise`, `pop-in`, `grow-x`): a workspace fades and rises in when it
+opens (`main > :first-child`; each page's root mounts anew), a tab's underline grows
+in, menus and dialogs pop in (a menu from the corner it hangs from) over a fading
+scrim. Local ones: the Library's cards (a stagger and the fresh glow, below), the
+star's pop, the recorder bar's REC pulse and Starting blink.
+
 ## Pieces
 
 - `src-tauri/src/main.rs`: starts the engine (`klip_probe::worker_main()` and
@@ -126,6 +135,16 @@ app sizes its window).
   library's totals. State and actions: `src/lib/library.svelte.ts`; pure helpers
   (names, day headings, scrub maths, selection) in `src/lib/library.ts` with vitest
   tests; the mock engine's library is `src/lib/mock-library.ts` (drawn SVG thumbnails).
+  The first dozen cards of a group fade in one after another (`--i` on the card), a
+  clip saved in the last 30 s arrives with an accent glow (`lib.fresh` from
+  `clip_saved`, `isFresh`), and behind the grid moves an **ASCII water**
+  (`src/lib/ascii-water.ts`, `src/library/AsciiWater.svelte`; Settings → Appearance →
+  Library background, Plain / ASCII water, kept in `localStorage` as
+  `klip.library.water`): three WebGL2 passes, ripples the pointer and random drops
+  stir, a light per glyph cell, glyphs from an atlas, in the theme's text colour at low
+  alpha. It moves only while the window has focus and is visible, draws one still frame
+  with reduced motion, and bows out (a plain grid) without WebGL2 float render targets.
+  The mock's `clip.save` adds its clip to the mock library (`mock.saved`).
 - `src-tauri/src/tray.rs`: tray icon drawn at runtime (grey = waiting, blue = buffering,
   red dot = recording; no image asset), tooltip, menu (save clip, start/stop recording,
   bookmark, open, quit), left click opens the window.
@@ -168,7 +187,8 @@ app sizes its window).
   non-control part of the bar moves the window (`src/lib/window-chrome.ts`; double press
   maximizes). The mock shows the buttons with `?chrome`. Storage sits in the Details
   panel when nothing is selected; the empty grid names the first clip hotkey. No live
-  capture preview (it would cost the game frames).
+  capture preview (it would cost the game frames). The dot pulses a ring while a recording
+  runs and blinks while the recorder starts (transform and opacity only).
 - `src/lib/Panel.svelte` (panel with a tab strip), `src/App.svelte` (header, status bar).
 - Icons: `src-tauri/icons/app-icon.svg` (made for Scout), sizes generated with
   `npx tauri icon src-tauri/icons/app-icon.svg -o src-tauri/icons` (desktop sizes kept).
@@ -297,6 +317,8 @@ and take their hotkeys.
   (4.5:1) and every outline/focus/state colour stands out at 3:1, in all four themes
   (88 checks; it caught Light's warning orange on the status bar at 4.3:1); `app.css`
   matches Dark; setting → theme mapping.
+- vitest `src/lib/library-actions.test.ts`: `setStar` (one failure doesn't stop the rest),
+  `isFresh` (slashes and case, the 30 s window), `setWater`.
 - vitest `src/lib/settings.test.ts`: merge patches, error paths, key names, key capture
   (order, waiting on modifiers, Esc/Backspace, unsupported keys), engine errors per row.
 - Rust: tray icon pixels per state, tray state from events, overlay corners and prefs,

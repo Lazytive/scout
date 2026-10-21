@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-13 (the Linux pass on Bazzite: two app crashes and the export timing fixed; see "Linux pass").
+Last updated: 2026-10-21 (the UI animation pass built and checked against the mock, after the Linux pass; see "UI motion" and "Linux pass").
 
 | | Milestone | State |
 |---|---|---|
@@ -483,7 +483,33 @@ klip-edit` and `vitest`.
 | The Library as the start page (M11.2, mock) | tabs Library · Settings (Editor once a clip is open), Library first; the recorder bar is 40 px high and never overflows: 1549 px shows state, game, meter, the problem badge and all 4 buttons; 1000 px drops Bookmark and the second Save; 820 px (the window's minimum) drops the meter too; the ⓘ pop-up lists the recorder, the broken hotkey (link to Settings → Hotkeys) and the activity, closes on Escape and outside clicks; Details with nothing selected adds Cap, Over the cap, Free on drive; with no clips the grid says how to save the first one (Alt+F10) |
 | Real app (release build, off-screen, own settings, 2 test-game clips) | Home: 2 cards with real posters; a click opens the editor, Project lists the other clip; V2 locked + Main hidden and muted → the engine's saved project has `locked: true`, `main_hidden: true`, `main_muted: true`; after opening another clip and back: V2 still locked, V1 locked again, eye and M pressed and greyed; at 1 s the preview canvas is black (mean 0) and identical to `editor.frame` |
 
+### UI motion (2026-10-21, the `opus/ui-animation` pass)
+
+Checked 2026-10-21 against the mock engine (Vite dev server) in the desktop app's
+browser pane at 800×600, reading computed styles through the DOM and screenshots;
+`npm run fmt:check`, `lint`, `check`, `test` (254) and `build` green. The pane never has
+window focus, so for the water `document.hasFocus` was patched to `true` in the page.
+Not run: the real app (this PC has no Rust toolchain or GStreamer yet), WebKitGTK.
+
+| Check | Result |
+|---|---|
+| Workspace entrances | the Library, Settings and Editor roots run `fade-rise` 0.18 s when opened; the tab underline `grow-x` |
+| Clip cards | `fade-rise` 0.18 s `backwards`, delay `--i` × 20 ms (the 6th card 60 ms, the 14th 100 ms, `--i` capped at 12); Save last 30 s → the new card at the top of Today within the 300 ms refresh, `fresh-glow` 1.68 s on it; the star: `.pop` + `star-pop` 0.3 s on press, the class gone on `animationend` |
+| Recorder bar | Record → `data-mode="recording"`: the dot's `::after` runs `rec-pulse` 1.68 s infinite, no ancestor clips it; Starting's blink not driven |
+| Menus and dialogs | the clip context menu `pop-in` 0.12 s from its top left, the theme menu from its top right; the Export dialog `pop-in` 0.18 s over a `fade-in` 0.12 s scrim. the first-run dialog (`?firstrun`) `pop-in` 0.18 s over a `fade-in` 0.12 s backdrop. Not driven: the timeline menu, the recorder's ⓘ pop-up and the confirm dialog (the same keyframes) |
+| ASCII water | one canvas behind the grid (684×918 device px for 456×612 CSS px); WebGL2 + `EXT_color_buffer_float` present in WebView2; a still frame while the pane has no focus (by design), moving once `hasFocus` was patched, stirred by the pointer; the no-match state readable over it; Light → dark glyphs at once (the `<html>` observer); Appearance → Plain removes the canvas and writes `klip.library.water` = `off`, ASCII water brings it back |
+| Reduced motion | Appearance → Reduced: `--motion` 0 ms, `--motion-enter` 0, every card's animation and delay 0 s, `data-motion="reduce"`; Full restores 120 / 180 ms |
+
 ## Approximate / not done yet
+
+- **UI motion and the ASCII water (2026-10-21)**: checked in the browser pane against
+  the mock only; not measured: the real app, WebKitGTK (WebGL2 with float render
+  targets; without them the water bows out and the grid stays plain) and the water's
+  cost (GPU and CPU while the Library has focus; it rests on blur, so never over a
+  game). The Library background choice lives in `localStorage`, not in the settings, so
+  it is per machine and not in theme files. A card's staggered entrance keeps it
+  invisible for up to 240 ms after a group lists. Not driven: the timeline menu, the
+  recorder's ⓘ pop-up and the confirm dialog (the same keyframes as the checked ones).
 
 - **Track locks (M9.8.10–11) and the Library as the start page (M11.2)**: the real app
   was driven off-screen on test clips only (the locks; M11.2 in the mock); the human
@@ -1060,6 +1086,24 @@ made, so nothing to rename).
    "Discord copy cancelled", and no half-made file is left in the Library.
 7.✅ (2026-10-12)  **After an export.** Open a clip in the editor, **Export** with any preset, then click
   ✅ (2026-10-12)  **Copy file** in the export window and paste it somewhere.
+
+## Manual checks for the human (UI motion, 2026-10-21)
+
+Start Scout with `Start Scout.cmd` after `npm run build` in `apps/klip-app`.
+
+1. The Library opens with its cards fading in one after another and faint ASCII water
+   moving behind them. Move the mouse over the grid: it ripples. Click into another
+   window: it stops; back in Scout it moves again.
+2. Settings → Appearance → Library background → Plain: the water goes; ASCII water
+   brings it back. Motion → Reduced: nothing moves (the water is a still frame).
+3. Save a clip (Alt+F10 in a game): its card arrives at the top with a blue glow that
+   fades over about 1.5 s.
+4. Press Record: the red dot in the title bar pulses a ring. Star a clip: the star pops.
+5. Right-click a clip, open the theme menu (the sun) and Export… in the editor: each
+   pops in; the dialog's backdrop fades in.
+6. Does the water cost a game frames? It should rest as soon as the game has the focus;
+   PresentMon or the game's fps counter with the Library focused beside a windowed game
+   decides what it costs while it runs.
 
 ## Known bugs
 

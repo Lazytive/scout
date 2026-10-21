@@ -1,7 +1,7 @@
 /*
- * ASCII water (animation test): a grid of faint monospace glyphs whose density follows
- * moving light on the floor of a pool. The pointer and random drops ripple the surface,
- * and the ripples bend the light.
+ * ASCII water, the Library's background: a grid of faint monospace glyphs whose density
+ * follows moving light on the floor of a pool. The pointer and random drops ripple the
+ * surface, and the ripples bend the light.
  *
  * Adapted from the user's own page Claude/ascii-water (ripple simulation, glyph atlas,
  * draw pass, patch mask). Its light pattern was a Shadertoy port (CC BY-NC-SA by

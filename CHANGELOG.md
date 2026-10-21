@@ -5,6 +5,32 @@ reason)`.
 
 ## Unreleased
 
+- UI animation pass — Motion for the whole app, every piece opacity or transform only
+  and timed from `--motion` (`--motion-enter` = 1.5×, `--ease-out`), so Reduced motion
+  turns all of it off: a workspace fades and rises in when it opens (each page's root
+  mounts anew) and a tab's underline grows in; menus (clip, timeline, theme, the
+  recorder's ⓘ pop-up) and dialogs (export, first run, the Library's confirm) pop in
+  over a fading scrim; the first dozen cards of a Library group fade in one after
+  another (20 ms apart), a clip saved in the last 30 s arrives with an accent glow
+  (`lib.fresh` from `clip_saved`, `isFresh`), the star pops when pressed; the recorder
+  bar's dot pulses a ring while a recording runs and blinks while starting. Behind the
+  Library grid, animated ASCII water (`lib/ascii-water.ts`, `library/AsciiWater.svelte`):
+  three WebGL2 passes (ripples the pointer and random drops stir, a light per glyph
+  cell, glyphs from an atlas) in the theme's text colour at low alpha; it moves only
+  while the window has focus and is visible (so never over a game), draws one still
+  frame with reduced motion, and bows out without WebGL2 float render targets. Settings
+  → Appearance → Library background: Plain / ASCII water (this machine only,
+  `klip.library.water` in `localStorage`). The mock's `clip.save` adds its clip to the
+  mock library (`mock.saved`) so the glow can be seen. The light pattern is Scout's own
+  (the first draft's was a Shadertoy port, CC BY-NC-SA: rule 5). Written on Windows and
+  saved unbuilt on 2026-10-18 (Claude Opus 5.5); built and checked on 2026-10-21: the
+  five front-end gates green, every entrance, menu, dialog and state read back from
+  computed styles and screenshots in the browser pane against the mock, the water
+  moving once the window counts as focused, Plain / Water and Reduced motion switching
+  live, Light recolouring the glyphs (ROADMAP "UI motion"). Not run: the real app (this
+  PC has no Rust toolchain yet), WebKitGTK, the water's cost. (Claude Fable 5.1: the
+  user, "continue where it was left")
+
 - Linux audio capture on a busy machine — The user's clips had short holes in the game
   sound (one 15–20 ms hole at 28.5 s of a Barony clip; the capture node counted 1130
   xruns). Scout's PipeWire stream did its per-cycle work on Scout's own normal-priority

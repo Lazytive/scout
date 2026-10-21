@@ -24,7 +24,7 @@ vi.mock('./toasts.svelte', () => ({
 }));
 
 import type { LibClip } from './library';
-import { isFresh, libraryEvent, setStar } from './library.svelte';
+import { isFresh, lib, libraryEvent, setStar, setWater } from './library.svelte';
 
 const clip = (path: string) => ({ key: path, path, name: path, starred: false }) as unknown as LibClip;
 
@@ -70,5 +70,14 @@ describe('isFresh', () => {
     saved('a.mp4');
     expect(isFresh('a.mp4', Date.now() + 29_000)).toBe(true);
     expect(isFresh('a.mp4', Date.now() + 31_000)).toBe(false);
+  });
+});
+
+describe('setWater', () => {
+  it('switches the Library background, with or without localStorage', () => {
+    setWater(false);
+    expect(lib.water).toBe(false);
+    setWater(true);
+    expect(lib.water).toBe(true);
   });
 });

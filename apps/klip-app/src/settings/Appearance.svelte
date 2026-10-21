@@ -5,8 +5,8 @@
   import { ACCENT_SWATCHES, resolveLook, type Appearance, type CustomTheme, type Look } from '../lib/appearance';
   import { pictureUrl } from '../lib/api';
   import Row from '../lib/forms/Row.svelte';
-  import { lib, setWater } from '../lib/library.svelte';
   import Segmented from '../lib/forms/Segmented.svelte';
+  import { lib, setWater } from '../lib/library.svelte';
   import type { Settings } from '../lib/settings';
   import {
     app,
