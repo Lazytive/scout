@@ -500,14 +500,15 @@ Not run: WebKitGTK. The real app on Windows: the last row (2026-10-21, after the
 | ASCII water | one canvas behind the grid (684×918 device px for 456×612 CSS px); WebGL2 + `EXT_color_buffer_float` present in WebView2; a still frame while the pane has no focus (by design), moving once `hasFocus` was patched, stirred by the pointer; the no-match state readable over it; Light → dark glyphs at once (the `<html>` observer); the Plain / ASCII water switch removes the canvas (`klip.library.water` = `off`) and brings it back. The switch sat in Appearance then; it is in Settings → Debug now and the water is off by default: an experiment, not for the release (the user) |
 | Reduced motion | Appearance → Reduced: `--motion` 0 ms, `--motion-enter` 0, every card's animation and delay 0 s, `data-motion="reduce"`; Full restores 120 / 180 ms |
 | Real app (Windows debug build off-screen on its own settings, WebView2 Edg/155, 1180×760, three ffmpeg test clips in its clips folder) | the Library root `fade-rise`; the three engine-indexed cards with their posters and the stagger (`--i` 2 → 40 ms); the water canvas (918×906 device px) with WebGL2 float targets; two `Page.captureScreenshot` frames 1 s apart differ once `hasFocus` is patched (a still frame before, the window being unfocused); the star `.pop` + `star-pop` on press and clean after; Settings → Debug → Plain removes the canvas, ASCII water brings it back, the 3 cards still listed. `cargo xtask ci` on this PC: 404 Rust tests, 0 failed, 53 ignored (hardware) |
+| Water cost (2026-10-21, same app and window; i7-14700KF, RTX 4080 SUPER, 28 logical cores; the canvas 918×906 device px; Scout + its 7 WebView2 processes, `TotalProcessorTime` and the `GPU Engine` counters over 10 s samples, ~14 s each) | running (window focused): 168 ms/s of CPU = 16.8 % of one core = 0.6 % of the machine, GPU 0.3 % (3D); resting with the canvas there but no focus: 8–10 ms/s, GPU 0; water off: 2–14 ms/s, GPU 0. So the water costs about a sixth of a core while the Library has the focus and nothing once a game has it. Not measured: over a real game with PresentMon (human checklist), other GPUs, WebKitGTK |
 
 ## Approximate / not done yet
 
 - **UI motion and the ASCII water (2026-10-21)**: checked in the browser pane against
   the mock and in the real app on Windows; not measured: WebKitGTK (WebGL2 with float render
-  targets; without them the water bows out and the grid stays plain) and the water's
-  cost (GPU and CPU while the Library has focus; it rests on blur, so never over a
-  game). The water is an experiment, not for the release (the user, 2026-10-21): off by
+  targets; without them the water bows out and the grid stays plain). The water's cost is
+  measured on one PC only (What works, "Water cost"): ~17 % of one core while it runs,
+  nothing while unfocused. The water is an experiment, not for the release (the user, 2026-10-21): off by
   default, its switch in Settings → Debug (tester builds and the browser mock), kept in
   `localStorage` per machine, never in the settings or theme files. A card's staggered entrance keeps it
   invisible for up to 240 ms after a group lists. Not driven: the timeline menu, the
@@ -1104,9 +1105,9 @@ Start Scout with `Start Scout.cmd` after `npm run build` in `apps/klip-app`.
 4. Press Record: the red dot in the title bar pulses a ring. Star a clip: the star pops.
 5. Right-click a clip, open the theme menu (the sun) and Export… in the editor: each
    pops in; the dialog's backdrop fades in.
-6. Does the water cost a game frames? It should rest as soon as the game has the focus;
-   PresentMon or the game's fps counter with the Library focused beside a windowed game
-   decides what it costs while it runs.
+6. Does the water cost a game frames? Measured here: ~17 % of one core while it runs and
+   nothing once the window loses focus (ROADMAP "Water cost"). PresentMon or the game's
+   fps counter with the Library focused beside a windowed game would show the rest.
 
 ## Known bugs
 

@@ -5,6 +5,19 @@ reason)`.
 
 ## Unreleased
 
+- ASCII water cost measured — The real app on Windows (debug build, 1180×760 window
+  off-screen, i7-14700KF, RTX 4080 SUPER): Scout and its 7 WebView2 processes use 168
+  ms/s of CPU (16.8 % of one core, 0.6 % of 28) and 0.3 % of the GPU's 3D engine while
+  the water runs with the window focused; 8–10 ms/s and no GPU while it rests without
+  focus; 2–14 ms/s with the water off. `TotalProcessorTime` and the `GPU Engine`
+  counters over 10 s samples (ROADMAP "Water cost"). So it costs about a sixth of a
+  core while the Library has the focus and nothing once a game has it. Not measured:
+  over a real game (PresentMon, the human checklist), other GPUs, WebKitGTK. Also
+  checked after the repo went public: no secrets or key files among the tracked files
+  (the original brief, `KLIP_PROMPT.md`, names the maintainer's Windows user folder,
+  as the commit author does). The Linux CI on main is green again (7a0499f). (Claude
+  Fable 5.1: the user, "do what you need to")
+
 - UI animation pass, follow-up — The ASCII water is a test feature, not for the release
   (the user): off by default now, and its Plain / ASCII water switch moved from Settings
   → Appearance to Settings → Debug (tester builds and the browser mock only; the water
