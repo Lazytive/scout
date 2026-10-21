@@ -19,7 +19,8 @@ import { editorEvent } from './editor.svelte';
 import { libraryEvent } from './library.svelte';
 import type { ThemeSetting } from './themes';
 import { toast } from './toasts.svelte';
-import type { KlipEvent, Status, StorageStatus } from './types';
+import type { KlipEvent, Status, StorageStatus, UpdateStatus } from './types';
+import { statusOf } from './update';
 
 export interface Activity {
   id: number;
@@ -59,6 +60,10 @@ export const app = $state({
   activity: [] as Activity[],
   /** Ask "restart the recorder now or later?" (a `restart_pending` change; RestartPrompt). */
   restartAsk: false,
+  /** The update check (ADR 0022): update.status, kept fresh from the update_status event. */
+  update: null as UpdateStatus | null,
+  /** Show the update prompt (a release just found, or the title bar's Update button). */
+  updateAsk: false,
   /** The last command error, shown until the next command. */
   error: null as string | null,
   busy: false,
@@ -334,11 +339,64 @@ export function restartLater(): void {
   toast('The new settings apply the next time the recorder starts.');
 }
 
+/** What the app knows about updates (a check may have run before the window opened). */
+export async function refreshUpdate(): Promise<void> {
+  try {
+    app.update = await call<UpdateStatus>('update.status');
+  } catch {
+    // An engine without the updater: the Settings line says "not checked yet".
+  }
+}
+
+/** Settings → General, "Check now": says what it found, or why it couldn't look. */
+export async function checkForUpdates(): Promise<void> {
+  try {
+    const s = await call<UpdateStatus>('update.check');
+    app.update = s;
+    if (s.state === 'available') app.updateAsk = true;
+    else if (s.state === 'up_to_date') toast(`Scout ${s.current} is up to date.`);
+  } catch (e) {
+    toast(`Couldn't check for updates: ${e instanceof Error ? e.message : String(e)}`, 'error');
+  }
+}
+
+/** "Install and restart": the signed installer is fetched, verified and run; Scout exits for it. */
+export async function installUpdate(): Promise<void> {
+  try {
+    await call('update.install');
+  } catch (e) {
+    toast(`Couldn't install the update: ${e instanceof Error ? e.message : String(e)}`, 'error');
+  }
+}
+
+/** The release page in the browser (Linux, or when installing here fails). */
+export async function openReleases(): Promise<void> {
+  try {
+    await call('update.open');
+  } catch (e) {
+    toast(`Couldn't open the release page: ${e instanceof Error ? e.message : String(e)}`, 'error');
+  }
+}
+
+/** "Later": the title bar keeps its Update button. */
+export function updateLater(): void {
+  app.updateAsk = false;
+}
+
 /** Start listening; returns a stop function. */
 export async function connect(): Promise<() => void> {
   const unlisten = await onEvent((e) => {
     if (e.event === 'mic_level') {
       app.mic = { peak: e.peak_db, rms: e.rms_db };
+      return;
+    }
+    if (e.event === 'update_status') {
+      const was = app.update?.state;
+      app.update = statusOf(e);
+      if (e.state === 'available' && was !== 'available' && was !== 'downloading' && was !== 'installing') {
+        app.updateAsk = true;
+      }
+      log(e);
       return;
     }
     libraryEvent(e);
@@ -358,6 +416,7 @@ export async function connect(): Promise<() => void> {
   lightQuery?.addEventListener('change', onScheme);
   motionQuery?.addEventListener('change', onScheme);
   await Promise.all([refreshSettings(), refresh(), refreshStorage(), refreshThemes()]);
+  void refreshUpdate();
   let ticks = 0;
   const timer = setInterval(() => {
     if (document.visibilityState !== 'visible') return;

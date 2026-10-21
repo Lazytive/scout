@@ -23,6 +23,7 @@ mod media_server;
 mod overlay;
 mod thumb_scheme;
 mod tray;
+mod updater;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -40,7 +41,9 @@ const MAIN: &str = "main";
 
 pub(crate) struct AppState {
     pub(crate) handler: Arc<dyn Handler>,
-    engine: Mutex<Option<Engine>>,
+    pub(crate) engine: Mutex<Option<Engine>>,
+    /// The update check and the updater (ADR 0022, `updater.rs`).
+    pub(crate) updater: Arc<updater::Updater>,
     /// The files the editor's preview may read through the asset protocol, oldest
     /// first (`ipc::editor_media` allows what the engine names and forbids the oldest
     /// beyond `ipc::MAX_MEDIA_FILES`).
@@ -49,7 +52,7 @@ pub(crate) struct AppState {
     pub(crate) media_base: Option<String>,
 }
 
-fn setting(handler: &Arc<dyn Handler>, section: &str, key: &str, default: bool) -> bool {
+pub(crate) fn setting(handler: &Arc<dyn Handler>, section: &str, key: &str, default: bool) -> bool {
     handler
         .handle(commands::SETTINGS_GET, &Value::Null)
         .ok()
@@ -226,6 +229,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_drag::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -284,11 +288,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
             #[cfg(not(target_os = "linux"))]
             let media_base = None;
+            let updater = updater::Updater::new();
             app.manage(AppState {
                 handler: handler.clone(),
                 engine: Mutex::new(Some(engine)),
                 media: Mutex::new(std::collections::VecDeque::new()),
                 media_base,
+                updater: updater.clone(),
             });
             if std::env::var_os("KLIP_SETTINGS").is_none() {
                 migrate_autostart(app.handle());
@@ -355,6 +361,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 })?;
+
+            // The automatic update check (ADR 0022): 30 s after the start, then daily.
+            {
+                let handle = app.handle().clone();
+                let handler = handler.clone();
+                std::thread::Builder::new()
+                    .name("klip-update-check".into())
+                    .spawn(move || updater::automatic(&handle, &handler, &updater))?;
+            }
 
             let start_minimized = setting(&handler, "app", "start_minimized", true);
             create_main(

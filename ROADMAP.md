@@ -1,6 +1,6 @@
 # Roadmap and honest status
 
-Last updated: 2026-10-21 (the UI animation pass built and checked against the mock, after the Linux pass; see "UI motion" and "Linux pass").
+Last updated: 2026-10-21 (the update check and updater, M13.2; the UI animation pass and the Linux pass before it; see "Update check and updater", "UI motion" and "Linux pass").
 
 | | Milestone | State |
 |---|---|---|
@@ -17,7 +17,7 @@ Last updated: 2026-10-21 (the UI animation pass built and checked against the mo
 | M10 | Themes v1 | **done on Windows** (session 16): accent colour, text size, density, reduced motion, custom theme files (colours, corners, font, background picture) with import/export, editor with live preview and a contrast warning; the overlay follows. Human checklist passed (2026-10-12); Linux not yet run |
 | M11 | Sharing | **done on Windows** (human checklist passed 2026-10-12; Linux gates green in CI and on Bazzite; the app runs on Linux since 2026-10-13): copy clips as files, drag out, "Discord" (fits as is, else a Discord export, then copied); the self-hostable share server `scout-share` + Docker exist and are tested, but Scout doesn't upload to it (parked: the user doesn't want to host) |
 | M12 | Auto-clip via official integrations | **dropped** (2026-10-12, the user: "Forget the auto clipping"; they play none of CS2, Dota 2, League). Hotkeys only |
-| M13 | Release 0.1 | **started**: Windows installer with its own GStreamer (`cargo xtask bundle`, NSIS, unsigned), tested from the extracted installer without a system GStreamer on NVIDIA and, by the user's tester, on AMD (RX 9070 XT: self-test 13/13 OK); Intel unverified; tester builds have Settings → Debug → self-test; no Flatpak, updater or README screenshots yet |
+| M13 | Release 0.1 | **started**: Windows installer with its own GStreamer (`cargo xtask bundle`, NSIS, unsigned), tested from the extracted installer without a system GStreamer on NVIDIA and, by the user's tester, on AMD (RX 9070 XT: self-test 13/13 OK); Intel unverified; tester builds have Settings → Debug → self-test; the update check and updater since 2026-10-21 (M13.2, ADR 0022: GitHub Releases, signed manifests, a draft release per tag; the first signed release and an update from it are owed); no Flatpak or README screenshots yet |
 
 ## What works (measured)
 
@@ -502,7 +502,34 @@ Not run: WebKitGTK. The real app on Windows: the last row (2026-10-21, after the
 | Real app (Windows debug build off-screen on its own settings, WebView2 Edg/155, 1180×760, three ffmpeg test clips in its clips folder) | the Library root `fade-rise`; the three engine-indexed cards with their posters and the stagger (`--i` 2 → 40 ms); the water canvas (918×906 device px) with WebGL2 float targets; two `Page.captureScreenshot` frames 1 s apart differ once `hasFocus` is patched (a still frame before, the window being unfocused); the star `.pop` + `star-pop` on press and clean after; Settings → Debug → Plain removes the canvas, ASCII water brings it back, the 3 cards still listed. `cargo xtask ci` on this PC: 404 Rust tests, 0 failed, 53 ignored (hardware) |
 | Water cost (2026-10-21, same app and window; i7-14700KF, RTX 4080 SUPER, 28 logical cores; the canvas 918×906 device px; Scout + its 7 WebView2 processes, `TotalProcessorTime` and the `GPU Engine` counters over 10 s samples, ~14 s each) | running (window focused): 168 ms/s of CPU = 16.8 % of one core = 0.6 % of the machine, GPU 0.3 % (3D); resting with the canvas there but no focus: 8–10 ms/s, GPU 0; water off: 2–14 ms/s, GPU 0. So the water costs about a sixth of a core while the Library has the focus and nothing once a game has it. Not measured: over a real game with PresentMon (human checklist), other GPUs, WebKitGTK |
 
+### Update check and updater (M13.2, 2026-10-21, ADR 0022)
+
+Tests = `cargo test -p klip-app updater`, `-p xtask release`, `-p klip-settings`, vitest;
+mock = the UI against the mock engine in the desktop app's browser pane at 800×600.
+
+| Check | Result |
+|---|---|
+| The manifest (unit) | version with or without a `v`, notes trimmed and capped at 4000 chars, date, a Windows installer only over HTTPS; refused with a short message: not JSON, no version, a 500-char version, a 70 KiB body |
+| Newer (unit) | 0.1.0 → 0.2.0 and 0.1.1 yes; equal or older no; 0.1.0 → 0.2.0-beta.1 no (a pre-release never replaces a release); 0.2.0-alpha → 0.2.0-beta.1 and → 0.2.0 yes |
+| The fetch (unit, a loopback socket) | reads a manifest with `GET /latest.json` and `User-Agent: Scout/<version>`; a 404 → "GitHub answered 404"; a 70 KiB body → "the update manifest is too big"; a closed port → "no connection to GitHub" |
+| The check (unit) | events `checking` → `available` with version, notes and `checked_ms` for a 99.0.0; `checking` → `up_to_date` for a 0.0.0 (the old version forgotten); `checking` → `failed` with the message on a 500; `failed` at once when checks are off (`KLIP_UPDATE_URL=off`); no check runs over a download |
+| The setting (unit) | `app.update_check` true by default; `"yes"` repaired to true with one issue; a patch to false applied, `"no"` refused |
+| The manifest writer (unit, xtask) | `latest.json` with the version, notes, RFC 3339 date and the Windows installer's URL `releases/download/v<version>/Scout_<version>_x64-setup.exe` and its `.sig`; no `.sig` → an error naming it; notes from a file |
+| Settings → General (mock) | the switch, "Scout 0.0.1 · not checked yet", Check now → "Scout 0.2.0 is available (this is 0.0.1) · checked just now" and "Install 0.2.0 and restart"; the prompt rises with the notes and Install and restart / Later |
+| Install (mock) | the prompt: "Downloading Scout 0.2.0…", the bar at 30 % then "Installing…", the buttons disabled; the General line "Downloading Scout 0.2.0: 10 %"; the mock's refusal ("can only pretend") shown in red, the prompt back to available |
+| Later (mock) | the prompt goes, the title bar shows "Update" (title "Scout 0.2.0 is available"), a click brings the prompt back |
+| Real app (Windows debug build off-screen on its own settings, `KLIP_UPDATE_URL` at a loopback server answering a 9.9.9 manifest) | the automatic check 30 s after the start: one `GET /latest.json` with `User-Agent: Scout/0.0.1` and nothing else; the prompt "Scout 9.9.9 is available" with the server's notes, General "Scout 9.9.9 is available (this is 0.0.1) · checked just now" and "Install 9.9.9 and restart"; Install and restart → the plugin asked GitHub's real endpoint, which has no release yet: "Could not fetch a valid release JSON from the remote" in red, the prompt back to available; Later → the prompt gone, "Update" in the title bar. An old `dist/` first hid all of it (the binary embeds the front end: rebuild it before `cargo build`). With `KLIP_UPDATE_URL` at GitHub's real address over HTTPS (the OS's TLS): Check now → "the last check failed: GitHub answered 404 · checked just now" (no release yet); an earlier `ureq` build panicked in its TLS provider instead, which is why the check now uses the plugin's `reqwest` and turns a panic inside the fetch into a failed check |
+
 ## Approximate / not done yet
+
+- **Updater (M13.2)**: no release exists yet, so no real update has run: the first tag
+  (`v0.1.0` after the version bump), the published draft and an update from the build
+  before it are the test (human checklist). Windows installs; Linux only gets the notice
+  (Flatpak is M13). No delta updates, no channels, no "skip this version". A failed
+  automatic check is shown in Settings → General only. The signing key lives on one PC
+  (`~/.tauri/scout.key`, no password) and must be added as the repo secret
+  `TAURI_SIGNING_PRIVATE_KEY` by the maintainer; the real app's install path was
+  exercised only against GitHub's 404 (no release), not a signed installer.
 
 - **UI motion and the ASCII water (2026-10-21)**: checked in the browser pane against
   the mock and in the real app on Windows; not measured: WebKitGTK (WebGL2 with float render
@@ -1089,6 +1116,21 @@ made, so nothing to rename).
    "Discord copy cancelled", and no half-made file is left in the Library.
 7.✅ (2026-10-12)  **After an export.** Open a clip in the editor, **Export** with any preset, then click
   ✅ (2026-10-12)  **Copy file** in the export window and paste it somewhere.
+
+## Manual checks for the human (updater, M13.2)
+
+1. Add the repo secret `TAURI_SIGNING_PRIVATE_KEY` (the text of `~/.tauri/scout.key`).
+   Bump `version` in `Cargo.toml`, `apps/klip-app/src-tauri/tauri.conf.json` and
+   `apps/klip-app/package.json`, commit, tag `v<version>`, push the tag: the Release
+   workflow attaches `Scout_<version>_x64-setup.exe`, its `.sig` and `latest.json` to a
+   draft release. Publish the draft.
+2. On a PC with the build before it installed: within 30 s of starting Scout the prompt
+   says "Scout <version> is available" with the notes; the title bar shows "Update".
+3. Install and restart: the bar fills, "Installing…", Scout closes, the installer runs
+   passively, Scout comes back as the new version (Settings → General says so).
+4. Settings → General → Check for updates off: no request (nothing in the log for
+   `automatic update check` after a restart). Check now still works.
+5. Linux: the prompt offers "Get it on GitHub", which opens the release page.
 
 ## Manual checks for the human (UI motion, 2026-10-21)
 

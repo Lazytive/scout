@@ -71,6 +71,7 @@ fn app_starts_and_shows_the_overlay() {
         Command::new(env!("CARGO_BIN_EXE_klip-app"))
             .env("KLIP_SETTINGS", &settings)
             .env("KLIP_DISCOVERY", &discovery)
+            .env("KLIP_UPDATE_URL", "off")
             .env("KLIP_NO_FOCUS", "1")
             .spawn()
             .unwrap(),

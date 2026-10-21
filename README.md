@@ -28,7 +28,10 @@ PipeWire).
 Recordings stay on your computer. When Scout records a game's audio it also listens to the
 whole system mix, only to measure timing: that audio is analysed in memory for a few
 seconds and never written anywhere. Music players are left out of system audio by
-default, and the microphone is off unless you turn it on.
+default, and the microphone is off unless you turn it on. Once a day Scout asks github.com
+whether a newer release exists (one request with nothing about you in it; Settings →
+General turns it off); an update installs only when you click Install, after its
+signature was checked.
 
 ## Building (Windows)
 
@@ -49,6 +52,7 @@ The desktop app needs Node.js for its front end:
 cd apps/klip-app && npm ci && npm run build && cd ../..
 cargo run -p klip-app
 cargo xtask bundle      # Windows installer with its own GStreamer (target/release/bundle/nsis)
+cargo xtask bundle --sign  # the same, signed for the updater, with latest.json (a release)
 ```
 
 ## Building (Linux)

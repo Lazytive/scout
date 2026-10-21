@@ -103,6 +103,7 @@ export type KlipEvent =
   | { event: 'themes_changed'; id: string }
   | { event: 'storage_cleaned'; report: { removed: number; bytes: number } }
   | { event: 'recovered'; path: string; result: unknown }
+  | ({ event: 'update_status' } & UpdateStatus)
   | { event: 'warning'; message: string }
   | { event: 'library_changed'; reason: string }
   | {
@@ -128,3 +129,25 @@ export type KlipEvent =
       copy_error?: string | null;
     }
   | ThumbsReadyEvent;
+
+export type UpdateState = 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'installing' | 'failed';
+
+/** The update check and updater (ADR 0022): `update.status` and the `update_status` event. */
+export interface UpdateStatus {
+  state: UpdateState;
+  /** The version running. */
+  current: string;
+  /** The newer release, while there is one. */
+  version: string | null;
+  notes: string | null;
+  date: string | null;
+  /** The release page. */
+  url: string;
+  /** Download progress, 0–100. */
+  progress: number | null;
+  error: string | null;
+  /** When the last check ended (ms since the epoch). */
+  checked_ms: number | null;
+  /** This PC can install the update itself (Windows); else "Get it on GitHub". */
+  installs: boolean;
+}

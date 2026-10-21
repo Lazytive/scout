@@ -25,6 +25,16 @@ tauri-plugin-dialog = "2.8"
 tauri-plugin-drag = "2.1"
 tauri-plugin-notification = "2.5"
 tauri-plugin-single-instance = "2.5"
+# The update check (ADR 0022): the manifest over HTTPS with the plugin's own HTTP client
+# in blocking mode, on the OS's TLS and certificate store (schannel on Windows, OpenSSL
+# on Linux: no bundled roots, one TLS stack), the version comparison, and the signed
+# download + install of a newer installer. The plugin without its `zip` feature:
+# Windows installs through NSIS and Scout installs nowhere else, so no archive is ever
+# extracted.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "native-tls"] }
+semver.workspace = true
+serde.workspace = true
+tauri-plugin-updater = { version = "2.14", default-features = false, features = ["native-tls", "system-proxy"] }
 dirs.workspace = true
 # The media server's URL token (media_server.rs).
 getrandom.workspace = true

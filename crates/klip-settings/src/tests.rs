@@ -513,3 +513,29 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn update_check_is_on_by_default_and_repaired_or_refused_like_any_switch() {
+    assert!(Settings::default().app.update_check);
+    let mut v = Settings::default().to_value().unwrap();
+    v["app"]["update_check"] = json!("yes");
+    let (s, issues) = lenient(&v);
+    assert!(s.app.update_check);
+    assert_eq!(
+        issues
+            .iter()
+            .filter(|i| i.path == "app.update_check")
+            .count(),
+        1,
+        "{issues:?}"
+    );
+    let off = Settings::default()
+        .apply_patch(&json!({ "app": { "update_check": false } }))
+        .unwrap();
+    assert!(!off.app.update_check);
+    assert!(
+        Settings::default()
+            .apply_patch(&json!({ "app": { "update_check": "no" } }))
+            .is_err()
+    );
+}

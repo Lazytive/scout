@@ -10,6 +10,8 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 serde_json.workspace = true
+# `bundle --sign`: the manifest's date (release.rs).
+jiff.workspace = true
 
 [lints]
 workspace = true

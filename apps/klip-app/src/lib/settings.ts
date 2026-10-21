@@ -35,6 +35,7 @@ export interface Settings {
     start_minimized: boolean;
     close_to_tray: boolean;
     control_channel: boolean;
+    update_check: boolean;
   };
   clips: { folder: string | null; per_game_folders: boolean; recordings_folder: string | null };
   recording: { buffer_secs: number; quality: Quality; show_cursor: boolean; encoder: string | null };

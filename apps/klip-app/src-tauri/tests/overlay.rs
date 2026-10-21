@@ -112,6 +112,7 @@ fn popup_shows_its_time_and_never_takes_focus() {
         Command::new(env!("CARGO_BIN_EXE_klip-app"))
             .env("KLIP_SETTINGS", &settings)
             .env("KLIP_DISCOVERY", &discovery)
+            .env("KLIP_UPDATE_URL", "off")
             .env("KLIP_WINDOW_POS", "12000,100")
             .env("KLIP_OVERLAY_POS", "12000,1800")
             .env("KLIP_NO_FOCUS", "1")

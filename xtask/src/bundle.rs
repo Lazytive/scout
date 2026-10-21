@@ -100,8 +100,14 @@ fn newest(base: &Path, rest: &str) -> Result<PathBuf> {
         .with_context(|| format!("no {rest} under {}", base.display()))
 }
 
+/// The VC folder: `VCINSTALLDIR` where vcvars (or a CI's msvc-dev-cmd) set it, else the
+/// Build Tools' default.
 fn vs_root() -> PathBuf {
-    PathBuf::from(r"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC")
+    std::env::var_os("VCINSTALLDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(r"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC")
+        })
 }
 
 fn dumpbin() -> Result<PathBuf> {

@@ -118,10 +118,15 @@ pub fn media_base(state: tauri::State<'_, AppState>) -> Option<String> {
 /// The window's one command: run an engine command.
 #[tauri::command]
 pub async fn klip(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     cmd: String,
     args: Value,
 ) -> Result<Value, Value> {
+    // The update commands are the app's own (ADR 0022), never the engine's.
+    if let Some(action) = cmd.strip_prefix("update.") {
+        return crate::updater::command(&app, &state, action, &args).await;
+    }
     let h = state.handler.clone();
     tauri::async_runtime::spawn_blocking(move || {
         h.handle(&cmd, &args)

@@ -16,6 +16,7 @@ mod audit;
 mod bundle;
 mod layers;
 mod npm;
+mod release;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -249,10 +250,20 @@ fn bench() -> Result<()> {
 }
 
 /// The Windows installer with Scout's own GStreamer (M13 start, `bundle.rs`);
-/// `--full-logs`: a tester build that logs everything (`klip-app`'s `full-logs`).
-fn bundle_installer(full_logs: bool) -> Result<()> {
+/// `--full-logs`: a tester build that logs everything (`klip-app`'s `full-logs`);
+/// `--sign`: a release build, the installer signed for the updater and `latest.json`
+/// written beside it (ADR 0022, `release.rs`; `--notes <file>` for the manifest's notes).
+fn bundle_installer(full_logs: bool, sign: bool, notes: Option<PathBuf>) -> Result<()> {
     if !cfg!(windows) {
         bail!("bundle builds the Windows installer; run it on Windows");
+    }
+    if sign && full_logs {
+        bail!("a tester build is never released: --sign or --full-logs, not both");
+    }
+    if sign && std::env::var_os("TAURI_SIGNING_PRIVATE_KEY").is_none() {
+        bail!(
+            "--sign needs TAURI_SIGNING_PRIVATE_KEY (the minisign private key, or the path of \n             its file: ~/.tauri/scout.key on the maintainer's PC)"
+        );
     }
     npm::build(&root())?;
     let features: &[&str] = if full_logs {
@@ -288,6 +299,10 @@ fn bundle_installer(full_logs: bool) -> Result<()> {
         "src-tauri/tauri.bundle.conf.json",
     ])
     .args(features);
+    if sign {
+        // tauri build signs the installer (`<name>.sig`) with TAURI_SIGNING_PRIVATE_KEY.
+        c.args(["--config", r#"{"bundle":{"createUpdaterArtifacts":true}}"#]);
+    }
     let built = run_step("installer (tauri build)", c);
     let removed = bundle::unstage(&root())?;
     println!("bundle: {removed} staged GStreamer files removed from target/release");
@@ -308,6 +323,11 @@ fn bundle_installer(full_logs: bool) -> Result<()> {
     } else {
         built?;
         println!("bundle: installer in target/release/bundle/nsis/");
+        if sign {
+            let manifest =
+                release::write_manifest(&nsis, env!("CARGO_PKG_VERSION"), notes.as_deref())?;
+            println!("bundle: signed; updater manifest {}", manifest.display());
+        }
     }
     Ok(())
 }
@@ -321,9 +341,23 @@ fn run() -> Result<()> {
         "audit" => audit::run(&root()),
         "e2e" => e2e(),
         "bench" => bench(),
-        "bundle" => bundle_installer(std::env::args().any(|a| a == "--full-logs")),
+        "bundle" => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let notes = args
+                .iter()
+                .position(|a| a == "--notes")
+                .and_then(|i| args.get(i.checked_add(1)?))
+                .map(PathBuf::from);
+            bundle_installer(
+                args.iter().any(|a| a == "--full-logs"),
+                args.iter().any(|a| a == "--sign"),
+                notes,
+            )
+        }
         _ => {
-            eprintln!("usage: cargo xtask <ci|layers|audit|e2e|bench|bundle>");
+            eprintln!(
+                "usage: cargo xtask <ci|layers|audit|e2e|bench|bundle [--full-logs] [--sign [--notes <file>]]>"
+            );
             bail!("unknown task {task:?}")
         }
     }

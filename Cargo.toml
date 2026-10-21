@@ -50,6 +50,8 @@ toml = "1"
 sha2 = "0.10"
 # Plain-HTTP client for the share server's tests (the app's client comes in M11.8).
 ureq = { version = "3", default-features = false }
+# The app's update check (ADR 0022) and the version comparison.
+semver = "1"
 gstreamer = { version = "0.25", features = ["v1_24"] }
 gstreamer-app = { version = "0.25", features = ["v1_24"] }
 gstreamer-video = { version = "0.25", features = ["v1_24"] }

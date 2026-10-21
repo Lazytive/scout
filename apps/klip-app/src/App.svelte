@@ -10,6 +10,7 @@
   import ThemeMenu from './lib/ThemeMenu.svelte';
   import Settings from './Settings.svelte';
   import RestartPrompt from './lib/RestartPrompt.svelte';
+  import UpdatePrompt from './lib/UpdatePrompt.svelte';
   import Toast from './lib/Toast.svelte';
   import { customChrome, dragsWindow, startDrag, toggleMaximize } from './lib/window-chrome';
   import WindowButtons from './lib/WindowButtons.svelte';
@@ -104,6 +105,7 @@
     {/if}
   </footer>
   <RestartPrompt />
+  <UpdatePrompt />
   <Toast />
 </div>
 

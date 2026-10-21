@@ -97,6 +97,10 @@ export function describeEvent(e: KlipEvent): { text: string; tone: Tone } | null
       return e.ok
         ? { text: `Exported ${e.key} (${e.preset})`, tone: 'good' }
         : { text: `Export of ${e.key} failed: ${e.error ?? 'unknown error'}`, tone: 'bad' };
+    case 'update_status':
+      if (e.state === 'available') return { text: `Scout  is available`, tone: 'info' };
+      if (e.state === 'failed' && e.error) return { text: `Update check: `, tone: 'warn' };
+      return null;
     case 'warning':
       return { text: e.message, tone: 'warn' };
     default:

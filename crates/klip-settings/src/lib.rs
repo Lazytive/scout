@@ -135,6 +135,8 @@ pub struct AppSettings {
     pub close_to_tray: bool,
     /// Local control channel for `klip-cli` and scripts (loopback + token, ADR 0006).
     pub control_channel: bool,
+    /// Ask GitHub for a newer release now and then (Settings → General; ADR 0022).
+    pub update_check: bool,
 }
 
 impl Default for AppSettings {
@@ -145,6 +147,7 @@ impl Default for AppSettings {
             start_minimized: true,
             close_to_tray: true,
             control_channel: true,
+            update_check: true,
         }
     }
 }

@@ -1,0 +1,98 @@
+# Release (ADR 0022): on a tag `v<version>` (matching Cargo.toml), build the Windows
+# installer with Scout's own GStreamer, signed for the updater, and its manifest
+# (`cargo xtask bundle --sign`), and attach all three to a draft GitHub release. The human
+# publishes the draft; the app's update check reads the published release's latest.json.
+# Secrets: TAURI_SIGNING_PRIVATE_KEY (the minisign private key from `npx tauri signer
+# generate`, as text) and TAURI_SIGNING_PRIVATE_KEY_PASSWORD if it has one.
+# No Authenticode signing (it costs money; AGENTS rule 8).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows installer (signed) and latest.json
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
+      GSTREAMER_VERSION: 1.28.8
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: The tag matches the version
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          v=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          case "$GITHUB_REF_NAME" in
+            "v$v") echo "version $v" ;;
+            *) echo "tag $GITHUB_REF_NAME is not v$v (Cargo.toml)" >&2; exit 1 ;;
+          esac
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/klip-app/package-lock.json
+
+      - name: Rust (from rust-toolchain.toml)
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      # dumpbin and the MSVC redistributable folder, for `cargo xtask bundle`.
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: GStreamer (MSVC, runtime and development headers)
+        shell: pwsh
+        run: |
+          $exe = "gstreamer-1.0-msvc-x86_64-$env:GSTREAMER_VERSION.exe"
+          $url = "https://gstreamer.freedesktop.org/data/pkg/windows/$env:GSTREAMER_VERSION/msvc/$exe"
+          Invoke-WebRequest -Uri $url -OutFile $exe
+          Invoke-WebRequest -Uri "$url.sha256sum" -OutFile "$exe.sha256sum"
+          $want = ((Get-Content "$exe.sha256sum") -split '\s+')[0].ToLower()
+          $have = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          if ($want -ne $have) { throw "GStreamer installer checksum mismatch" }
+          $dir = "C:\Program Files\gstreamer\1.0\msvc_x86_64"
+          Start-Process -FilePath ".\$exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/ALLUSERS', '/TYPE=devel', "/DIR=`"$dir`"" -Wait
+          "GSTREAMER_1_0_ROOT_MSVC_X86_64=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PKG_CONFIG_PATH=$dir\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "$dir\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Front end
+        working-directory: apps/klip-app
+        run: npm ci
+
+      - name: Signed installer and updater manifest
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo xtask bundle --sign
+
+      - name: Draft release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            target/release/bundle/nsis/Scout_*_x64-setup.exe
+            target/release/bundle/nsis/Scout_*_x64-setup.exe.sig
+            target/release/bundle/nsis/latest.json
+
+      - name: Keep the installer (manual run)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: scout-windows-installer
+          path: |
+            target/release/bundle/nsis/Scout_*_x64-setup.exe
+            target/release/bundle/nsis/Scout_*_x64-setup.exe.sig
+            target/release/bundle/nsis/latest.json

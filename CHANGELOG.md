@@ -5,6 +5,37 @@ reason)`.
 
 ## Unreleased
 
+- M13.2 — Update check and updater via GitHub Releases (ADR 0022). The check is Scout's
+  own (`apps/klip-app/src-tauri/src/updater.rs`): one GET of the newest release's
+  `latest.json` (GitHub's fixed redirect, no API) with the plugin's `reqwest` in blocking
+  mode (the OS's own TLS and certificate store, 10 s, 64 KiB, `User-Agent:
+  Scout/<version>`), compared with semver
+  (a pre-release only replaces a pre-release); 30 s after the start and daily while the
+  new setting `app.update_check` (default on, Settings → General) is on and no
+  recording is being written, and on "Check now". The window's
+  `update.status|check|install|open` are answered by the app, never the engine; the
+  `update_status` event carries the state. Install on Windows through
+  `tauri-plugin-updater` (MIT/Apache): the installer the manifest names, its minisign
+  signature verified against the public key in `tauri.conf.json` (`npx tauri signer
+  generate`; the private key stays with the maintainer and in the repo secret
+  `TAURI_SIGNING_PRIVATE_KEY`), run passively after the engine shut down; refused while
+  a recording runs. Linux: "Get it on GitHub". UI: the prompt (`UpdatePrompt.svelte`:
+  version, notes, progress, Install and restart / Later), the title bar's Update
+  button, Settings → General (switch, state line, Check now); the mock finds a 0.2.0.
+  `cargo xtask bundle --sign [--notes <file>]` builds the signed installer and writes
+  `latest.json`; `.github/workflows/release.yml` does it on a tag `v<version>` and
+  attaches both plus the `.sig` to a draft release (the human publishes). xtask finds
+  Visual Studio through `VCINSTALLDIR` too (the runner's Enterprise, not Build Tools).
+  Tests: the manifest, the comparison, the fetch over a loopback socket, the check's
+  events, the setting, the manifest writer; the UI against the mock, and the real app
+  on Windows against a loopback manifest: the automatic check, the prompt, the state
+  line, Install reaching GitHub's real endpoint (no release yet: the error shown), and
+  Check now over real HTTPS ("GitHub answered 404"; a first `ureq` build panicked in its
+  TLS provider, so the check uses the plugin's `reqwest` and a panic inside the fetch
+  ends as a failed check) (ROADMAP "Update check and updater"). Not done: a real signed release and an update
+  from it (the human checklist). (Claude Fable 5.1: the user, "Start on the update check and updater
+  for Release 0.1, using GitHub Releases")
+
 - ASCII water cost measured — The real app on Windows (debug build, 1180×760 window
   off-screen, i7-14700KF, RTX 4080 SUPER): Scout and its 7 WebView2 processes use 168
   ms/s of CPU (16.8 % of one core, 0.6 % of 28) and 0.3 % of the GPU's 3D engine while

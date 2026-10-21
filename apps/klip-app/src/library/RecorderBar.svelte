@@ -8,6 +8,7 @@
 
   import { actionLabel, formatBytes, formatDuration, formatTimecode } from '../lib/format';
   import { joinReasons } from '../lib/restart';
+  import { updatePending } from '../lib/update';
   import { app, restartRecorder, run } from '../lib/store.svelte';
 
   const st = $derived(app.status);
@@ -150,6 +151,19 @@
     >
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M11.8 1.8v2.8H9" /></svg>
       <span class="label">Restart to apply</span>
+    </button>
+  {/if}
+  {#if updatePending(app.update) && !app.updateAsk}
+    <button
+      class="flat update"
+      onclick={() => (app.updateAsk = true)}
+      title="Scout {app.update?.version} is available"
+      aria-label="Scout {app.update?.version} is available: show the update"
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true"
+        ><path d="M8 2v8" /><path d="M4.5 6.5 8 10l3.5-3.5" /><path d="M3 13h10" /></svg
+      >
+      <span class="label">{app.update?.state === 'available' ? 'Update' : 'Updating…'}</span>
     </button>
   {/if}
   <span class="grow"></span>
@@ -363,6 +377,21 @@
     stroke-width: 1.3;
     stroke-linejoin: round;
   }
+  .update {
+    flex: none;
+    gap: 5px;
+    color: var(--accent);
+    font-size: var(--text-sm);
+  }
+  .update svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
   .problem .fill-dot {
     fill: currentColor;
     stroke: none;
@@ -408,7 +437,8 @@
   @media (max-width: 1499px) {
     .bar > .extra,
     .of,
-    .problem .label {
+    .problem .label,
+    .update .label {
       display: none;
     }
   }

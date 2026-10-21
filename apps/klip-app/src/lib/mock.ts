@@ -8,7 +8,7 @@ import { mockLibrary } from './mock-library';
 import { mockThemes } from './mock-themes';
 import type { LibClip } from './library';
 import type { Settings } from './settings';
-import type { Game, KlipEvent, Status } from './types';
+import type { Game, KlipEvent, Status, UpdateStatus } from './types';
 
 const game: Game = {
   pid: 4242,
@@ -58,6 +58,21 @@ export function mockBackend() {
     settings_issues: [],
   };
 
+  // The update check (ADR 0022): "Check now" finds a newer mock release.
+  const update: UpdateStatus = {
+    state: 'idle',
+    current: '0.0.1',
+    version: null,
+    notes: null,
+    date: null,
+    url: 'https://github.com/Lazytive/scout/releases/latest',
+    progress: null,
+    error: null,
+    checked_ms: null,
+    installs: true,
+  };
+  const updateEvent = () => emit({ event: 'update_status', ...structuredClone(update) });
+
   // What the recorder started with (the engine's `restart::StartedWith`).
   let startedWith: Settings | null = null;
   const restartReasons = (a: Settings, b: Settings): string[] => {
@@ -101,6 +116,7 @@ export function mockBackend() {
       start_minimized: true,
       close_to_tray: true,
       control_channel: true,
+      update_check: true,
     },
     clips: { folder: null, per_game_folders: true, recordings_folder: null },
     recording: {
@@ -337,6 +353,54 @@ export function mockBackend() {
           need();
           emit({ event: 'bookmark', result: { recording_ms: status.session ? 4000 : null } });
           return {};
+        case 'update.status':
+          return structuredClone(update);
+        case 'update.check': {
+          if (update.state === 'checking' || update.state === 'downloading' || update.state === 'installing') {
+            return structuredClone(update);
+          }
+          Object.assign(update, { state: 'checking', error: null });
+          updateEvent();
+          await new Promise((r) => setTimeout(r, 600));
+          Object.assign(update, {
+            state: 'available',
+            version: '0.2.0',
+            notes:
+              'Mock release notes:\n- The ASCII water is off by default\n- cargo deny: three advisories documented',
+            date: '2026-11-01T10:00:00Z',
+            checked_ms: Date.now(),
+            installs: true,
+          });
+          updateEvent();
+          return structuredClone(update);
+        }
+        case 'update.install': {
+          if (status.session) throw new CommandError('busy', 'a recording is being written: stop it before installing');
+          if (update.state !== 'available') throw new CommandError('busy', 'no update is waiting to be installed');
+          Object.assign(update, { state: 'downloading', progress: 0, error: null });
+          updateEvent();
+          void (async () => {
+            for (let p = 10; p <= 100; p += 10) {
+              await new Promise((r) => setTimeout(r, 150));
+              update.progress = p;
+              updateEvent();
+            }
+            Object.assign(update, { state: 'installing' });
+            updateEvent();
+            await new Promise((r) => setTimeout(r, 1200));
+            // The browser mock can't restart anything.
+            Object.assign(update, {
+              state: 'available',
+              progress: null,
+              error: 'the browser mock can only pretend: nothing was installed',
+            });
+            updateEvent();
+          })();
+          return { started: true };
+        }
+        case 'update.open':
+          window.open(update.url, '_blank', 'noopener');
+          return null;
         default: {
           const t = themes(cmd, args);
           if (t !== undefined) return t;

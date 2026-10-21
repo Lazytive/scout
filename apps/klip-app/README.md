@@ -98,6 +98,22 @@ star's pop, the recorder bar's REC pulse and Starting blink.
   range, `Connection: close`, at most 32 connections, 16 KiB of headers, timeouts; CORS
   only for the app's own origins. The CSP allows `http://127.0.0.1:*` for images,
   media and `fetch`. Windows keeps the asset protocol (WebView2 plays it).
+- `src-tauri/src/updater.rs` (M13.2, ADR 0022): the update check and the updater. One
+  GET of the newest release's `latest.json` on GitHub (the plugin's `reqwest` in blocking mode,
+  on the OS's own TLS and certificate store, 10 s, 64 KiB at most, `User-Agent:
+  Scout/<version>`, nothing else), compared with semver (a pre-release only replaces a pre-release): 30 s after
+  the start and daily while `app.update_check` is on and no recording is being
+  written, and on "Check now". The window's `update.status|check|install|open` go
+  through `klip` but are answered here (the engine has no network code); the
+  `update_status` event carries the whole state. Install (Windows):
+  `tauri-plugin-updater` fetches the installer the manifest names, verifies its
+  minisign signature against `plugins.updater.pubkey` in `tauri.conf.json`, runs it
+  passively and exits the app after the engine shut down (`on_before_exit`); refused
+  while a recording runs (`busy`). Linux: "Get it on GitHub". UI:
+  `src/lib/UpdatePrompt.svelte` (version, notes, progress, Install and restart /
+  Later), the title bar's Update button (`library/RecorderBar.svelte`) and Settings →
+  General (the switch, the state line, Check now); wording in `src/lib/update.ts`; the
+  mock finds a 0.2.0 and pretends to install it.
 - `src-tauri/src/thumb_scheme.rs` (M7): the `klipthumb` URI scheme for library
   thumbnails (`http://klipthumb.localhost/<poster|strip>/<key>?v=<version>` in
   WebView2): only cached thumbnails of library clips (the engine's `library.thumb` checks
@@ -295,13 +311,25 @@ feature the app loads the dev server at `devUrl` instead of the embedded `dist/`
 `cargo xtask ci` runs eslint, svelte-check, vitest and the build before the cargo gates,
 and audits npm licences from `package-lock.json` (shipped packages: permissive only).
 
+Release (ADR 0022): `cargo xtask bundle --sign [--notes <file>]` builds the installer
+signed for the updater (`TAURI_SIGNING_PRIVATE_KEY` = the minisign private key or the
+path of its file, `~/.tauri/scout.key` on the maintainer's PC; its public half is
+`plugins.updater.pubkey` in `tauri.conf.json`) and writes `latest.json` beside it.
+Pushing a tag `v<version>` that matches `Cargo.toml` runs
+`.github/workflows/release.yml`, which does the same on a Windows runner (secrets
+`TAURI_SIGNING_PRIVATE_KEY`, and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the key has
+one) and attaches the installer, its `.sig` and `latest.json` to a draft release;
+publishing the draft is what makes the update check see it. Keep the key: a new one
+means a manual reinstall for everyone.
+
 Development and test overrides (environment): `KLIP_SETTINGS` (settings file),
 `KLIP_DISCOVERY` (control-channel discovery file), `KLIP_START_PAGE=library|editor|settings`
 (the page the window opens on; a Scout on its own `KLIP_SETTINGS` skips the
 single-instance hand-over, so it runs beside the user's Scout instead of showing it; give
 it its own `WEBVIEW2_USER_DATA_FOLDER` too), `KLIP_WINDOW_POS=x,y` (create the
 window there, visible and **not activated**: tests put it off-screen, e.g. `12000,200`,
-and capture it with `tools/window-shot.ps1`). Never
+and capture it with `tools/window-shot.ps1`), `KLIP_UPDATE_URL` (where the update check
+reads its manifest: a test server, or `off` for no check at all). Never
 run a dev build with the real settings while someone plays: it would buffer their game
 and take their hotkeys.
 

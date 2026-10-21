@@ -20,6 +20,13 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFDRTkyMUUzRjJERUQyNjkKUldScDB0N3k0eUhwckZ2dTlGZitTeE1HZ3B5NDBuMXFzV1QwbjFPY0JPbmtyQ3cyNnErbWowV3QK",
+      "endpoints": ["https://github.com/Lazytive/scout/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": [
