@@ -34,6 +34,18 @@
     ],
     "category": "Video",
     "shortDescription": "Clips of your games",
+    "publisher": "Scout contributors",
+    "copyright": "Scout · MIT OR Apache-2.0",
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/nsis-header.bmp",
+        "sidebarImage": "icons/nsis-sidebar.bmp",
+        "installMode": "currentUser",
+        "languages": ["English"],
+        "displayLanguageSelector": false
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

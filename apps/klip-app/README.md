@@ -315,6 +315,10 @@ Release (ADR 0022): `cargo xtask bundle --sign [--notes <file>]` builds the inst
 signed for the updater (`TAURI_SIGNING_PRIVATE_KEY` = the minisign private key or the
 path of its file, `~/.tauri/scout.key` on the maintainer's PC; its public half is
 `plugins.updater.pubkey` in `tauri.conf.json`) and writes `latest.json` beside it.
+The installer carries Scout's icon, a header badge and a welcome/finish sidebar in the Dark
+theme's colours (`bundle.windows.nsis` in `tauri.conf.json`; `tools/nsis-art.ps1` draws
+the bitmaps into `src-tauri/icons/`), installs per user (no UAC) and offers "Run Scout"
+at the end.
 Pushing a tag `v<version>` that matches `Cargo.toml` runs
 `.github/workflows/release.yml`, which does the same on a Windows runner (secrets
 `TAURI_SIGNING_PRIVATE_KEY`, and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the key has

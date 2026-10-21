@@ -5,6 +5,15 @@ reason)`.
 
 ## Unreleased
 
+- M13.3 — The installer in Scout's look. `tauri.conf.json` `bundle.windows.nsis`: Scout's
+  icon on the installer, a header badge (150×57) and a welcome/finish sidebar (164×314)
+  drawn from the icon's shape in the Dark theme's colours (`tools/nsis-art.ps1` draws
+  both into `src-tauri/icons/`, byte for byte reproducible), a per-user install (no
+  UAC, which also lets the updater install passively), English only without the
+  language chooser; the finish page's "Run Scout" is the template's own. The user had
+  installed 0.1.0 from the draft release: "it installs fine". (Claude Fable 5.1: the
+  user, "Brand the NSIS installer")
+
 ## 0.1.0 — 2026-10-21
 
 The first release: tagged `v0.1.0`; the Windows installer, signed for the updater, with
