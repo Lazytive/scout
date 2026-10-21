@@ -12,7 +12,10 @@ use std::time::Duration;
 use klip_control::Handler;
 use serde::Serialize;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter as _, Manager as _, Runtime};
+// `Manager` only for the Windows install path (`try_state` in `on_before_exit`).
+#[cfg(windows)]
+use tauri::Manager as _;
+use tauri::{AppHandle, Emitter as _, Runtime};
 
 use crate::AppState;
 
@@ -50,6 +53,9 @@ pub fn manifest_url_from(var: Option<&str>) -> Option<String> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+// `Downloading` and `Installing` are set only where the installer runs (Windows); the
+// UI knows every state on every platform, so the enum is the same everywhere.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub enum State {
     /// No check yet.
     Idle,
