@@ -5,6 +5,11 @@ reason)`.
 
 ## Unreleased
 
+## 0.1.1 — 2026-10-21
+
+The setup in Scout's own look (M13.4) around the branded installer (M13.3): the first
+release a running Scout 0.1.0 can update itself to.
+
 - M13.4 — The setup in Scout's own look (ADR 0023). `apps/klip-setup` (binary
   `scout-setup`, shipped as `Scout_<version>_x64-setup.exe`) is a Tauri window drawn from
   the app's own front end (`apps/klip-app/setup.html`, `src/Setup.svelte`, the same

@@ -2964,7 +2964,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
 name = "klip-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "auto-launch",
  "cpal",
@@ -2994,7 +2994,7 @@ dependencies = [
 
 [[package]]
 name = "klip-buffer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "klip-media",
@@ -3003,7 +3003,7 @@ dependencies = [
 
 [[package]]
 name = "klip-capture"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "gstreamer",
@@ -3018,7 +3018,7 @@ dependencies = [
 
 [[package]]
 name = "klip-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3041,7 +3041,7 @@ dependencies = [
 
 [[package]]
 name = "klip-control"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dirs 7.0.0",
  "getrandom 0.4.3",
@@ -3054,7 +3054,7 @@ dependencies = [
 
 [[package]]
 name = "klip-edit"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ab_glyph_rasterizer",
  "png 0.18.1",
@@ -3068,7 +3068,7 @@ dependencies = [
 
 [[package]]
 name = "klip-engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -3094,7 +3094,7 @@ dependencies = [
 
 [[package]]
 name = "klip-export"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "gstreamer",
@@ -3116,7 +3116,7 @@ dependencies = [
 
 [[package]]
 name = "klip-library"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "klip-media",
@@ -3131,14 +3131,14 @@ dependencies = [
 
 [[package]]
 name = "klip-media"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
 ]
 
 [[package]]
 name = "klip-mp4"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "klip-media",
@@ -3149,7 +3149,7 @@ dependencies = [
 
 [[package]]
 name = "klip-platform"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arboard",
  "ashpd",
@@ -3172,7 +3172,7 @@ dependencies = [
 
 [[package]]
 name = "klip-probe"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "gstreamer",
  "klip-media",
@@ -3186,7 +3186,7 @@ dependencies = [
 
 [[package]]
 name = "klip-recorder"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "gstreamer",
  "gstreamer-app",
@@ -3207,7 +3207,7 @@ dependencies = [
 
 [[package]]
 name = "klip-settings"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "proptest",
@@ -3220,7 +3220,7 @@ dependencies = [
 
 [[package]]
 name = "klip-setup"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde_json",
  "tauri",
@@ -3229,7 +3229,7 @@ dependencies = [
 
 [[package]]
 name = "klip-share"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "getrandom 0.4.3",
  "serde",
@@ -3239,7 +3239,7 @@ dependencies = [
 
 [[package]]
 name = "klip-share-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "bytes",
@@ -3262,7 +3262,7 @@ dependencies = [
 
 [[package]]
 name = "klip-testgame"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3279,7 +3279,7 @@ dependencies = [
 
 [[package]]
 name = "klip-testkit"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -8298,7 +8298,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "jiff",
