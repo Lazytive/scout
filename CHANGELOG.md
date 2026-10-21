@@ -5,6 +5,11 @@ reason)`.
 
 ## Unreleased
 
+## 0.1.0 — 2026-10-21
+
+The first release: tagged `v0.1.0`; the Windows installer, signed for the updater, with
+`latest.json`, from the Release workflow (ADR 0022).
+
 - M13.2 — Update check and updater via GitHub Releases (ADR 0022). The check is Scout's
   own (`apps/klip-app/src-tauri/src/updater.rs`): one GET of the newest release's
   `latest.json` (GitHub's fixed redirect, no API) with the plugin's `reqwest` in blocking
