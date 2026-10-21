@@ -74,7 +74,8 @@ describe('isFresh', () => {
 });
 
 describe('setWater', () => {
-  it('switches the Library background, with or without localStorage', () => {
+  it('is off by default and switches, with or without localStorage', () => {
+    expect(lib.water).toBe(false);
     setWater(false);
     expect(lib.water).toBe(false);
     setWater(true);

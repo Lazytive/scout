@@ -5,6 +5,29 @@ reason)`.
 
 ## Unreleased
 
+- UI animation pass, follow-up — The ASCII water is a test feature, not for the release
+  (the user): off by default now, and its Plain / ASCII water switch moved from Settings
+  → Appearance to Settings → Debug (tester builds and the browser mock only; the water
+  shows only when `klip.library.water` reads `on`). Checked in the real app on Windows
+  (debug build off-screen on its own settings, WebView2 Edg/155, 1180×760, three ffmpeg
+  test clips): the Library root's entrance, the three engine-indexed cards with their
+  posters and the stagger, the water canvas with WebGL2 float targets, two frames a
+  second apart differing once the window counts as focused (a still frame before), the
+  star's pop, the Debug switch removing and restoring the canvas. The Windows toolchain
+  went onto this PC for that (rustup with the pinned 1.99, VS 2022 Build Tools, GStreamer
+  1.28.8 runtime + headers, FFmpeg 9.0.2, cargo-deny), and `cargo xtask ci` is green
+  here: 404 Rust tests, 0 failed, 53 ignored (hardware). (Claude Fable 5.1: the user,
+  "the ASCII art water background was supposed to be a test feature")
+
+- cargo deny — Three RustSec "unmaintained" advisories of 2026-10-16 (RUSTSEC-2026-0370,
+  -0371, -0372: zvariant, zbus_names and zvariant_derive, merged into zbus 6.0) failed the
+  advisories check here and the Linux CI on main since its 2026-10-18 run. Nothing to
+  upgrade on our side: ashpd 0.13.13 (klip-platform's portals), notify-rust 4.18.2
+  (tauri-plugin-notification, 2.7.0 included) and tauri-plugin-single-instance 2.5.4 all
+  still require zbus 5. Ignored in `deny.toml` with the reason, beside the
+  proc-macro-error one; re-check when those move to zbus 6. (Claude Fable 5.1: `cargo
+  xtask ci` on the new Windows toolchain)
+
 - UI animation pass — Motion for the whole app, every piece opacity or transform only
   and timed from `--motion` (`--motion-enter` = 1.5×, `--ease-out`), so Reduced motion
   turns all of it off: a workspace fades and rises in when it opens (each page's root

@@ -1,9 +1,12 @@
 <!-- Settings → Debug (tester builds only, `full-logs`): the self-test (lib/selftest.ts),
-     its report beside the logs, and the logs folder. -->
+     its report beside the logs, the logs folder, and experiments (the ASCII water). -->
 <script lang="ts">
   import { onMount } from 'svelte';
 
   import { call, debugInfo, onEvent, openLogs, saveDebugReport, type DebugInfo } from '../lib/api';
+  import Row from '../lib/forms/Row.svelte';
+  import Segmented from '../lib/forms/Segmented.svelte';
+  import { lib, setWater } from '../lib/library.svelte';
   import type { Settings } from '../lib/settings';
   import { runSelfTest, type Step } from '../lib/selftest';
   import type { KlipEvent } from '../lib/types';
@@ -135,6 +138,23 @@
   </ol>
 {/if}
 
+<h2 class="experiments">Experiments</h2>
+<p class="muted">Not for the release: things to try in tester builds and the browser mock.</p>
+<Row
+  label="Library background"
+  hint="Animated ASCII water behind your clips (an animation experiment). It moves only while Scout's window has focus and stays still with reduced motion; off unless you turn it on, on this machine only."
+>
+  <Segmented
+    label="Library background"
+    value={lib.water ? 'water' : 'plain'}
+    options={[
+      { value: 'plain', label: 'Plain' },
+      { value: 'water', label: 'ASCII water' },
+    ]}
+    onchange={(v) => setWater(v === 'water')}
+  />
+</Row>
+
 <style>
   .lead {
     max-width: 70ch;
@@ -189,5 +209,10 @@
   }
   .error {
     color: var(--bad);
+  }
+  .experiments {
+    margin: 24px 0 4px;
+    font-size: inherit;
+    font-weight: 600;
   }
 </style>

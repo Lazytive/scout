@@ -54,15 +54,16 @@ export const lib = $state({
   active: false,
   /** The last clip saved and when: its card glows once as it arrives. */
   fresh: null as { path: string; at: number } | null,
-  /** The animated ASCII water behind the clip grid (this machine only). */
+  /** The animated ASCII water behind the clip grid: an experiment, not for the release
+   *  (Settings → Debug in tester builds and the mock); off unless turned on, this machine only. */
   water: loadWater(),
 });
 
 function loadWater(): boolean {
   try {
-    return localStorage.getItem(WATER_KEY) !== 'off';
+    return localStorage.getItem(WATER_KEY) === 'on';
   } catch {
-    return true;
+    return false;
   }
 }
 

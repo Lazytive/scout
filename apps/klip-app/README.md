@@ -135,16 +135,17 @@ star's pop, the recorder bar's REC pulse and Starting blink.
   library's totals. State and actions: `src/lib/library.svelte.ts`; pure helpers
   (names, day headings, scrub maths, selection) in `src/lib/library.ts` with vitest
   tests; the mock engine's library is `src/lib/mock-library.ts` (drawn SVG thumbnails).
-  The first dozen cards of a group fade in one after another (`--i` on the card), a
+  The first dozen cards of a group fade in one after another (`--i` on the card) and a
   clip saved in the last 30 s arrives with an accent glow (`lib.fresh` from
-  `clip_saved`, `isFresh`), and behind the grid moves an **ASCII water**
-  (`src/lib/ascii-water.ts`, `src/library/AsciiWater.svelte`; Settings → Appearance →
-  Library background, Plain / ASCII water, kept in `localStorage` as
-  `klip.library.water`): three WebGL2 passes, ripples the pointer and random drops
-  stir, a light per glyph cell, glyphs from an atlas, in the theme's text colour at low
-  alpha. It moves only while the window has focus and is visible, draws one still frame
-  with reduced motion, and bows out (a plain grid) without WebGL2 float render targets.
-  The mock's `clip.save` adds its clip to the mock library (`mock.saved`).
+  `clip_saved`, `isFresh`). An **ASCII water** behind the grid is an animation
+  experiment, not for the release (`src/lib/ascii-water.ts`,
+  `src/library/AsciiWater.svelte`): off unless Settings → Debug → Library background
+  turns it on (tester builds and the mock only; kept in `localStorage` as
+  `klip.library.water`). Three WebGL2 passes, ripples the pointer and random drops stir,
+  a light per glyph cell, glyphs from an atlas, in the theme's text colour at low alpha;
+  it moves only while the window has focus and is visible, draws one still frame with
+  reduced motion, and bows out (a plain grid) without WebGL2 float render targets. The
+  mock's `clip.save` adds its clip to the mock library (`mock.saved`).
 - `src-tauri/src/tray.rs`: tray icon drawn at runtime (grey = waiting, blue = buffering,
   red dot = recording; no image asset), tooltip, menu (save clip, start/stop recording,
   bookmark, open, quit), left click opens the window.

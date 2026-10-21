@@ -1,5 +1,6 @@
 /*
- * ASCII water, the Library's background: a grid of faint monospace glyphs whose density
+ * ASCII water (an animation experiment, not for the release; its switch is Settings → Debug,
+ * tester builds and the browser mock): a grid of faint monospace glyphs whose density
  * follows moving light on the floor of a pool. The pointer and random drops ripple the
  * surface, and the ripples bend the light.
  *

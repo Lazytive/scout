@@ -36,6 +36,13 @@ unknown-git = "deny"
 # Unmaintained, not vulnerable: a build-time proc macro that Tauri's Linux tray/GTK3
 # stack pulls in (tauri -> tray-icon -> libappindicator -> gtk 0.18 -> glib-macros).
 # Nothing to replace on our side until Tauri leaves gtk-rs 0.18. Re-check on Tauri bumps.
+# Likewise zvariant, zvariant_derive and zbus_names (merged into zbus 6.0 in 2026-10): zbus 5
+# is still what ashpd 0.13 (klip-platform), notify-rust 4.18 (tauri-plugin-notification, also
+# its 2.7) and tauri-plugin-single-instance 2.5 require, so there is no upgrade on our side
+# yet. Re-check when those move to zbus 6.
 ignore = [
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error via Tauri's GTK3 stack (build-time only)" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: merged into zbus 6; ashpd and the Tauri plugins still need zbus 5" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: merged into zbus 6; ashpd and the Tauri plugins still need zbus 5" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: merged into zbus 6; ashpd and the Tauri plugins still need zbus 5" },
 ]

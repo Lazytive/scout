@@ -489,7 +489,7 @@ Checked 2026-10-21 against the mock engine (Vite dev server) in the desktop app'
 browser pane at 800×600, reading computed styles through the DOM and screenshots;
 `npm run fmt:check`, `lint`, `check`, `test` (254) and `build` green. The pane never has
 window focus, so for the water `document.hasFocus` was patched to `true` in the page.
-Not run: the real app (this PC has no Rust toolchain or GStreamer yet), WebKitGTK.
+Not run: WebKitGTK. The real app on Windows: the last row (2026-10-21, after the toolchain was installed on this PC).
 
 | Check | Result |
 |---|---|
@@ -497,17 +497,19 @@ Not run: the real app (this PC has no Rust toolchain or GStreamer yet), WebKitGT
 | Clip cards | `fade-rise` 0.18 s `backwards`, delay `--i` × 20 ms (the 6th card 60 ms, the 14th 100 ms, `--i` capped at 12); Save last 30 s → the new card at the top of Today within the 300 ms refresh, `fresh-glow` 1.68 s on it; the star: `.pop` + `star-pop` 0.3 s on press, the class gone on `animationend` |
 | Recorder bar | Record → `data-mode="recording"`: the dot's `::after` runs `rec-pulse` 1.68 s infinite, no ancestor clips it; Starting's blink not driven |
 | Menus and dialogs | the clip context menu `pop-in` 0.12 s from its top left, the theme menu from its top right; the Export dialog `pop-in` 0.18 s over a `fade-in` 0.12 s scrim. the first-run dialog (`?firstrun`) `pop-in` 0.18 s over a `fade-in` 0.12 s backdrop. Not driven: the timeline menu, the recorder's ⓘ pop-up and the confirm dialog (the same keyframes) |
-| ASCII water | one canvas behind the grid (684×918 device px for 456×612 CSS px); WebGL2 + `EXT_color_buffer_float` present in WebView2; a still frame while the pane has no focus (by design), moving once `hasFocus` was patched, stirred by the pointer; the no-match state readable over it; Light → dark glyphs at once (the `<html>` observer); Appearance → Plain removes the canvas and writes `klip.library.water` = `off`, ASCII water brings it back |
+| ASCII water | one canvas behind the grid (684×918 device px for 456×612 CSS px); WebGL2 + `EXT_color_buffer_float` present in WebView2; a still frame while the pane has no focus (by design), moving once `hasFocus` was patched, stirred by the pointer; the no-match state readable over it; Light → dark glyphs at once (the `<html>` observer); the Plain / ASCII water switch removes the canvas (`klip.library.water` = `off`) and brings it back. The switch sat in Appearance then; it is in Settings → Debug now and the water is off by default: an experiment, not for the release (the user) |
 | Reduced motion | Appearance → Reduced: `--motion` 0 ms, `--motion-enter` 0, every card's animation and delay 0 s, `data-motion="reduce"`; Full restores 120 / 180 ms |
+| Real app (Windows debug build off-screen on its own settings, WebView2 Edg/155, 1180×760, three ffmpeg test clips in its clips folder) | the Library root `fade-rise`; the three engine-indexed cards with their posters and the stagger (`--i` 2 → 40 ms); the water canvas (918×906 device px) with WebGL2 float targets; two `Page.captureScreenshot` frames 1 s apart differ once `hasFocus` is patched (a still frame before, the window being unfocused); the star `.pop` + `star-pop` on press and clean after; Settings → Debug → Plain removes the canvas, ASCII water brings it back, the 3 cards still listed. `cargo xtask ci` on this PC: 404 Rust tests, 0 failed, 53 ignored (hardware) |
 
 ## Approximate / not done yet
 
 - **UI motion and the ASCII water (2026-10-21)**: checked in the browser pane against
-  the mock only; not measured: the real app, WebKitGTK (WebGL2 with float render
+  the mock and in the real app on Windows; not measured: WebKitGTK (WebGL2 with float render
   targets; without them the water bows out and the grid stays plain) and the water's
   cost (GPU and CPU while the Library has focus; it rests on blur, so never over a
-  game). The Library background choice lives in `localStorage`, not in the settings, so
-  it is per machine and not in theme files. A card's staggered entrance keeps it
+  game). The water is an experiment, not for the release (the user, 2026-10-21): off by
+  default, its switch in Settings → Debug (tester builds and the browser mock), kept in
+  `localStorage` per machine, never in the settings or theme files. A card's staggered entrance keeps it
   invisible for up to 240 ms after a group lists. Not driven: the timeline menu, the
   recorder's ⓘ pop-up and the confirm dialog (the same keyframes as the checked ones).
 
@@ -1091,11 +1093,12 @@ made, so nothing to rename).
 
 Start Scout with `Start Scout.cmd` after `npm run build` in `apps/klip-app`.
 
-1. The Library opens with its cards fading in one after another and faint ASCII water
-   moving behind them. Move the mouse over the grid: it ripples. Click into another
+1. The Library opens with its cards fading in one after another. In a tester build,
+   Settings → Debug → Library background → ASCII water: faint water moves
+   behind them. Move the mouse over the grid: it ripples. Click into another
    window: it stops; back in Scout it moves again.
-2. Settings → Appearance → Library background → Plain: the water goes; ASCII water
-   brings it back. Motion → Reduced: nothing moves (the water is a still frame).
+2. Debug → Plain: the water goes; ASCII water
+   brings it back. Appearance → Motion → Reduced: nothing moves (the water, if on, is a still frame).
 3. Save a clip (Alt+F10 in a game): its card arrives at the top with a blue glow that
    fades over about 1.5 s.
 4. Press Record: the red dot in the title bar pulses a ring. Star a clip: the star pops.
