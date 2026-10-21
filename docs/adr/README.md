@@ -27,3 +27,4 @@ One file per decision: context, decision, consequences. Status is `accepted`, `p
 | [0020](0020-rename-to-scout.md) | The app is called Scout (was Klip): user-visible names, app id `io.github.lazytive.Scout`, internal `klip` names kept, one-time migration (settings and themes copied, `Videos/Klip` moved by one rename or kept), autostart entry moved | accepted |
 | [0021](0021-sharing.md) | Sharing: copy as files, drag out, "Discord", a self-hostable share server | accepted (M11) |
 | [0022](0022-update-check-and-updater.md) | Update check and updater: Scout's own check of GitHub Releases' `latest.json`, Tauri's updater for the signed Windows install, a draft release per tag | accepted (M13.2) |
+| [0023](0023-setup-app.md) | The setup in Scout's own look: a Tauri window from the app's front end around the NSIS installer it carries, the same switches as NSIS, the wizard without WebView2 | accepted (M13.4) |

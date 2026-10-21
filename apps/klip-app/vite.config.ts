@@ -12,7 +12,7 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     // The main window and the overlay window (a separate, click-through window).
-    rollupOptions: { input: { main: 'index.html', overlay: 'overlay.html' } },
+    rollupOptions: { input: { main: 'index.html', overlay: 'overlay.html', setup: 'setup.html' } },
   },
   test: { environment: 'node', include: ['src/**/*.test.ts'] },
 });

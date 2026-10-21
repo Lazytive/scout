@@ -5,6 +5,25 @@ reason)`.
 
 ## Unreleased
 
+- M13.4 — The setup in Scout's own look (ADR 0023). `apps/klip-setup` (binary
+  `scout-setup`, shipped as `Scout_<version>_x64-setup.exe`) is a Tauri window drawn from
+  the app's own front end (`apps/klip-app/setup.html`, `src/Setup.svelte`, the same
+  tokens, title bar and icon) around the NSIS installer it carries (`build.rs` embeds
+  what `SCOUT_NSIS_PAYLOAD` names): Install writes it to `%TEMP%\scout-setup-<pid>\`,
+  runs it silently (`/S`, `/UPDATE` as given, `/D=<folder>` last and unquoted), shows
+  progress from the bytes arriving against what a whole install holds
+  (`SCOUT_INSTALL_BYTES`, measured at bundle time; 95 % until the installer ends), then
+  offers "Open Scout". The same switches as NSIS: `/S` installs with no window, `/P`
+  (the updater's) needs no click and opens Scout with `/R` and `/ARGS`; without WebView2
+  the M13.3 wizard inside runs instead. `cargo xtask bundle` renames Tauri's installer
+  to `…-setup-engine.exe`, builds the setup with it inside, puts it in the installer's
+  place and, with `--sign`, signs that file (`tauri signer sign`) before `latest.json`;
+  the release workflow is unchanged. Tests: the switches (split `/D=` folders, `/ARGS`
+  pass-through), the inner arguments, the progress estimate, folder sizes, the signing
+  arguments, the page's wording (vitest); the page in the browser mock (`/setup.html`,
+  `?update`, `?fail`, `?passive`). (Claude Fable 5.1: the user, "I want it to look way
+  more like the actual app")
+
 - M13.3 — The installer in Scout's look. `tauri.conf.json` `bundle.windows.nsis`: Scout's
   icon on the installer, a header badge (150×57) and a welcome/finish sidebar (164×314)
   drawn from the icon's shape in the Dark theme's colours (`tools/nsis-art.ps1` draws

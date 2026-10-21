@@ -32,6 +32,7 @@ pub const APPS: &[&str] = &[
     "klip-cli",
     "klip-testgame",
     "klip-app",
+    "klip-setup",
     "klip-share-server",
     "xtask",
 ];

@@ -114,6 +114,13 @@ star's pop, the recorder bar's REC pulse and Starting blink.
   Later), the title bar's Update button (`library/RecorderBar.svelte`) and Settings →
   General (the switch, the state line, Check now); wording in `src/lib/update.ts`; the
   mock finds a 0.2.0 and pretends to install it.
+- `src/Setup.svelte` + `src/setup.ts` + `setup.html` (M13.4, ADR 0023): the page
+  `apps/klip-setup` opens, the setup in Scout's own look: the icon, "Install Scout
+  <version>", where it goes (for you only), Install → a progress bar → "Open Scout";
+  with `/P` (the updater) it runs by itself. `src/lib/setup.ts` has the wording and the
+  two backends (the setup app's `setup_info|install|open|quit` commands and
+  `setup://progress|done` events; a pretend one for `npm run dev` at `/setup.html`, with
+  `?chrome`, `?update`, `?fail`, `?passive`, `?empty`).
 - `src-tauri/src/thumb_scheme.rs` (M7): the `klipthumb` URI scheme for library
   thumbnails (`http://klipthumb.localhost/<poster|strip>/<key>?v=<version>` in
   WebView2): only cached thumbnails of library clips (the engine's `library.thumb` checks
@@ -315,10 +322,12 @@ Release (ADR 0022): `cargo xtask bundle --sign [--notes <file>]` builds the inst
 signed for the updater (`TAURI_SIGNING_PRIVATE_KEY` = the minisign private key or the
 path of its file, `~/.tauri/scout.key` on the maintainer's PC; its public half is
 `plugins.updater.pubkey` in `tauri.conf.json`) and writes `latest.json` beside it.
-The installer carries Scout's icon, a header badge and a welcome/finish sidebar in the Dark
-theme's colours (`bundle.windows.nsis` in `tauri.conf.json`; `tools/nsis-art.ps1` draws
-the bitmaps into `src-tauri/icons/`), installs per user (no UAC) and offers "Run Scout"
-at the end.
+The installer users see is the setup in Scout's own look (ADR 0023, `apps/klip-setup`:
+this front end's `setup.html` around the NSIS installer, which `cargo xtask bundle` wraps
+inside it). The NSIS wizard inside carries Scout's icon, a header badge and a
+welcome/finish sidebar in the Dark theme's colours (`bundle.windows.nsis` in
+`tauri.conf.json`; `tools/nsis-art.ps1` draws the bitmaps into `src-tauri/icons/`),
+installs per user (no UAC) and runs itself only without WebView2 or in tester builds.
 Pushing a tag `v<version>` that matches `Cargo.toml` runs
 `.github/workflows/release.yml`, which does the same on a Windows runner (secrets
 `TAURI_SIGNING_PRIVATE_KEY`, and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the key has

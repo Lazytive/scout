@@ -51,7 +51,7 @@ The desktop app needs Node.js for its front end:
 ```
 cd apps/klip-app && npm ci && npm run build && cd ../..
 cargo run -p klip-app
-cargo xtask bundle      # Windows installer with its own GStreamer (target/release/bundle/nsis)
+cargo xtask bundle      # the Windows setup (Scout's own look around an NSIS installer with its own GStreamer): target/release/bundle/nsis
 cargo xtask bundle --sign  # the same, signed for the updater, with latest.json (a release)
 ```
 

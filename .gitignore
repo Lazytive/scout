@@ -9,4 +9,5 @@ node_modules/
 .claude/
 apps/klip-app/dist/
 /apps/klip-app/src-tauri/gen/
+/apps/klip-setup/gen/
 /dist/

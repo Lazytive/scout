@@ -17,6 +17,7 @@ mod bundle;
 mod layers;
 mod npm;
 mod release;
+mod setup;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -24,7 +25,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 
-fn root() -> PathBuf {
+pub(crate) fn root() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest.parent().map(Path::to_path_buf).unwrap_or(manifest)
 }
@@ -77,11 +78,11 @@ fn command(program: &str) -> Command {
     c
 }
 
-fn cargo() -> Command {
+pub(crate) fn cargo() -> Command {
     command(&std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
 }
 
-fn run_step(name: &str, mut cmd: Command) -> Result<()> {
+pub(crate) fn run_step(name: &str, mut cmd: Command) -> Result<()> {
     let t = Instant::now();
     println!("==> {name}");
     let status = cmd
@@ -322,7 +323,9 @@ fn bundle_installer(full_logs: bool, sign: bool, notes: Option<PathBuf>) -> Resu
         println!("bundle: tester installer target/release/bundle/nsis/{tester}");
     } else {
         built?;
-        println!("bundle: installer in target/release/bundle/nsis/");
+        // The installer becomes the engine inside Scout's setup (ADR 0023).
+        let public = setup::wrap(&root(), &nsis, env!("CARGO_PKG_VERSION"), sign)?;
+        println!("bundle: setup {}", public.display());
         if sign {
             let manifest =
                 release::write_manifest(&nsis, env!("CARGO_PKG_VERSION"), notes.as_deref())?;

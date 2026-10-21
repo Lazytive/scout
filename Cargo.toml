@@ -5,6 +5,7 @@ members = [
     "apps/klip-cli",
     "apps/klip-testgame",
     "apps/klip-app/src-tauri",
+    "apps/klip-setup",
     "apps/klip-share-server",
     "xtask",
 ]

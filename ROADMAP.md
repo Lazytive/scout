@@ -17,7 +17,7 @@ Last updated: 2026-10-21 (the update check and updater, M13.2; the UI animation 
 | M10 | Themes v1 | **done on Windows** (session 16): accent colour, text size, density, reduced motion, custom theme files (colours, corners, font, background picture) with import/export, editor with live preview and a contrast warning; the overlay follows. Human checklist passed (2026-10-12); Linux not yet run |
 | M11 | Sharing | **done on Windows** (human checklist passed 2026-10-12; Linux gates green in CI and on Bazzite; the app runs on Linux since 2026-10-13): copy clips as files, drag out, "Discord" (fits as is, else a Discord export, then copied); the self-hostable share server `scout-share` + Docker exist and are tested, but Scout doesn't upload to it (parked: the user doesn't want to host) |
 | M12 | Auto-clip via official integrations | **dropped** (2026-10-12, the user: "Forget the auto clipping"; they play none of CS2, Dota 2, League). Hotkeys only |
-| M13 | Release 0.1 | **started**: Windows installer with its own GStreamer (`cargo xtask bundle`, NSIS, unsigned), tested from the extracted installer without a system GStreamer on NVIDIA and, by the user's tester, on AMD (RX 9070 XT: self-test 13/13 OK); Intel unverified; tester builds have Settings → Debug → self-test; the update check and updater since 2026-10-21 (M13.2, ADR 0022: GitHub Releases, signed manifests, a draft release per tag; `v0.1.0` tagged 2026-10-21 for the first draft release, installed fine by the user; an update from it to the next is owed); the installer in Scout's look since M13.3 (icon, header, sidebar, per-user); no Flatpak or README screenshots yet |
+| M13 | Release 0.1 | **started**: Windows installer with its own GStreamer (`cargo xtask bundle`, NSIS, unsigned), tested from the extracted installer without a system GStreamer on NVIDIA and, by the user's tester, on AMD (RX 9070 XT: self-test 13/13 OK); Intel unverified; tester builds have Settings → Debug → self-test; the update check and updater since 2026-10-21 (M13.2, ADR 0022: GitHub Releases, signed manifests, a draft release per tag; `v0.1.0` tagged 2026-10-21 for the first draft release, installed fine by the user; an update from it to the next is owed); the installer in Scout's look since M13.3 (icon, header, sidebar, per-user) and, since M13.4, the setup is Scout's own window around it (ADR 0023); no Flatpak or README screenshots yet |
 
 ## What works (measured)
 
@@ -520,7 +520,31 @@ mock = the UI against the mock engine in the desktop app's browser pane at 800×
 | Later (mock) | the prompt goes, the title bar shows "Update" (title "Scout 0.2.0 is available"), a click brings the prompt back |
 | Real app (Windows debug build off-screen on its own settings, `KLIP_UPDATE_URL` at a loopback server answering a 9.9.9 manifest) | the automatic check 30 s after the start: one `GET /latest.json` with `User-Agent: Scout/0.0.1` and nothing else; the prompt "Scout 9.9.9 is available" with the server's notes, General "Scout 9.9.9 is available (this is 0.0.1) · checked just now" and "Install 9.9.9 and restart"; Install and restart → the plugin asked GitHub's real endpoint, which has no release yet: "Could not fetch a valid release JSON from the remote" in red, the prompt back to available; Later → the prompt gone, "Update" in the title bar. An old `dist/` first hid all of it (the binary embeds the front end: rebuild it before `cargo build`). With `KLIP_UPDATE_URL` at GitHub's real address over HTTPS (the OS's TLS): Check now → "the last check failed: GitHub answered 404 · checked just now" (no release yet); an earlier `ureq` build panicked in its TLS provider instead, which is why the check now uses the plugin's `reqwest` and turns a panic inside the fetch into a failed check |
 
+### The setup in Scout's look (M13.4, 2026-10-21, ADR 0023)
+
+Tests = `cargo test -p klip-setup -p xtask`, vitest; mock = `/setup.html` against the
+pretend backend in the desktop app's browser pane; real = the built
+`Scout_0.1.0_x64-setup.exe` (the setup around the NSIS engine, 22.4 MB) on this PC.
+
+| Check | Result |
+|---|---|
+| The switches (unit) | `/S`, `/P`, `/UPDATE`, `/R`, `/ARGS …` as the updater passes them; `/D=` whole, quoted, and split by spaces into several arguments (`C:\Program Files\Scout`), empty ignored; unknown switches ignored |
+| The inner installer's arguments (unit) | `/S`, `/UPDATE` when given, `/D=<folder>` last (`raw_arg`, unquoted, as NSIS wants) |
+| Progress (unit) | 0 without an expectation, 47 at half, 95 at and beyond the whole; folder sizes summed 16 levels down |
+| The signing step (unit) | a key file goes to `tauri signer sign` as `TAURI_SIGNING_PRIVATE_KEY_PATH` with the key variable dropped (the CLI refuses both), a key text stays in its variable |
+| The page (vitest + mock) | ready "Install Scout 0.1.0 · For you only, in … · about 55.3 MB", installing with the bar (45 % mid-way), done "Scout is installed · Open Scout / Close", failed in red with "Try again"; `?update` says "Update to Scout …" / "Updating …" / "… is ready" / "could not be updated"; Scout's title bar with `?chrome` |
+| The real window | 575×469 logical, Scout's title bar (move, minimize, close), the icon, "Install Scout 0.1.0", "For you only, in C:\Users\…\AppData\Local\Scout · about 55.3 MB", Install / Cancel, the licence footer; closed without installing, no temp folder left |
+| The silent path (real, `/S /D=<temp folder>`) | exit 0 after 2.1 s; 58 088 221 bytes installed: `klip-app.exe`, 36 GStreamer plugins + 41 DLLs, `licenses/`, `uninstall.exe`; the Programs entry (0.1.0) and the Start menu shortcut appeared; `uninstall.exe /S` → exit 0, the folder, the entry and the shortcut gone; no `%TEMP%\scout-setup-*` left |
+| The passive path (real, `/P /D=<temp folder>`: the updater's way, without `/R`) | the window came up and installed by itself: 9 s after the start `klip-app.exe` and `uninstall.exe` were in the folder and the window said "Scout is installed" with Open Scout / Close; closed, no `%TEMP%\scout-setup-*` left; `uninstall.exe /S` → exit 0, the folder gone. The signed build: `Scout_0.1.0_x64-setup.exe` 22.4 MB, its `.sig` 416 bytes from `tauri signer sign`, `latest.json` naming it |
+
 ## Approximate / not done yet
+
+- **The setup (M13.4)**: the progress bar is an estimate (bytes arriving against the
+  bundle's size; NSIS says nothing while silent) and stops at 95 % until the installer
+  ends. The passive path the updater takes (`/P /UPDATE /R /ARGS`) was run with `/P
+  /D=` on this PC but not yet by a real update from an installed 0.1.0 (the human
+  checklist). The uninstaller is NSIS's own with the M13.3 images. Without WebView2 the
+  wizard inside runs: not tried (every Windows 10/11 here has WebView2).
 
 - **Updater (M13.2)**: no release exists yet, so no real update has run: the first tag
   (`v0.1.0` after the version bump), the published draft and an update from the build

@@ -1,0 +1,27 @@
+[package]
+name = "klip-setup"
+description = "Scout's setup: the installer in the app's own look, a Tauri window around the NSIS installer (ADR 0023)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "scout-setup"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+serde_json.workspace = true
+tauri = { version = "2.12", features = [] }
+
+[features]
+# The app's built front end (apps/klip-app/dist, setup.html) from the executable.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[lints]
+workspace = true

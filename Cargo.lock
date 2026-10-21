@@ -3219,6 +3219,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "klip-setup"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tauri",
+ "tauri-build",
+]
+
+[[package]]
 name = "klip-share"
 version = "0.1.0"
 dependencies = [
